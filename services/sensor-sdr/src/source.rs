@@ -20,7 +20,10 @@ pub const RTLSDR_STABLE_SAMPLE_RATE: u32 = 2_400_000;
 #[derive(Debug)]
 pub enum SdrError {
     /// Requested frequency is outside the device's tuning range.
-    OutOfBand { requested_hz: u64, max_hz: u64 },
+    OutOfBand {
+        requested_hz: u64,
+        max_hz: u64,
+    },
     /// USB read failed. Common and recoverable -- reopen the device.
     ReadFailed(String),
     DeviceNotFound,
@@ -78,7 +81,10 @@ pub trait SdrSource: Send {
 
     fn check_tunable(&self, hz: u64) -> Result<(), SdrError> {
         if hz > self.max_hz() {
-            return Err(SdrError::OutOfBand { requested_hz: hz, max_hz: self.max_hz() });
+            return Err(SdrError::OutOfBand {
+                requested_hz: hz,
+                max_hz: self.max_hz(),
+            });
         }
         if hz < self.min_hz() {
             return Err(SdrError::Config(format!(
@@ -96,12 +102,24 @@ mod tests {
 
     struct FakeRtl;
     impl SdrSource for FakeRtl {
-        fn open(_i: u32) -> Result<Self, SdrError> { Ok(FakeRtl) }
-        fn min_hz(&self) -> u64 { RTLSDR_MIN_HZ }
-        fn max_hz(&self) -> u64 { RTLSDR_MAX_HZ }
-        fn set_center_freq(&mut self, _hz: u64) -> Result<(), SdrError> { Ok(()) }
-        fn set_sample_rate(&mut self, _s: u32) -> Result<(), SdrError> { Ok(()) }
-        fn set_gain(&mut self, _g: i32) -> Result<(), SdrError> { Ok(()) }
+        fn open(_i: u32) -> Result<Self, SdrError> {
+            Ok(FakeRtl)
+        }
+        fn min_hz(&self) -> u64 {
+            RTLSDR_MIN_HZ
+        }
+        fn max_hz(&self) -> u64 {
+            RTLSDR_MAX_HZ
+        }
+        fn set_center_freq(&mut self, _hz: u64) -> Result<(), SdrError> {
+            Ok(())
+        }
+        fn set_sample_rate(&mut self, _s: u32) -> Result<(), SdrError> {
+            Ok(())
+        }
+        fn set_gain(&mut self, _g: i32) -> Result<(), SdrError> {
+            Ok(())
+        }
         fn read_samples(&mut self, _c: usize) -> Result<SampleBuffer, SdrError> {
             Err(SdrError::ReadFailed("fake".into()))
         }

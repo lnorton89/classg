@@ -82,7 +82,10 @@ pub fn plan_sweep(band: &BandPlan, overlap: f32) -> Vec<SweepStep> {
     let mut steps = Vec::new();
     let mut center = band.start_hz + usable / 2;
     while center - usable / 2 < band.stop_hz {
-        steps.push(SweepStep { center_hz: center, bandwidth_hz: RTLSDR_STABLE_SAMPLE_RATE });
+        steps.push(SweepStep {
+            center_hz: center,
+            bandwidth_hz: RTLSDR_STABLE_SAMPLE_RATE,
+        });
         center += usable;
     }
     steps
@@ -101,7 +104,11 @@ pub struct NoiseFloor {
 
 impl NoiseFloor {
     pub fn new(capacity: usize) -> Self {
-        Self { samples: Vec::with_capacity(capacity), capacity, idx: 0 }
+        Self {
+            samples: Vec::with_capacity(capacity),
+            capacity,
+            idx: 0,
+        }
     }
 
     pub fn push(&mut self, power_db: f32) {
@@ -164,8 +171,16 @@ mod tests {
     #[test]
     fn all_bands_are_within_tuner_range() {
         for band in BAND_PLANS {
-            assert!(band.stop_hz <= crate::source::RTLSDR_MAX_HZ, "{}", band.name);
-            assert!(band.start_hz >= crate::source::RTLSDR_MIN_HZ, "{}", band.name);
+            assert!(
+                band.stop_hz <= crate::source::RTLSDR_MAX_HZ,
+                "{}",
+                band.name
+            );
+            assert!(
+                band.start_hz >= crate::source::RTLSDR_MIN_HZ,
+                "{}",
+                band.name
+            );
         }
     }
 }

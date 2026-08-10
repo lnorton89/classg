@@ -73,8 +73,8 @@ class FingerprintMatcher:
             return None
 
         oui = mac.lower()[:8]
-        vendor = self._by_oui.get(oui)
-        return (vendor, "oui") if vendor else None
+        oui_vendor = self._by_oui.get(oui)
+        return (oui_vendor, "oui") if oui_vendor else None
 
 
 def _is_locally_administered(mac: str) -> bool:

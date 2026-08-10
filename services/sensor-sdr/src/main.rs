@@ -5,6 +5,15 @@
 //! Its job is ADS-B airspace context and the control-link/FPV bands, which is
 //! where non-Remote-ID aircraft show up.
 
+// The SdrSource trait, SampleBuffer, and NoiseFloor are the scaffolding the
+// capture loop will consume in Milestones 2-3. They are exercised by unit tests
+// but not yet called from main, so the crate would otherwise be full of
+// dead_code warnings that drown out real ones.
+//
+// REMOVE THIS once the capture loop lands -- at that point a dead_code warning
+// means something genuinely went unused.
+#![allow(dead_code)]
+
 mod source;
 mod sweep;
 
@@ -54,6 +63,8 @@ fn main() {
     //
     // Both must emit a heartbeat on the bus regardless of detections, so a wedged
     // sensor is distinguishable from a quiet sky (ADR-0003).
-    eprintln!("\nCapture loop not implemented -- see Milestones 2 and 3 in docs/planning/roadmap.md");
+    eprintln!(
+        "\nCapture loop not implemented -- see Milestones 2 and 3 in docs/planning/roadmap.md"
+    );
     std::process::exit(1);
 }

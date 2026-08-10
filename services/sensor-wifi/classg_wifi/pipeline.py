@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Any, Callable, Iterator
+from typing import Any
 
 from . import detection as det
 from .fingerprint import FingerprintMatcher

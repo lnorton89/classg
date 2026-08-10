@@ -171,7 +171,7 @@ class TestRobustness:
             odid.parse_message_pack(data)
         except odid.OdidParseError:
             pass
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             pytest.fail(f"unexpected {type(exc).__name__}: {exc}")
 
     @given(st.binary(min_size=0, max_size=300))
@@ -180,7 +180,7 @@ class TestRobustness:
             odid.parse_vendor_ie(data)
         except odid.OdidParseError:
             pass
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             pytest.fail(f"unexpected {type(exc).__name__}: {exc}")
 
     def test_truncated_message(self):

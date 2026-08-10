@@ -7,6 +7,7 @@ is not. See ADR-0002.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import time
@@ -70,12 +71,10 @@ class DetectionPublisher:
             "dropped": self.dropped,
             "detail": detail or {},
         }
-        try:
+        with contextlib.suppress(zmq.Again):
             self._sock.send_multipart(
                 [b"heartbeat.wifi", json.dumps(msg).encode()], flags=zmq.NOBLOCK
             )
-        except zmq.Again:
-            pass
 
     def close(self) -> None:
         self._sock.close()

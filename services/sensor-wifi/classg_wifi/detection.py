@@ -11,7 +11,7 @@ assessment - those are fusion's job (docs/architecture/data-model.md).
 from __future__ import annotations
 
 import base64
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .parsers.dji import DjiFlightPurpose, DjiTelemetry
@@ -26,7 +26,7 @@ _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 def _ulid(rand_bytes: bytes, ts_ms: int | None = None) -> str:
     """Minimal ULID: 48-bit timestamp + 80 bits of randomness, Crockford base32."""
     if ts_ms is None:
-        ts_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        ts_ms = int(datetime.now(UTC).timestamp() * 1000)
     value = (ts_ms << 80) | int.from_bytes(rand_bytes[:10].ljust(10, b"\x00"), "big")
     out = []
     for _ in range(26):
@@ -36,10 +36,12 @@ def _ulid(rand_bytes: bytes, ts_ms: int | None = None) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def _position(lat: float | None, lon: float | None, **extra: float | None) -> dict | None:
+def _position(
+    lat: float | None, lon: float | None, **extra: float | None
+) -> dict[str, Any] | None:
     """Positions are all-or-nothing. lat/lon of 0,0 is already normalised to None
     by the parsers - see odid._decode_latlon."""
     if lat is None or lon is None:

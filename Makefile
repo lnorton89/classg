@@ -22,15 +22,16 @@ test-wifi:
 	cd services/sensor-wifi && python -m pytest
 
 test-fusion:
-	cd services/fusion && go test ./...
+	cd services/fusion && go test -race -count=1 ./...
 
 test-sdr:
 	cd services/sensor-sdr && cargo test
 
+# Mirrors .github/workflows/ci.yml -- if this passes, CI should too.
 lint:
-	cd services/sensor-wifi && ruff check . && mypy classg_wifi
-	cd services/fusion && go vet ./...
-	cd services/sensor-sdr && cargo clippy -- -D warnings
+	cd services/sensor-wifi && python -m ruff check . && python -m mypy classg_wifi
+	cd services/fusion && gofmt -l . && go vet ./...
+	cd services/sensor-sdr && cargo fmt --check && cargo clippy --all-targets -- -D warnings
 
 # IFACE is overridable: make monitor IFACE=wlan2
 IFACE ?= wlan1

@@ -1,5 +1,7 @@
 # ClassG
 
+[![CI](https://github.com/lnorton89/classg/actions/workflows/ci.yml/badge.svg)](https://github.com/lnorton89/classg/actions/workflows/ci.yml)
+
 Passive, multi-sensor drone detection for a Raspberry Pi.
 
 Named for [Class G airspace](https://www.faa.gov/air_traffic/publications/atpubs/aim_html/chap3_section_1.html) —
