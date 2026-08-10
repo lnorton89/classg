@@ -1,0 +1,202 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/*
+ * Dark by default. This runs outdoors at night; a white screen at 2am is a
+ * usability failure and a night-vision one. Light mode exists and is properly
+ * supported, but `index.html` ships `class="dark"` so there is never a flash.
+ *
+ * `:where(.dark, .dark *)` rather than `:is(.dark *)` so `dark:` utilities also
+ * apply to the <html> element itself, not only its descendants.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Health. These three are the ONLY places hue carries urgency. */
+  --color-ok: var(--ok);
+  --color-ok-foreground: var(--ok-foreground);
+  --color-warn: var(--warn);
+  --color-warn-foreground: var(--warn-foreground);
+  --color-down: var(--down);
+  --color-down-foreground: var(--down-foreground);
+
+  /*
+   * Map entity hues. Deliberately NOT a red/amber/green ramp: confidence answers
+   * "is this really a drone", and colouring it like a threat scale would smuggle
+   * a policy judgement into the interface. Confidence varies opacity and stroke
+   * weight within a single hue instead.
+   */
+  --color-track: var(--track);
+  --color-track-dim: var(--track-dim);
+  --color-manned: var(--manned);
+  --color-operator: var(--operator);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
+:root {
+  --radius: 0.5rem;
+
+  --background: oklch(0.985 0.002 250);
+  --foreground: oklch(0.17 0.015 258);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.17 0.015 258);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.17 0.015 258);
+  --primary: oklch(0.52 0.13 235);
+  --primary-foreground: oklch(0.99 0.005 240);
+  --secondary: oklch(0.95 0.008 250);
+  --secondary-foreground: oklch(0.24 0.02 258);
+  --muted: oklch(0.95 0.008 250);
+  --muted-foreground: oklch(0.47 0.018 256);
+  --accent: oklch(0.94 0.014 240);
+  --accent-foreground: oklch(0.24 0.02 258);
+  --destructive: oklch(0.52 0.21 27);
+  --destructive-foreground: oklch(0.99 0.005 240);
+  --border: oklch(0.9 0.008 255);
+  --input: oklch(0.9 0.008 255);
+  --ring: oklch(0.52 0.13 235);
+
+  --ok: oklch(0.55 0.13 155);
+  --ok-foreground: oklch(0.99 0.005 240);
+  --warn: oklch(0.62 0.15 70);
+  --warn-foreground: oklch(0.15 0.02 70);
+  --down: oklch(0.52 0.21 27);
+  --down-foreground: oklch(0.99 0.005 240);
+
+  --track: oklch(0.55 0.15 220);
+  --track-dim: oklch(0.68 0.07 220);
+  --manned: oklch(0.42 0.02 90);
+  --operator: oklch(0.55 0.2 330);
+}
+
+.dark {
+  --background: oklch(0.16 0.014 258);
+  --foreground: oklch(0.95 0.006 250);
+  --card: oklch(0.2 0.016 258);
+  --card-foreground: oklch(0.95 0.006 250);
+  --popover: oklch(0.22 0.017 258);
+  --popover-foreground: oklch(0.95 0.006 250);
+  --primary: oklch(0.72 0.13 225);
+  --primary-foreground: oklch(0.16 0.014 258);
+  --secondary: oklch(0.26 0.018 258);
+  --secondary-foreground: oklch(0.95 0.006 250);
+  --muted: oklch(0.26 0.018 258);
+  --muted-foreground: oklch(0.72 0.015 254);
+  --accent: oklch(0.3 0.025 250);
+  --accent-foreground: oklch(0.97 0.005 250);
+  --destructive: oklch(0.65 0.2 25);
+  --destructive-foreground: oklch(0.15 0.02 25);
+  --border: oklch(0.98 0 0 / 12%);
+  --input: oklch(0.98 0 0 / 16%);
+  --ring: oklch(0.72 0.13 225);
+
+  --ok: oklch(0.75 0.16 158);
+  --ok-foreground: oklch(0.16 0.02 158);
+  --warn: oklch(0.79 0.16 72);
+  --warn-foreground: oklch(0.18 0.03 72);
+  --down: oklch(0.68 0.2 24);
+  --down-foreground: oklch(0.15 0.02 24);
+
+  --track: oklch(0.8 0.15 205);
+  --track-dim: oklch(0.62 0.08 205);
+  --manned: oklch(0.93 0.02 90);
+  --operator: oklch(0.75 0.19 330);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    /* Keeps the map flush against a phone's rounded corners / notch. */
+    overscroll-behavior: none;
+  }
+
+  /*
+   * A visible focus ring everywhere, including on the map controls. The default
+   * ring/50 in most token sets is too faint against these dark surfaces.
+   */
+  :focus-visible {
+    @apply outline-ring outline-2 outline-offset-2;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@utility sr-only-focusable {
+  @apply sr-only;
+
+  &:focus,
+  &:focus-visible {
+    @apply not-sr-only fixed top-2 left-2 z-50 rounded-md px-3 py-2;
+    @apply bg-popover text-popover-foreground border-border border shadow-lg;
+  }
+}
+
+/* MapLibre's own stylesheet, scoped tweaks for dark mode and focus. */
+.maplibregl-ctrl-group button:focus-visible {
+  @apply outline-ring outline-2 outline-offset-2;
+}
+
+.dark .maplibregl-ctrl-group {
+  background: var(--card);
+}
+
+.dark .maplibregl-ctrl-group button + button {
+  border-top-color: var(--border);
+}
+
+.dark .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1) hue-rotate(180deg);
+}
+
+.dark .maplibregl-ctrl-attrib {
+  background: color-mix(in oklch, var(--card) 80%, transparent);
+  color: var(--muted-foreground);
+}

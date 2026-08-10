@@ -91,6 +91,63 @@ jobs:
       - name: Test
         run: go test -race -count=1 ./...
 
+  api:
+    name: api (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.23"
+          cache-dependency-path: services/api/go.sum
+
+      - name: Format check
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -count=1 ./...
+
+  ui:
+    name: ui (Node)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/ui
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: services/ui/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --run
+
+      - name: Build
+        run: npm run build
+
   # ---------------------------------------------------------------------------
   # sensor-sdr (Rust) -- SDR abstraction and band sweep planning.
   #
@@ -186,7 +243,7 @@ jobs:
   ci:
     name: CI
     runs-on: ubuntu-latest
-    needs: [python, go, rust, schemas]
+    needs: [python, go, api, ui, rust, schemas]
     if: always()
     steps:
       - name: Check results

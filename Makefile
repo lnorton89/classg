@@ -1,4 +1,4 @@
-.PHONY: help setup test test-wifi test-fusion test-sdr lint clean monitor capture
+.PHONY: help setup test test-wifi test-fusion test-api test-ui test-sdr lint build-ui clean monitor capture
 
 help:
 	@echo "ClassG - passive drone detection"
@@ -14,15 +14,26 @@ help:
 setup:
 	cd services/sensor-wifi && python -m pip install -e '.[dev,replay]'
 	cd services/fusion && go mod download
+	cd services/api && go mod download
+	cd services/ui && npm ci
 	cd services/sensor-sdr && cargo fetch
 
-test: test-wifi test-fusion test-sdr
+test: test-wifi test-fusion test-api test-ui test-sdr
 
 test-wifi:
 	cd services/sensor-wifi && python -m pytest
 
 test-fusion:
 	cd services/fusion && go test -race -count=1 ./...
+
+test-api:
+	cd services/api && go test -count=1 ./...
+
+test-ui:
+	cd services/ui && npm test -- --run
+
+build-ui:
+	cd services/ui && npm run build
 
 test-sdr:
 	cd services/sensor-sdr && cargo test
@@ -31,6 +42,8 @@ test-sdr:
 lint:
 	cd services/sensor-wifi && python -m ruff check . && python -m mypy classg_wifi
 	cd services/fusion && gofmt -l . && go vet ./...
+	cd services/api && gofmt -l . && go vet ./...
+	cd services/ui && npm run format:check && npm run lint && npm run typecheck
 	cd services/sensor-sdr && cargo fmt --check && cargo clippy --all-targets -- -D warnings
 
 # IFACE is overridable: make monitor IFACE=wlan2
@@ -46,5 +59,6 @@ capture:
 
 clean:
 	cd services/sensor-sdr && cargo clean
+	rm -rf services/ui/dist services/ui/coverage
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name .pytest_cache -exec rm -rf {} + 2>/dev/null || true
