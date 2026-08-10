@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest'
 
 import { applyFrame } from './live-provider'
 import { queryKeys } from '@/lib/api/queries'
-import type { Detection, SensorHealth, ServerFrame, Track, TracksResponse } from '@/lib/api/types'
+import type {
+  Detection,
+  SensorHealth,
+  ServerFrame,
+  Track,
+  TracksResponse,
+} from '@/lib/api/types'
 
 function track(trackId: string): Track {
   return {
@@ -119,8 +125,8 @@ describe('applyFrame', () => {
       },
     })
 
-    expect(client.getQueryData<SensorHealth[]>(queryKeys.sensors)?.[0]?.config?.capture).toMatchObject(
-      { interface: 'wlan0', duration_s: 120 },
-    )
+    expect(
+      client.getQueryData<SensorHealth[]>(queryKeys.sensors)?.[0]?.config?.capture,
+    ).toMatchObject({ interface: 'wlan0', duration_s: 120 })
   })
 })
