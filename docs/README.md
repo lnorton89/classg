@@ -26,6 +26,7 @@ If you read three documents, read these:
 |---|---|
 | [Overview](architecture/overview.md) | Components, channel strategy, track lifecycle, failure modes |
 | [Data model](architecture/data-model.md) | Detection and Track types, confidence scoring, retention |
+| [API contract v1](architecture/api-contract.md) | Normative interface for the api service, CLI, and web app |
 
 ### Decision records
 
@@ -36,6 +37,7 @@ If you read three documents, read these:
 | [0003](architecture/adr/0003-sensor-process-isolation.md) | One process per radio |
 | [0004](architecture/adr/0004-rtlsdr-scope.md) | The RTL-SDR does not detect DJI drones |
 | [0005](architecture/adr/0005-own-sniffer-vs-kismet.md) | Own capture loop rather than wrapping Kismet |
+| [0006](architecture/adr/0006-storage-turso-libsql.md) | libSQL (Turso) storage, local-first with optional sync |
 
 ## Planning
 

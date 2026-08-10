@@ -10,8 +10,8 @@ Base URL: `http://<host>:8081/api/v1`
 
 1. **The web app and the CLI are peers.** Both are pure clients of this API. Neither depends
    on the other, and anything one can do, the other can do.
-2. **The API is the only writer.** Clients never touch the ZMQ bus, SQLite, or config files
-   directly.
+2. **The API is the only writer.** Clients never touch the ZMQ bus, the database, or config
+   files directly.
 3. **Operator location is opt-in.** See [privacy](#privacy-non-negotiable).
 4. **Nothing here transmits RF.** Control endpoints start and stop *receive-only* processes.
 

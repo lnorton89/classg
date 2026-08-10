@@ -105,7 +105,7 @@ both transports produces exactly **one** track, not two.
 ## Milestone 5 — Operational hardening
 
 - [ ] systemd units with bounded restart backoff
-- [ ] SQLite storage, retention jobs, **separate operator-location retention**
+- [ ] libSQL/Turso storage, retention jobs, **separate operator-location store, never synced**
 - [ ] Prometheus metrics, including hopper efficiency
 - [ ] Offline tile server for field deployment
 - [ ] Docker Compose for the web tier
