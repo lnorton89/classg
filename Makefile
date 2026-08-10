@@ -1,10 +1,11 @@
-.PHONY: help env setup test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
+.PHONY: help env setup dev dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
 
 DOCKER := bash ./scripts/docker.sh
 
 help:
 	@echo "ClassG - passive drone detection"
 	@echo ""
+	@echo "  make dev        native dev loop: fusion + api + vite, hot reload"
 	@echo "  make setup      install dependencies for all services"
 	@echo "  make env        create ignored .env from .env.example"
 	@echo "  make test       run all test suites"
@@ -43,8 +44,21 @@ test-ui:
 build-ui:
 	cd services/ui && npm run build
 
-dev-api: env build-ui
-	cd services/api && go run ./cmd/classg-api
+# Primary dev loop: fusion + api + vite, native, hot reload, no image rebuilds.
+# Containers are the deployment story; see scripts/dev.sh for why they are the
+# wrong tool for the edit loop.
+dev: env
+	./scripts/dev.sh
+
+dev-ui-only: env
+	./scripts/dev.sh --ui-only
+
+# Single services, for when you want one terminal per process.
+# Note CLASSG_UI_DIR=off: in dev, Vite serves the UI. Letting the Go binary
+# serve a stale dist/ is the most confusing failure in this project -- you edit
+# a component, reload, and see yesterday's build.
+dev-api: env
+	cd services/api && CLASSG_UI_DIR=off go run ./cmd/classg-api
 
 dev-ui: env
 	cd services/ui && npm run dev

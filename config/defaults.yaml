@@ -1,0 +1,82 @@
+# ClassG default settings — Tier 3 of ADR-0007.
+#
+# What this file is:
+#   - the values used to seed the settings table the first time a database is
+#     created
+#   - the ENTIRE configuration when CLASSG_STORE=memory (CI, dev machines)
+#
+# What this file is NOT:
+#   - a place for secrets. CLASSG_TURSO_AUTH_TOKEN and CLASSG_TURSO_URL live in
+#     .env and nowhere else.
+#   - the final word at runtime. Once seeded, the database is authoritative and
+#     these values are edited through the API (PUT /config/*), not by editing
+#     this file. Changing a value here after first run affects nothing until the
+#     database is recreated or explicitly re-seeded.
+#
+# Precedence:  environment  >  database  >  this file  >  built-in Go default
+# GET /config reports which of those each effective value came from.
+
+# --- Bus -------------------------------------------------------------------
+# Endpoints describe both ends of the sensor bus. Native Linux uses a binding
+# sensor and a dialing fusion. The Windows/WSL Docker layout reverses ownership:
+# fusion listens on Compose's published port and the WSL sensor connects out to
+# host.docker.internal, because container loopback and WSL loopback are not the
+# same network.
+bus:
+  detection_endpoint: tcp://127.0.0.1:5556
+  track_endpoint: tcp://127.0.0.1:5557
+  detection_topic: "detection."
+  track_topic: "track."
+  heartbeat_topic: "heartbeat."
+
+# --- Sensors ---------------------------------------------------------------
+sensors:
+  # Declaring sensors up front is what lets /health report one that never
+  # started. Without it, a sensor that dies before its first heartbeat is simply
+  # absent from the list, and absent reads as "quiet sky" -- the false
+  # confidence ADR-0003 exists to prevent.
+  expected:
+    - id: wifi-0
+      kind: wifi
+
+  # Three missed heartbeats at the sensor default of 10s. Two would make one
+  # scheduling hiccup on a loaded Pi look like a dead radio.
+  stale_after: 30s
+
+  restart_command: "systemctl restart %s"
+
+# --- Fusion ----------------------------------------------------------------
+fusion:
+  track_ttl: 5m
+  max_history: 512
+
+# --- Retention -------------------------------------------------------------
+# Uniform across all data. Operator location is retained like any other field
+# (ADR-0006) -- this deployment has decided that is acceptable.
+retention:
+  detections: 168h   # 7 days: enough for parser debugging and incident review
+  tracks: 2160h      # 90 days: trend and pattern analysis
+  interval: 1h       # how often the retention job runs
+
+# --- Capture ---------------------------------------------------------------
+# Defaults for operator-initiated captures. The interface is deliberately not
+# settable from the browser.
+capture:
+  wifi_interface: wlan0
+  # Measured: the DJI Mini 5 Pro beacons on channel 6 at ~4.17 Hz.
+  # See docs/ops/04-calibration.md.
+  wifi_channel: 6
+  duration_s: 120
+  label: sensor-capture
+  dir: captures
+  allow_unprivileged: false
+
+# --- API -------------------------------------------------------------------
+api:
+  # The pilot's ground position. Included by default for this deployment;
+  # see ADR-0006 and docs/research/06-legal-and-ethics.md.
+  expose_operator_location: true
+  # Path to the built UI, or "off" to serve API only. Dev uses "off" because
+  # Vite serves the app -- letting the Go binary serve a stale dist/ is the most
+  # confusing failure mode in this project.
+  ui_dir: ../ui/dist

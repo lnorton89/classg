@@ -38,6 +38,7 @@ If you read three documents, read these:
 | [0004](architecture/adr/0004-rtlsdr-scope.md) | The RTL-SDR does not detect DJI drones |
 | [0005](architecture/adr/0005-own-sniffer-vs-kismet.md) | Own capture loop rather than wrapping Kismet |
 | [0006](architecture/adr/0006-storage-turso-libsql.md) | libSQL (Turso) storage, local-first with optional sync |
+| [0007](architecture/adr/0007-configuration-tiers.md) | Bootstrap env / database settings / YAML seed |
 
 ## Planning
 

@@ -1,12 +1,13 @@
 # ClassG brand assets
 
-The approved identity uses the radar-G mark with **Manrope ExtraBold** for the wordmark.
+The ClassG identity is a passive, receive-only multi-sensor detection mark. The open traces suggest observation and correlation; they must not be redrawn as targeting, shields, or Wi-Fi.
 
-- `classg-icon.svg` — square application and hardware icon
-- `classg-logo-dark.svg` — full lockup for dark surfaces
-- `classg-logo-light.svg` — full lockup for light surfaces
-- `../favicon.svg` — browser/PWA icon
+- `classg-mark.svg` - canonical self-contained vector mark used by the UI
+- `classg-icon.svg` - standalone application and hardware icon
+- `../favicon.svg` - browser and PWA icon
 
-Core colours: Night `#061827`, Sensor Cyan `#57C8F7`, Fog `#F0F3F5`.
+The wordmark is intentionally not stored as an image. Product surfaces render `ClassG` as live Manrope text, with `Class` in Fog and `G` in Sensor Cyan.
 
-Keep the icon clear of other elements by at least one quarter of the icon's width. Do not recolour the mark to indicate alert state; status colours belong to the operational UI, not the brand.
+Core colors: Night `#031124`, Sensor Cyan `#57C8F7`, Fog `#F0F3F5`, and muted outline `#16415D`.
+
+Keep the icon clear of other elements by at least one quarter of its width. Do not recolor the mark to indicate alert state; status colors belong to the operational UI, not the brand.

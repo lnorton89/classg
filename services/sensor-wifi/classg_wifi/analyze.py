@@ -255,7 +255,11 @@ def _render_odid(add: Any, p: odid.OdidPayload) -> None:
         s = p.system
         if s.operator_lat is not None:
             add(f"    OPERATOR LOCATION: {_coord(s.operator_lat, s.operator_lon)}")
-            add("      ^ sensitive - 24h retention by default, API-hidden unless enabled")
+        else:
+            # Observed on the real aircraft: early beacons carry the 0,0 sentinel
+            # because the controller has no GPS fix yet. Absence here is normal
+            # startup behaviour, not a decode failure.
+            add("    operator location: not yet broadcast (no controller GPS fix)")
     if p.unknown_types:
         add(f"    unknown message types seen: {sorted(set(p.unknown_types))}")
 

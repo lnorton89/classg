@@ -75,9 +75,16 @@ Full rationale: [ADR-0001](adr/0001-language-split.md).
 
 ## Channel strategy
 
-**The core problem:** Remote ID beacons arrive at ~1 Hz. Uniform hopping across 13 × 2.4 GHz
-channels at 250 ms dwell gives a 3.25 s revisit — you miss most beacons and detection becomes
-probabilistic.
+**The core problem, now measured.** The design assumed ~1 Hz beacons, which would make uniform
+hopping across 13 channels a coin flip. The first real capture measured the DJI Mini 5 Pro at
+**~4.17 Hz** (240 ms median), which makes a 400 ms dwell catch a beacon ~81% of the time
+instead of ~33%.
+
+The hopper stays as designed. The rate is a property of one aircraft and firmware, not of the
+standard — F3411 only mandates 1 Hz, so a different drone can drop straight back into the hard
+regime. Weighted dwell is what absorbs that, and it now has measured evidence behind its
+primary-channel weighting rather than a guess. See
+[01-rf-landscape.md](../research/01-rf-landscape.md#the-dwell-time-problem--measured-and-smaller-than-assumed).
 
 **Approach — weighted dwell.** Allocate time proportional to the prior probability of Remote
 ID appearing on each channel:

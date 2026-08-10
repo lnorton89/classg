@@ -204,7 +204,7 @@
 
 /* The wordmark remains live text: Manrope is bundled locally through @fontsource. */
 .classg-wordmark {
-  color: var(--foreground);
+  color: #f0f3f5;
   font-family: var(--font-brand);
   font-size: 1.125rem;
   font-weight: 800;
@@ -212,6 +212,6 @@
   line-height: 1;
 }
 
-.classg-wordmark span {
-  color: var(--primary);
+.classg-wordmark__accent {
+  color: #57c8f7;
 }

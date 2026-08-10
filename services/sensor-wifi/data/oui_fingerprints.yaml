@@ -36,6 +36,11 @@ vendors:
       # before relying on it - a wrong OUI produces false positives.
       - "8c:1e:d9"
     ssid_patterns:
+      # Observed on a DJI Mini 5 Pro 2026-08-10: the SSID is literally
+      # "RID-<CTA-2063-A serial>", e.g. RID-1581F9DEC259E0296040. That embeds
+      # the manufacturer code in the SSID, so it identifies the vendor with no
+      # OUI lookup and no payload parsing at all.
+      - "rid-1581*"
       - "mavic-*"
       - "phantom-*"
       - "tello-*"
@@ -71,3 +76,13 @@ vendors:
     ssid_patterns:
       - "typhoon-*"
       - "yuneec-*"
+
+  # A Remote ID SSID whose manufacturer code we do not recognise. Reported as an
+  # unknown vendor rather than guessed at -- attributing it to DJI because DJI is
+  # the vendor we happen to have tested would manufacture false positives.
+  # Resolve the real vendor from the CTA-2063-A code in the serial, then add a
+  # proper entry above.
+  - vendor: unknown_remote_id
+    ouis: []
+    ssid_patterns:
+      - "rid-*"
