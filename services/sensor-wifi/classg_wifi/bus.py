@@ -29,8 +29,8 @@ class DetectionPublisher:
         sensor_id: str = "wifi-0",
     ) -> None:
         self.sensor_id = sensor_id
-        self._ctx = zmq.Context.instance()
-        self._sock = self._ctx.socket(zmq.PUB)
+        self._ctx: zmq.Context[zmq.Socket[bytes]] = zmq.Context.instance()
+        self._sock: zmq.Socket[bytes] = self._ctx.socket(zmq.PUB)
         self._sock.setsockopt(zmq.SNDHWM, hwm)
         # Drop immediately rather than blocking when the HWM is reached.
         self._sock.setsockopt(zmq.LINGER, 0)
