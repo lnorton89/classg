@@ -1,217 +1,249 @@
 package config
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/classg/api/internal/settings"
 )
 
-func env(pairs map[string]string) func(string) string {
-	return func(k string) string { return pairs[k] }
+func env(m map[string]string) func(string) string {
+	return func(k string) string { return m[k] }
 }
 
-// TestDefaults pins the shipped behaviour of a bare `classg-api` with no
-// environment at all, which is what an operator gets on first run.
-func TestDefaults(t *testing.T) {
-	cfg, err := Load(env(nil))
+func noEnv(string) string { return "" }
+
+// resolve builds Tier 2 from raw stored values, as main does at startup.
+func resolve(t *testing.T, db map[string]string, getenv func(string) string) *settings.Settings {
+	t.Helper()
+	s, err := settings.Resolve(db, nil, getenv)
 	if err != nil {
-		t.Fatalf("an empty environment must be valid: %v", err)
+		t.Fatalf("settings did not resolve: %v", err)
 	}
-	tests := []struct {
+	return s
+}
+
+func assemble(t *testing.T, boot map[string]string, db map[string]string) (*Config, error) {
+	t.Helper()
+	b, err := LoadBootstrap(env(boot))
+	if err != nil {
+		return nil, err
+	}
+	return Assemble(b, resolve(t, db, noEnv))
+}
+
+// --- Tier 1 -----------------------------------------------------------------
+
+func TestBootstrapDefaults(t *testing.T) {
+	b, err := LoadBootstrap(noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Listen != defaultListen {
+		t.Fatalf("Listen = %q", b.Listen)
+	}
+	// Persistence is the default. A committed .env.example once shipped
+	// memory, which disagreed with both this and Compose -- the exact bug
+	// ADR-0007 was written against.
+	if b.Store != StoreLibSQL {
+		t.Fatalf("Store = %q, want %q", b.Store, StoreLibSQL)
+	}
+	if b.SeedPath == "" {
+		t.Fatal("SeedPath must have a default")
+	}
+}
+
+func TestNoTursoCredentialsIsTheDefaultPath(t *testing.T) {
+	b, err := LoadBootstrap(noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.TursoURL != "" || b.TursoAuthToken != "" {
+		t.Fatal("a fresh install must be fully local with no network calls")
+	}
+}
+
+func TestBootstrapValidation(t *testing.T) {
+	cases := []struct {
 		name string
-		got  any
-		want any
+		env  map[string]string
+		want string
 	}{
-		{"listen", cfg.Listen, ":8081"},
-		{"store", cfg.Store, StoreLibSQL},
-		{"expose operator location", cfg.ExposeOperatorLocation, true},
-		{"track endpoint", cfg.TrackEndpoint, "tcp://127.0.0.1:5557"},
-		{"detection endpoint", cfg.DetectionEndpoint, "tcp://127.0.0.1:5556"},
-		{"heartbeat topic", cfg.HeartbeatTopic, "heartbeat."},
-		{"stale after", cfg.SensorStaleAfter, 30 * time.Second},
-		{"detection retention", cfg.RetentionDetections, 7 * 24 * time.Hour},
-		{"track retention", cfg.RetentionTracks, 90 * 24 * time.Hour},
-		{"no turso url", cfg.TursoURL, ""},
-		{"wifi interface", cfg.WifiInterface, "wlan1"},
-		{"wifi channel", cfg.WifiChannel, 6},
-		{"capture duration", cfg.CaptureDurationS, 120},
+		{"bad listen", map[string]string{"CLASSG_LISTEN": "nope"}, "CLASSG_LISTEN"},
+		{"bad port", map[string]string{"CLASSG_LISTEN": ":99999"}, "CLASSG_LISTEN"},
+		{"unknown store", map[string]string{"CLASSG_STORE": "postgres"}, "CLASSG_STORE"},
+		{"empty db path", map[string]string{"CLASSG_DB": " "}, ""},
+		{
+			"token without url",
+			map[string]string{"CLASSG_TURSO_AUTH_TOKEN": "secret"},
+			"CLASSG_TURSO_AUTH_TOKEN",
+		},
+		{
+			"bad turso scheme",
+			map[string]string{"CLASSG_TURSO_URL": "ftp://example.com"},
+			"CLASSG_TURSO_URL",
+		},
+		{
+			"bad sync interval",
+			map[string]string{"CLASSG_TURSO_SYNC_INTERVAL": "soon"},
+			"CLASSG_TURSO_SYNC_INTERVAL",
+		},
 	}
-	for _, tc := range tests {
-		if tc.got != tc.want {
-			t.Errorf("%s: got %v want %v", tc.name, tc.got, tc.want)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadBootstrap(env(tc.env))
+			if tc.want == "" {
+				// An empty CLASSG_DB falls back to the default rather than failing.
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error does not name %s: %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestBootstrapReportsAllProblems(t *testing.T) {
+	_, err := LoadBootstrap(env(map[string]string{
+		"CLASSG_LISTEN":              "nope",
+		"CLASSG_STORE":               "postgres",
+		"CLASSG_TURSO_SYNC_INTERVAL": "soon",
+	}))
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("wrong error type: %T", err)
+	}
+	if len(ve.Problems) != 3 {
+		t.Fatalf("got %d problems, want 3: %v", len(ve.Problems), ve.Problems)
+	}
+}
+
+// --- Assembly ---------------------------------------------------------------
+
+func TestAssembleDefaults(t *testing.T) {
+	cfg, err := assemble(t, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SensorStaleAfter != 30*time.Second {
+		t.Fatalf("SensorStaleAfter = %s", cfg.SensorStaleAfter)
+	}
+	if !cfg.ExposeOperatorLocation {
+		t.Fatal("operator location is included by default for this deployment (ADR-0006)")
+	}
+	if cfg.MaxHistory != 512 {
+		t.Fatalf("MaxHistory = %d", cfg.MaxHistory)
+	}
+	if cfg.RetentionDetections != 168*time.Hour {
+		t.Fatalf("RetentionDetections = %s", cfg.RetentionDetections)
+	}
+	if len(cfg.SensorRestartCommand) == 0 {
+		t.Fatal("SensorRestartCommand must have a default")
+	}
+}
+
+func TestSettingsFlowThroughToConfig(t *testing.T) {
+	cfg, err := assemble(t, nil, map[string]string{
+		"retention.tracks":             "720h",
+		"sensors.stale_after":          "45s",
+		"api.expose_operator_location": "false",
+		"capture.wifi_interface":       "wlan1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RetentionTracks != 720*time.Hour {
+		t.Fatalf("RetentionTracks = %s", cfg.RetentionTracks)
+	}
+	if cfg.SensorStaleAfter != 45*time.Second {
+		t.Fatalf("SensorStaleAfter = %s", cfg.SensorStaleAfter)
+	}
+	if cfg.ExposeOperatorLocation {
+		t.Fatal("stored false must win over the built-in true")
+	}
+	if cfg.WifiInterface != "wlan1" {
+		t.Fatalf("WifiInterface = %q", cfg.WifiInterface)
+	}
+}
+
+func TestEnvOverridesStoredSettings(t *testing.T) {
+	b, err := LoadBootstrap(noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := resolve(t, map[string]string{"retention.tracks": "720h"},
+		env(map[string]string{"CLASSG_RETENTION_TRACKS": "48h"}))
+	cfg, err := Assemble(b, s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RetentionTracks != 48*time.Hour {
+		t.Fatalf("env must win: got %s", cfg.RetentionTracks)
+	}
+	// And it must be visible, not silent -- main logs this and the API reports it.
+	if s.Source("retention.tracks") != settings.SourceEnv {
+		t.Fatal("an env override must be reported as such")
+	}
+}
+
+func TestAssembleValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		db   map[string]string
+		want string
+	}{
+		{"bad endpoint scheme", map[string]string{"bus.track_endpoint": "http://x:1"}, "bus.track_endpoint"},
+		{"tcp without host", map[string]string{"bus.detection_endpoint": "tcp://"}, "bus.detection_endpoint"},
+		{"channel out of range", map[string]string{"capture.wifi_channel": "999"}, "capture.wifi_channel"},
+		{"duration too long", map[string]string{"capture.duration_s": "99999"}, "capture.duration_s"},
+		{"history below one", map[string]string{"fusion.max_history": "0"}, "fusion.max_history"},
+		{"interface too long", map[string]string{"capture.wifi_interface": "averylonginterfacename"}, "capture.wifi_interface"},
+		{"restart command without placeholder", map[string]string{"sensors.restart_command": "systemctl restart"}, "sensors.restart_command"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := assemble(t, nil, tc.db)
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error does not name %s: %v", tc.want, err)
+			}
+		})
+	}
+}
+
+func TestBusCanBeSwitchedOff(t *testing.T) {
+	// "off" must not be treated as an invalid endpoint: a deployment with no
+	// fusion still serves, and /health reports the link down (ADR-0003).
+	for _, v := range []string{"off", "none", "disabled", ""} {
+		cfg, err := assemble(t, nil, map[string]string{"bus.track_endpoint": v})
+		if err != nil {
+			t.Fatalf("%q: %v", v, err)
+		}
+		if v != "" && cfg.TrackEndpoint != "" {
+			t.Fatalf("%q should disable the bus, got %q", v, cfg.TrackEndpoint)
 		}
 	}
 }
 
-// TestNoTursoCredentialsIsTheDefaultPath: a field deployment with no account
-// and no uplink must be a valid, unremarkable configuration.
-func TestNoTursoCredentialsIsTheDefaultPath(t *testing.T) {
-	cfg, err := Load(env(map[string]string{"CLASSG_DB": "/var/lib/classg/classg.db"}))
-	if err != nil {
-		t.Fatalf("offline configuration must be valid: %v", err)
-	}
-	if cfg.TursoURL != "" || cfg.TursoAuthToken != "" {
-		t.Fatal("no sync should be configured by default")
-	}
-}
-
-func TestValidation(t *testing.T) {
-	tests := []struct {
-		name    string
-		env     map[string]string
-		wantErr string
-	}{
-		{
-			name:    "bad listen address",
-			env:     map[string]string{"CLASSG_LISTEN": "8081"},
-			wantErr: "CLASSG_LISTEN",
-		},
-		{
-			name:    "listen port out of range",
-			env:     map[string]string{"CLASSG_LISTEN": ":99999"},
-			wantErr: "CLASSG_LISTEN",
-		},
-		{
-			name:    "unknown store",
-			env:     map[string]string{"CLASSG_STORE": "postgres"},
-			wantErr: "CLASSG_STORE",
-		},
-		{
-			name:    "non-boolean expose flag",
-			env:     map[string]string{"CLASSG_EXPOSE_OPERATOR_LOCATION": "yes please"},
-			wantErr: "CLASSG_EXPOSE_OPERATOR_LOCATION",
-		},
-		{
-			name:    "bad duration",
-			env:     map[string]string{"CLASSG_SENSOR_STALE_AFTER": "30 seconds"},
-			wantErr: "CLASSG_SENSOR_STALE_AFTER",
-		},
-		{
-			name:    "negative duration",
-			env:     map[string]string{"CLASSG_RETENTION_DETECTIONS": "-1h"},
-			wantErr: "CLASSG_RETENTION_DETECTIONS",
-		},
-		{
-			name:    "bad zmq scheme",
-			env:     map[string]string{"CLASSG_TRACK_ENDPOINT": "http://127.0.0.1:5557"},
-			wantErr: "CLASSG_TRACK_ENDPOINT",
-		},
-		{
-			name:    "tcp endpoint without a host",
-			env:     map[string]string{"CLASSG_TRACK_ENDPOINT": "tcp://"},
-			wantErr: "CLASSG_TRACK_ENDPOINT",
-		},
-		{
-			name:    "auth token without a url",
-			env:     map[string]string{"CLASSG_TURSO_AUTH_TOKEN": "secret"},
-			wantErr: "CLASSG_TURSO_AUTH_TOKEN",
-		},
-		{
-			name:    "bad turso scheme",
-			env:     map[string]string{"CLASSG_TURSO_URL": "ftp://db.turso.io"},
-			wantErr: "CLASSG_TURSO_URL",
-		},
-		{
-			name:    "malformed expected sensors",
-			env:     map[string]string{"CLASSG_EXPECTED_SENSORS": "wifi-0"},
-			wantErr: "CLASSG_EXPECTED_SENSORS",
-		},
-		{
-			name:    "unknown sensor kind",
-			env:     map[string]string{"CLASSG_EXPECTED_SENSORS": "cam-0:camera"},
-			wantErr: "sensor_kind must be wifi, sdr or ble",
-		},
-		{
-			name:    "duplicate sensor id",
-			env:     map[string]string{"CLASSG_EXPECTED_SENSORS": "wifi-0:wifi,wifi-0:wifi"},
-			wantErr: "duplicate sensor_id",
-		},
-		{
-			name:    "restart command without placeholder",
-			env:     map[string]string{"CLASSG_SENSOR_RESTART_COMMAND": "systemctl restart classg"},
-			wantErr: "CLASSG_SENSOR_RESTART_COMMAND",
-		},
-		{
-			name:    "max history below one",
-			env:     map[string]string{"CLASSG_MAX_HISTORY": "0"},
-			wantErr: "CLASSG_MAX_HISTORY",
-		},
-		{
-			name:    "invalid wifi channel",
-			env:     map[string]string{"CLASSG_WIFI_CHANNEL": "200"},
-			wantErr: "CLASSG_WIFI_CHANNEL",
-		},
-		{
-			name:    "invalid capture duration",
-			env:     map[string]string{"CLASSG_CAPTURE_DURATION_S": "0"},
-			wantErr: "CLASSG_CAPTURE_DURATION_S",
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := Load(env(tc.env))
-			if err == nil {
-				t.Fatal("want a validation error, got none")
-			}
-			if !strings.Contains(err.Error(), tc.wantErr) {
-				t.Fatalf("error %q does not mention %q", err, tc.wantErr)
-			}
-			// The message an operator reads must name the variable and be
-			// free of Go internals.
-			if strings.Contains(err.Error(), "goroutine") || strings.Contains(err.Error(), "0x") {
-				t.Fatalf("configuration errors must be readable, got %q", err)
-			}
-		})
-	}
-}
-
-// TestAllProblemsReported: an operator should be able to fix everything in one
-// pass rather than one variable per restart.
-func TestAllProblemsReported(t *testing.T) {
-	_, err := Load(env(map[string]string{
-		"CLASSG_LISTEN":           "nope",
-		"CLASSG_STORE":            "postgres",
-		"CLASSG_EXPECTED_SENSORS": "bad",
-	}))
-	if err == nil {
-		t.Fatal("want an error")
-	}
-	ve, ok := err.(*ValidationError)
-	if !ok {
-		t.Fatalf("want *ValidationError, got %T", err)
-	}
-	if len(ve.Problems) < 3 {
-		t.Fatalf("want every problem reported, got %d: %v", len(ve.Problems), ve.Problems)
-	}
-}
-
-// TestBusCanBeSwitchedOff: running the api with no bus at all is a supported
-// mode (a replay rig, a UI development server), not an error.
-func TestBusCanBeSwitchedOff(t *testing.T) {
-	for _, off := range []string{"off", "none", "disabled", "OFF"} {
-		t.Run(off, func(t *testing.T) {
-			cfg, err := Load(env(map[string]string{"CLASSG_TRACK_ENDPOINT": off}))
-			if err != nil {
-				t.Fatal(err)
-			}
-			if cfg.TrackEndpoint != "" {
-				t.Fatalf("got %q, want empty", cfg.TrackEndpoint)
-			}
-		})
-	}
-}
-
-func TestExpectedSensorsParsing(t *testing.T) {
-	cfg, err := Load(env(map[string]string{
-		"CLASSG_EXPECTED_SENSORS": " wifi-0:wifi , sdr-0:sdr ,",
-	}))
+func TestExpectedSensorsFlowThrough(t *testing.T) {
+	cfg, err := assemble(t, nil, map[string]string{"sensors.expected": "wifi-0:wifi,sdr-0:sdr"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(cfg.ExpectedSensors) != 2 {
-		t.Fatalf("got %+v", cfg.ExpectedSensors)
+		t.Fatalf("got %d sensors: %+v", len(cfg.ExpectedSensors), cfg.ExpectedSensors)
 	}
-	if cfg.ExpectedSensors[0] != (SensorDecl{"wifi-0", "wifi"}) {
-		t.Fatalf("got %+v", cfg.ExpectedSensors[0])
+	if cfg.ExpectedSensors[0].SensorID != "wifi-0" {
+		t.Fatalf("bad parse: %+v", cfg.ExpectedSensors)
 	}
 }

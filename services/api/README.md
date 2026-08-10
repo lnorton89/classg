@@ -23,9 +23,14 @@ cd ../api && go run ./cmd/classg-api
 The API automatically loads the nearest repository `.env`; an explicit process
 environment value wins. Set `CLASSG_ENV_FILE` to require a particular file.
 
-The default database is `services/api/classg.db`; set `CLASSG_STORE=memory` for
-an ephemeral development run. The API stays available when sensors or fusion
-are offline and reports that state through `/api/v1/health`.
+Configuration is tiered ([ADR-0007](../../docs/architecture/adr/0007-configuration-tiers.md)):
+`.env` carries only bootstrap and secrets, runtime settings live in the database seeded from
+`config/defaults.yaml`, and `GET /api/v1/config/settings` reports where each effective value
+came from. `CLASSG_STORE` defaults to `libsql` at `services/api/classg.db`; `memory` gives an
+ephemeral run configured entirely from the seed file.
+
+The API stays available when sensors or fusion are offline and reports that state
+through `/api/v1/health`.
 
 ## Two requirements that are not negotiable
 

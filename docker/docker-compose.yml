@@ -31,38 +31,36 @@ services:
     build:
       context: ..
       dockerfile: services/api/Dockerfile
+    # ADR-0007: Tier 1 only. Runtime settings live in the database in the
+    # classg-data volume, seeded on first run from config/defaults.yaml.
+    # Anything set here is reported by GET /config/settings as source "env" and
+    # is read-only in the UI, so an override is visible rather than mysterious.
     environment:
-      CLASSG_VERSION: ${CLASSG_VERSION:-0.1.0}
+      # --- Tier 1: bootstrap and secrets
       CLASSG_LISTEN: ${CLASSG_LISTEN:-:8081}
+      CLASSG_LOG_LEVEL: ${CLASSG_LOG_LEVEL:-info}
       CLASSG_STORE: ${CLASSG_STORE:-libsql}
       CLASSG_DB: /data/classg.db
+      CLASSG_CONFIG_SEED: /etc/classg/defaults.yaml
       CLASSG_TURSO_URL: ${CLASSG_TURSO_URL:-}
       CLASSG_TURSO_AUTH_TOKEN: ${CLASSG_TURSO_AUTH_TOKEN:-}
       CLASSG_TURSO_SYNC_INTERVAL: ${CLASSG_TURSO_SYNC_INTERVAL:-1m}
+
+      # --- Deliberate Tier 2 overrides: container topology the seed cannot know.
+      # The seed says 127.0.0.1, which is correct on a Pi and wrong here --
+      # container loopback is not the host's.
       CLASSG_TRACK_ENDPOINT: tcp://fusion:5557
       CLASSG_DETECTION_ENDPOINT: tcp://fusion:5557
-      CLASSG_TRACK_TOPIC: ${CLASSG_TRACK_TOPIC:-track.}
-      CLASSG_DETECTION_TOPIC: ${CLASSG_DETECTION_TOPIC:-detection.}
-      CLASSG_HEARTBEAT_TOPIC: ${CLASSG_HEARTBEAT_TOPIC:-heartbeat.}
-      CLASSG_FUSION_TRACK_TTL: ${CLASSG_FUSION_TRACK_TTL:-5m}
-      CLASSG_EXPOSE_OPERATOR_LOCATION: ${CLASSG_EXPOSE_OPERATOR_LOCATION:-false}
-      CLASSG_EXPECTED_SENSORS: ${CLASSG_EXPECTED_SENSORS:-wifi-0:wifi}
-      CLASSG_SENSOR_STALE_AFTER: ${CLASSG_SENSOR_STALE_AFTER:-30s}
-      CLASSG_RETENTION_DETECTIONS: ${CLASSG_RETENTION_DETECTIONS:-168h}
-      CLASSG_RETENTION_TRACKS: ${CLASSG_RETENTION_TRACKS:-2160h}
-      CLASSG_RETENTION_INTERVAL: ${CLASSG_RETENTION_INTERVAL:-1h}
-      CLASSG_MAX_HISTORY: ${CLASSG_MAX_HISTORY:-512}
-      CLASSG_LOG_LEVEL: ${CLASSG_LOG_LEVEL:-info}
+      # nginx serves the UI in this layout, so the API serves no static files.
       CLASSG_UI_DIR: "off"
       CLASSG_CAPTURE_DIR: /captures
-      CLASSG_SENSOR_RESTART_COMMAND: ${CLASSG_SENSOR_RESTART_COMMAND:-systemctl restart %s}
-      CLASSG_WIFI_INTERFACE: ${CLASSG_WIFI_INTERFACE:-wlan1}
-      CLASSG_WIFI_CHANNEL: ${CLASSG_WIFI_CHANNEL:-6}
-      CLASSG_CAPTURE_DURATION_S: ${CLASSG_CAPTURE_DURATION_S:-120}
-      CLASSG_CAPTURE_LABEL: ${CLASSG_CAPTURE_LABEL:-sensor-capture}
     volumes:
       - classg-data:/data
       - ../captures:/captures:ro
+      # Read-only: the seed is consulted on first run and whenever a setting has
+      # never been stored. Editing it later is deliberately inert -- the
+      # database is authoritative and the API is how settings change.
+      - ../config/defaults.yaml:/etc/classg/defaults.yaml:ro
     ports:
       - "${CLASSG_API_PORT:-8081}:8081"
     restart: unless-stopped

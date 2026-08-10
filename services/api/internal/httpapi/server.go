@@ -18,6 +18,7 @@ import (
 	"github.com/classg/api/internal/config"
 	"github.com/classg/api/internal/health"
 	"github.com/classg/api/internal/hub"
+	"github.com/classg/api/internal/settings"
 	"github.com/classg/api/internal/store"
 )
 
@@ -38,12 +39,14 @@ type Server struct {
 	captures *capture.Manager
 	sensors  Sensors
 	started  time.Time
+	settings *settings.Settings
 
 	mux http.Handler
 }
 
 type Options struct {
 	Config   *config.Config
+	Settings *settings.Settings
 	Store    store.Store
 	Registry *health.Registry
 	Hub      *hub.Hub
@@ -55,6 +58,7 @@ type Options struct {
 func New(opts Options) *Server {
 	s := &Server{
 		cfg:      opts.Config,
+		settings: opts.Settings,
 		store:    opts.Store,
 		registry: opts.Registry,
 		hub:      opts.Hub,
@@ -99,6 +103,8 @@ func (s *Server) routes() http.Handler {
 
 	h("GET "+BasePath+"/config/channels", s.handleGetChannels)
 	h("PUT "+BasePath+"/config/channels", s.handlePutChannels)
+	h("GET "+BasePath+"/config/settings", s.handleGetSettings)
+	h("PUT "+BasePath+"/config/settings", s.handlePutSettings)
 	h("GET "+BasePath+"/config/weights", s.handleGetWeights)
 	h("PUT "+BasePath+"/config/weights", s.handlePutWeights)
 

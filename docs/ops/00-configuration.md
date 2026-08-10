@@ -1,14 +1,64 @@
 # Configuration
 
-> **Being restructured — see [ADR-0007](../architecture/adr/0007-configuration-tiers.md).**
-> Configuration is moving to three tiers: a short bootstrap/secrets list in `.env`, runtime
-> settings in the database, and `config/defaults.yaml` as the seed. This page describes the
-> current all-environment-variable behaviour, which still works and is reported as
-> `source: "env"` after the migration.
+Three tiers, one stated precedence, and — the part that matters — every effective value
+reports where it came from. See [ADR-0007](../architecture/adr/0007-configuration-tiers.md).
 
-ClassG uses one root `.env` file for every module. Variable names are namespaced
-by service, while bus topology and API topics are shared. This keeps local runs,
-systemd deployments, Vite, and Docker Compose on the same reviewed contract.
+```
+environment  >  database  >  config/defaults.yaml  >  built-in default
+```
+
+## Tier 1 — `.env`: bootstrap and secrets only
+
+The short list needed to find and open the database, plus secrets. These cannot live in the
+database because they are what makes it reachable.
+
+| Variable | Purpose |
+|---|---|
+| `CLASSG_ENV_FILE` | selects a specific env file |
+| `CLASSG_STORE` | `libsql` (default) or `memory` |
+| `CLASSG_DB` | database path |
+| `CLASSG_LISTEN` | listen address |
+| `CLASSG_LOG_LEVEL` | `debug` · `info` · `warn` · `error` |
+| `CLASSG_CONFIG_SEED` | path to the seed file |
+| **`CLASSG_TURSO_URL`** | **secret** — omit for a purely local database |
+| **`CLASSG_TURSO_AUTH_TOKEN`** | **secret** |
+
+## Tier 2 — the database: everything else
+
+Bus endpoints and topics, retention windows, expected sensors, capture defaults, operator
+location exposure, history depth. Read at startup, changed at runtime:
+
+```bash
+curl localhost:8081/api/v1/config/settings
+curl -X PUT localhost:8081/api/v1/config/settings \
+  -d '{"retention.tracks":"720h"}'
+```
+
+Changing retention should not mean editing a file and restarting a detector that is currently
+watching the sky.
+
+## Tier 3 — `config/defaults.yaml`: the seed
+
+Seeds the database on first run, and is the **entire** configuration when
+`CLASSG_STORE=memory` — which is what makes memory mode coherent for CI and dev rather than a
+degraded special case.
+
+Editing it after first run is deliberately inert. The database is authoritative from then on.
+
+## Environment overrides are legal, but never silent
+
+Setting a Tier 2 variable in the environment still works — containers and CI need it — and it
+is reported everywhere:
+
+- `classg-api` logs a warning naming every overridden key at startup
+- `GET /config/settings` returns `"source": "env"` and lists the key in `env_overridden`
+- the UI renders those fields read-only with the reason
+- `PUT` on an env-held key returns `409` rather than storing a value the process will ignore
+
+The original problem was never that values came from several places. It was that you could not
+tell which place any given value came from — three files disagreed about the default store and
+the production checklist told operators to fix a default that was already correct in two of
+them.
 
 ## Bootstrap
 
