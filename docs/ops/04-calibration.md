@@ -1,6 +1,72 @@
 # DJI field calibration record
 
-**Status: NOT YET PERFORMED.** Fill this in during Milestone 1.
+## Confirmed from first observation — 2026-08-10
+
+Ground truth from the [OpenDroneID Android receiver](https://github.com/opendroneid/receiver-android),
+drone at ~10 m, before any capture on our own hardware.
+
+**Aircraft: DJI Mini 5 Pro.**
+
+| Property | Observed |
+|---|---|
+| **Transport** | **Wi-Fi Beacon** ✅ |
+| Protocol version | 2 (within our supported 0–2) |
+| RSSI at ~10 m | −35 dBm |
+| Transmitter OUI | `8c:1e:d9` — *not* in our fingerprint list, vendor unverified |
+| UAS ID type | Serial number (ANSI/CTA-2063-A) |
+| Serial structure | `1581` + `F` + 15 chars → manufacturer code **1581 = DJI** |
+| UA type | Helicopter_or_Multirotor |
+| Status | Airborne |
+
+**Messages broadcast:** Basic ID, Location, System/Operator.
+**Empty:** Operator ID, Self ID, Authentication.
+
+**Fields present:** geodetic altitude, height (over **takeoff**, not AGL), horizontal and
+vertical speed, horizontal/vertical/speed accuracy, timestamp.
+
+**Fields deliberately absent** (invalid sentinels — a parser that invents numbers here is
+wrong): pressure altitude, direction, barometric accuracy.
+
+**Operator location is being broadcast**, with location type `Dynamic` (live from the
+controller's GPS), including operator altitude. This is the sensitive field — see
+[retention](../architecture/data-model.md#retention).
+
+### What this settles
+
+1. **The Wi-Fi sensor is the right sensor.** Wi-Fi Beacon transport is confirmed, so the
+   AWUS036AXML will see this aircraft. No Bluetooth dongle is needed to detect *this* drone.
+2. **Class A (ASTM F3411) is the live detection path**, not Class B.
+3. The parser's handling of absent fields is correct — verified in `tests/test_real_drone.py`.
+
+### Open question: does the Mini 5 Pro emit DJI DroneID at all?
+
+The Android app decodes only standard Remote ID, so it cannot tell us whether the proprietary
+DJI vendor IE (`26:37:12`) is also present.
+
+**Prediction: probably not, over Wi-Fi.** The proprietary Wi-Fi DroneID belongs to DJI's older
+Wi-Fi-link drones. The Mini 5 Pro uses OcuSync, which carries DJI's own DroneID on the
+2.4/5.8 GHz link — [out of reach of both our radios](../architecture/adr/0004-rtlsdr-scope.md) —
+while standards-compliant Remote ID goes out over Wi-Fi Beacon.
+
+If the first capture shows Class A only and no Class B, that is the expected result and not a
+bug. It would also mean **the DJI raw-field calibration below is moot for this aircraft**, and
+the `SCALES` constants in `parsers/dji.py` stay unvalidated until a DJI Wi-Fi-mode drone is
+available. Note that in the results section rather than chasing it.
+
+### Caveat on beacon interval
+
+The app reported `Msg Δ 12.6 s`. **Do not take this as the beacon rate.** Android throttles
+Wi-Fi scans for apps (roughly 4 scans per 2 minutes), so the phone cannot observe the true
+interval. Only a monitor-mode capture can, which is exactly what
+`classg_wifi.cli analyze` measures. The ~1 Hz assumption in
+[channels.yaml](../../services/sensor-wifi/config/channels.yaml) is still untested.
+
+---
+
+## DJI proprietary field calibration
+
+**Status: NOT YET PERFORMED**, and possibly not applicable to the Mini 5 Pro — see the open
+question above.
 
 Public references disagree on units for several DJI DroneID fields, and DJI has shipped
 firmware with differing offsets. The parser in

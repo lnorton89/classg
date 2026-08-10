@@ -79,11 +79,47 @@ OPERATIONAL_STATUS = {
 # Message dataclasses
 # ---------------------------------------------------------------------------
 
+# ANSI/CTA-2063-A manufacturer codes: the first 4 characters of a serial-number
+# UAS ID. Confirmed against a real aircraft: DJI = 1581.
+#
+# This is a BETTER vendor fingerprint than a MAC OUI, because it comes from the
+# Remote ID payload itself and is therefore immune to MAC randomisation. Extend
+# as codes are confirmed - do not guess.
+CTA2063_MANUFACTURERS = {
+    "1581": "dji",
+}
+
+
 @dataclass(slots=True)
 class BasicId:
     id_type: str
     ua_type: str
     uas_id: str | None
+
+    @property
+    def manufacturer_code(self) -> str | None:
+        """CTA-2063-A manufacturer code, or None if the ID is not a valid serial.
+
+        Format: 4-char manufacturer code, 1-char hex length code (1-F), then that
+        many characters of manufacturer serial.
+        """
+        if self.id_type != "serial_ansi_cta_2063" or not self.uas_id:
+            return None
+        uid = self.uas_id
+        if len(uid) < 6:
+            return None
+        try:
+            declared = int(uid[4], 16)
+        except ValueError:
+            return None
+        if declared == 0 or len(uid) != 5 + declared:
+            return None
+        return uid[:4]
+
+    @property
+    def vendor(self) -> str | None:
+        code = self.manufacturer_code
+        return CTA2063_MANUFACTURERS.get(code) if code else None
 
 
 @dataclass(slots=True)
@@ -133,12 +169,33 @@ class OperatorId:
 class OdidPayload:
     """Everything decoded from one beacon's vendor IE."""
     protocol_version: int
-    basic_id: BasicId | None = None
+    # F3411 permits more than one Basic ID per pack - typically a serial number
+    # plus a session ID or registration. They are collected rather than
+    # overwritten; see the `basic_id` property.
+    basic_ids: list[BasicId] = field(default_factory=list)
     location: Location | None = None
     self_id: SelfId | None = None
     system: SystemMsg | None = None
     operator_id: OperatorId | None = None
     unknown_types: list[int] = field(default_factory=list)
+
+    @property
+    def basic_id(self) -> BasicId | None:
+        """The most useful Basic ID present.
+
+        A naive last-one-wins would let an empty or session-ID Basic ID erase a
+        perfectly good serial number, silently losing the aircraft's identity.
+        Preference: populated serial number > any populated ID > anything.
+        """
+        if not self.basic_ids:
+            return None
+        for b in self.basic_ids:
+            if b.uas_id and b.id_type == "serial_ansi_cta_2063":
+                return b
+        for b in self.basic_ids:
+            if b.uas_id and b.id_type != "none":
+                return b
+        return self.basic_ids[0]
 
 
 # ---------------------------------------------------------------------------
@@ -289,8 +346,7 @@ def _parse_operator_id(p: bytes) -> OperatorId:
     return OperatorId(operator_id_type=p[0], operator_id=_decode_string(p[1:21]))
 
 
-_DISPATCH: dict[int, Any] = {
-    MessageType.BASIC_ID: ("basic_id", _parse_basic_id),
+_DISPATCH: dict[int, tuple[str, Any]] = {
     MessageType.LOCATION: ("location", _parse_location),
     MessageType.SELF_ID: ("self_id", _parse_self_id),
     MessageType.SYSTEM: ("system", _parse_system),
@@ -318,6 +374,11 @@ def parse_message(msg: bytes, payload: OdidPayload) -> None:
 
     payload.protocol_version = version
     body = msg[1:]
+
+    # Basic ID accumulates; everything else is single-valued.
+    if msg_type == MessageType.BASIC_ID:
+        payload.basic_ids.append(_parse_basic_id(body))
+        return
 
     entry = _DISPATCH.get(msg_type)
     if entry is None:

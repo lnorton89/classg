@@ -226,6 +226,13 @@ def _render_odid(add: Any, p: odid.OdidPayload) -> None:
         add(f"    serial:   {p.basic_id.uas_id}")
         add(f"    id_type:  {p.basic_id.id_type}")
         add(f"    ua_type:  {p.basic_id.ua_type}")
+        code = p.basic_id.manufacturer_code
+        if code:
+            vendor = p.basic_id.vendor or "unknown - add to CTA2063_MANUFACTURERS"
+            add(f"    mfr code: {code} ({vendor})")
+    if len(p.basic_ids) > 1:
+        add(f"    ({len(p.basic_ids)} Basic ID messages present; "
+            f"types: {[b.id_type for b in p.basic_ids]})")
     if p.location:
         loc = p.location
         add(f"    status:   {loc.status}")
