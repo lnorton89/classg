@@ -113,6 +113,29 @@ usbipd attach --wsl --busid 2-9
 - **WSL survives and `iw dev` shows an interface** → you win, carry on to the capture.
 - **WSL dies instantly** → that is #12288. No known fix. Switch to the Pi or a live USB.
 
+### Then load the driver — WSL will not do it for you
+
+**Confirmed 2026-08-10:** the custom kernel worked, WSL survived the attach (no #12288 crash),
+the adapter enumerated as `Bus 002 Device 002: ID 0e8d:7961`, and firmware was in place — but
+**no wireless interface appeared, because no module was loaded**.
+
+WSL does not run udev the way a normal distro does, so a usbip-attached device never triggers
+module autoloading. The driver just sits on disk, unloaded.
+
+```bash
+sudo modprobe mt7921u
+```
+
+`scripts/setup-monitor.sh` and `scripts/first-capture.sh` now do this automatically, and
+`check-capture-env.sh` distinguishes *driver missing* from *driver present but not loaded*
+from *loaded but probe failed*.
+
+To make it stick across restarts:
+
+```bash
+echo mt7921u | sudo tee /etc/modules-load.d/classg.conf
+```
+
 Then:
 
 ```bash
