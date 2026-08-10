@@ -163,9 +163,13 @@ calibration turns out poor.
 | **Operator location** | **24 hours** | Sensitive; see [legal-and-ethics.md](../research/06-legal-and-ethics.md#operator-location-is-the-sharp-edge) |
 | Raw PCAP / IQ captures | manual only | Never automatic; capture deliberately, delete when done |
 
-Operator location lives in a **separate table** with its own retention job, so it can be
+Operator location lives in a **separate store** with its own retention job, so it can be
 purged, redacted, or disabled independently of everything else. The API omits it unless
 `CLASSG_EXPOSE_OPERATOR_LOCATION=true` is explicitly set.
+
+Since storage moved to libSQL with optional cloud sync ([ADR-0006](adr/0006-storage-turso-libsql.md)),
+that separation is also a **privacy boundary**: operator positions are excluded from sync
+unconditionally and never leave the device. There is no flag to enable it.
 
 ---
 
