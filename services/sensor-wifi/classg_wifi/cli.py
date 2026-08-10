@@ -76,6 +76,26 @@ def cmd_capture(args: argparse.Namespace) -> int:
     return subprocess.call(cmd)
 
 
+def cmd_analyze(args: argparse.Namespace) -> int:
+    """Milestone 0: turn a capture into channel, interval, and calibration data."""
+    try:
+        from .analyze import analyze_pcap, render_report, summarize_channels
+    except ImportError:
+        log.error("analyze requires scapy: pip install '.[replay]'")
+        return 1
+
+    result = analyze_pcap(args.pcap)
+    print(render_report(result))
+
+    channels = summarize_channels(result)
+    if channels:
+        print("\nDrone beacons per channel (evidence for config/channels.yaml):")
+        for ch, n in sorted(channels.items(), key=lambda kv: -kv[1]):
+            print(f"  ch {ch:<4} {n}")
+
+    return 0 if result.drones else 1
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     import yaml
 
@@ -133,6 +153,10 @@ def main(argv: list[str] | None = None) -> int:
     p_rep.add_argument("pcap")
     p_rep.add_argument("--fingerprints", default="data/oui_fingerprints.yaml")
     p_rep.set_defaults(func=cmd_replay)
+
+    p_ana = sub.add_parser("analyze", help="Milestone 0 report: channel, interval, calibration")
+    p_ana.add_argument("pcap")
+    p_ana.set_defaults(func=cmd_analyze)
 
     p_run = sub.add_parser("run", help="live capture and publish")
     p_run.add_argument("--iface", default="wlan1")

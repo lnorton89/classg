@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import math
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 DJI_OUI = b"\x26\x37\x12"
 
@@ -75,6 +75,14 @@ class DjiTelemetry:
     home_lon: float | None
     product_type: int | None
     uuid: str | None
+
+    # Unscaled integers exactly as they appeared on the wire.
+    #
+    # Retained specifically for calibration: the SCALES above are hypotheses, and
+    # resolving them means comparing a raw value against a known ground truth
+    # ("app said 10 m, raw said 100 -> decimetres"). Without the raw value that
+    # comparison is impossible. See docs/ops/04-calibration.md.
+    raw: dict[str, int | None] = field(default_factory=dict)
 
     # Decoded state_info bits. Interpretation is partially inferred; treat as hints.
     @property
@@ -222,6 +230,20 @@ def _parse_telemetry(r: _Reader) -> DjiTelemetry:
         home_lon=_angle(raw_home_lon),
         product_type=product_type,
         uuid=uuid,
+        raw={
+            "altitude": altitude,
+            "height": height,
+            "v_north": v_north,
+            "v_east": v_east,
+            "v_up": v_up,
+            "pitch": pitch,
+            "roll": roll,
+            "yaw": yaw,
+            "lat": raw_lat,
+            "lon": raw_lon,
+            "operator_lat": raw_op_lat,
+            "operator_lon": raw_op_lon,
+        },
     )
 
 
