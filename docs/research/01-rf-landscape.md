@@ -117,13 +117,34 @@ highest-leverage tuning decision in the whole system.
 | BT4 legacy adv | 2402 / 2426 / 2480 MHz | ~1 Hz |
 | BT5 Coded PHY | Primary adv channels + secondary data channels | ~1 Hz |
 
-**The dwell-time problem.** Remote ID beacons arrive at roughly 1 Hz. Naive channel hopping
-across 13 × 2.4 GHz channels at 250 ms dwell means a 3.25 s cycle — you will statistically miss
-the majority of beacons and detection becomes a coin flip.
+**The dwell-time problem — measured, and smaller than assumed.**
 
-ClassG's answer is **weighted dwell**: spend the large majority of time on the channels where
-Remote ID actually lives, and sweep the rest opportunistically. See
-[docs/architecture/overview.md#channel-strategy](../architecture/overview.md#channel-strategy).
+The design was built on "beacons arrive at roughly 1 Hz", taken from the standard's *minimum*
+rate. The first real capture says otherwise:
+
+| Measured, DJI Mini 5 Pro, 2026-08-10 | |
+|---|---|
+| Median beacon interval | **240 ms (~4.17 Hz)** |
+| 174 of 175 intervals | under 700 ms |
+| Sustained average over 58 s | 3.0 beacons/s |
+| Pack contents | 3 messages (Basic ID + Location + System), 83-byte IE |
+
+That is 3–4× more forgiving than designed for. Treating beacon arrivals as Poisson with a
+400 ms dwell:
+
+| Beacon rate | Expected beacons per 400 ms dwell | P(catch ≥1) |
+|---|---|---|
+| 1 Hz (assumed) | 0.4 | 33% |
+| **4.17 Hz (measured)** | **1.67** | **81%** |
+
+So a full 13-channel sweep at 400 ms dwell — a ~7 s cycle including hop latency — still catches
+the aircraft on nearly every visit. **The weighted-dwell machinery was solving a harder problem
+than actually exists.**
+
+Keep it anyway: it costs nothing, it is measured rather than assumed, and the rate is a
+property of *this* aircraft and firmware. A different drone emitting at the standard's 1 Hz
+minimum puts you straight back in the hard regime, and the weighting is what absorbs that.
+See [overview.md#channel-strategy](../architecture/overview.md#channel-strategy).
 
 ---
 

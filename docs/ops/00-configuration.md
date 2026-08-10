@@ -1,5 +1,11 @@
 # Configuration
 
+> **Being restructured — see [ADR-0007](../architecture/adr/0007-configuration-tiers.md).**
+> Configuration is moving to three tiers: a short bootstrap/secrets list in `.env`, runtime
+> settings in the database, and `config/defaults.yaml` as the seed. This page describes the
+> current all-environment-variable behaviour, which still works and is reported as
+> `source: "env"` after the migration.
+
 ClassG uses one root `.env` file for every module. Variable names are namespaced
 by service, while bus topology and API topics are shared. This keeps local runs,
 systemd deployments, Vite, and Docker Compose on the same reviewed contract.
@@ -33,14 +39,34 @@ Windows/WSL Docker layout reverses ownership: fusion listens on Compose's
 published port and the WSL sensor connects to `host.docker.internal`. This avoids
 assuming that container loopback and WSL loopback are the same network.
 
-## Reproducible commands
+## Development loop
+
+```bash
+make dev            # fusion + api + vite, native, hot reload, no rebuilds
+make dev-ui-only    # vite alone against MSW mocks, no Go at all
+```
+
+`make dev` runs the three processes directly rather than in containers. Containers are the
+deployment story; for editing they cost either an image rebuild or a bind mount whose inotify
+events do not reliably cross the Windows/WSL boundary, so file watchers silently miss changes.
+
+Two details that remove the rebuild step entirely:
+
+- The API runs with `CLASSG_UI_DIR=off`, so **Vite serves the UI**, not the Go binary. Serving
+  a stale `dist/` is the most confusing failure here — you edit a component, reload, and see
+  yesterday's build.
+- Go reloads automatically if [`air`](https://github.com/air-verse/air) is installed
+  (`go install github.com/air-verse/air@latest`); otherwise it falls back to `go run` and you
+  restart by hand. `services/api/.air.toml` is committed.
+
+Use `make compose-up` when you specifically want to exercise the container path.
+
+## Other commands
 
 ```bash
 make setup
 make test
 make build-ui
-make dev-api
-make dev-ui
 make compose-up
 ```
 
@@ -57,9 +83,13 @@ instead of reporting a false success.
 
 ## Production checklist
 
-- Change `CLASSG_STORE=memory` to `libsql`.
+- **Confirm `CLASSG_STORE=libsql`.** The Go default and the Compose default are both `libsql`;
+  a committed `.env.example` shipped `memory`, so a `.env` copied from it silently disagreed
+  with both. Persistence is the default and `memory` is for CI and dev only.
 - Use an absolute `CLASSG_DB` path on persistent storage.
-- Keep `CLASSG_EXPOSE_OPERATOR_LOCATION=false` unless disclosure is deliberate.
+- `CLASSG_EXPOSE_OPERATOR_LOCATION` defaults to **true** for this deployment
+  ([ADR-0006](../architecture/adr/0006-storage-turso-libsql.md)). Set it `false` if you
+  redeploy somewhere the pilot's ground position should not be shown.
 - Declare every expected sensor in `CLASSG_EXPECTED_SENSORS` so a sensor that
   never starts appears as unhealthy rather than disappearing.
 - Keep the ZMQ endpoints bound to loopback or a trusted private network.

@@ -1,0 +1,27 @@
+# Go hot reload for the api service. Used by ./scripts/dev.sh when `air` is
+# installed:  go install github.com/air-verse/air@latest
+#
+# Optional -- dev.sh falls back to plain `go run` without it.
+
+root = "."
+tmp_dir = ".air"
+
+[build]
+  cmd = "go build -o ./.air/classg-api ./cmd/classg-api"
+  bin = "./.air/classg-api"
+  include_ext = ["go"]
+  exclude_dir = [".air", "testdata"]
+  exclude_regex = ["_test\\.go"]
+  # A save mid-keystroke can fire the watcher on a file that does not compile.
+  # Waiting briefly collapses a burst of saves into one rebuild.
+  delay = 300
+  stop_on_error = false
+  # Surface build failures in the terminal rather than silently keeping the old
+  # binary running -- a stale binary that looks live is the worst outcome here.
+  log = "build-errors.log"
+
+[misc]
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = false

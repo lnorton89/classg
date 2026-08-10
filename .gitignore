@@ -49,3 +49,6 @@ dist/
 .env.*.local
 !.env.example
 !**/.env.example
+
+# Temp Folder
+tmp/

@@ -62,6 +62,43 @@ Wi-Fi scans for apps (roughly 4 scans per 2 minutes), so the phone cannot observ
 interval. Only a monitor-mode capture can, which is exactly what
 `classg_wifi.cli analyze` measures. The PCAP measured a 240 ms median interval across 175
 deltas, approximately 4.17 Hz. The prior ~1 Hz assumption is wrong for this aircraft.
+
+Distribution, so the median is not mistaken for a clean 4 Hz metronome:
+
+| Bucket | Count |
+|---|---|
+| 50–150 ms | 58 |
+| 150–350 ms | 115 |
+| 350–700 ms | 1 |
+| >1.5 s | 1 (a 21 s gap during power-up / GPS acquisition) |
+
+174 of 175 intervals are under 700 ms; sustained average over the 58 s capture is 3.0
+beacons/s. Design impact is in
+[01-rf-landscape.md](../research/01-rf-landscape.md#the-dwell-time-problem--measured-and-smaller-than-assumed):
+a 400 ms dwell catches a beacon ~81% of the time rather than ~33%, so channel hopping is far
+more forgiving than the design assumed. The weighting stays, because F3411 only mandates 1 Hz
+and a different aircraft can put us straight back in the hard regime.
+
+### Also observed: the SSID embeds the serial
+
+The beacon SSID is literally **`RID-1581F0000000FAKE0001`** — the `RID-` prefix followed by the
+CTA-2063-A serial. That identifies the vendor with no OUI lookup and no payload parsing at all,
+and it survives MAC randomisation.
+
+Added to `data/oui_fingerprints.yaml` as `rid-1581*` → DJI. A generic `rid-*` pattern maps to
+`unknown_remote_id` rather than DJI: attributing every Remote ID SSID to the one vendor we
+happen to have tested would manufacture exactly the false positives Class C is already prone
+to.
+
+### Message pack contents
+
+Each 83-byte IE carries a 3-message pack: Basic ID + Location + System. Confirmed against real
+bytes in `tests/test_vectors_real.py`.
+
+**Operator location is not in every beacon.** The earliest beacons decode to
+`operator_lat=None` — the controller had no GPS fix yet, so the System message carries the 0,0
+sentinel. A missing operator position is normal startup behaviour, not a decode failure and not
+only a consequence of the redaction flag. The UI must treat it as ordinary.
 Channel 6 was confirmed with 176 drone beacons.
 
 ---
