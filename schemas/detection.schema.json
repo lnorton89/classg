@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://classg.local/schemas/detection.schema.json",
+  "title": "Detection",
+  "description": "A single observation by a single sensor. Immutable. Contains no inference about identity, tracking, or threat - those are fusion concerns.",
+  "type": "object",
+  "required": ["schema_version", "detection_id", "ts", "sensor_id", "sensor_kind", "detection_class"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "detection_id": {
+      "type": "string",
+      "description": "ULID - lexicographically sortable by creation time",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "ts": { "type": "string", "format": "date-time", "description": "RFC3339 UTC, millisecond precision" },
+    "sensor_id": { "type": "string", "minLength": 1, "examples": ["wifi-0", "sdr-0", "ble-0"] },
+    "sensor_kind": { "enum": ["wifi", "sdr", "ble"] },
+    "detection_class": {
+      "enum": ["A", "B", "C", "D", "E", "F", "G", "H"],
+      "description": "A=F3411 WiFi RID, B=DJI DroneID, C=OUI/SSID fingerprint, D=ADS-B, E=control link, F=analog FPV, G=BLE RID, H=GNSS interference"
+    },
+
+    "rf": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "freq_hz": { "type": "integer", "minimum": 0 },
+        "channel": { "type": ["integer", "null"] },
+        "rssi_dbm": { "type": ["number", "null"], "minimum": -130, "maximum": 20 },
+        "bandwidth_hz": { "type": ["integer", "null"], "minimum": 0 },
+        "snr_db": { "type": ["number", "null"] }
+      }
+    },
+
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "serial": { "type": ["string", "null"], "maxLength": 64 },
+        "mac": { "type": ["string", "null"], "pattern": "^([0-9a-f]{2}:){5}[0-9a-f]{2}$" },
+        "id_type": {
+          "enum": ["none", "serial_ansi_cta_2063", "caa_registration", "utm_uuid", "specific_session", null]
+        },
+        "ua_type": {
+          "enum": ["undeclared", "aeroplane", "multirotor", "gyroplane", "hybrid_vtol", "ornithopter",
+                   "glider", "kite", "free_balloon", "captive_balloon", "airship", "parachute",
+                   "rocket", "tethered_powered", "ground_obstacle", "other", null]
+        },
+        "operator_id": { "type": ["string", "null"], "maxLength": 64 },
+        "self_id": { "type": ["string", "null"], "maxLength": 64 },
+        "vendor_hint": { "type": ["string", "null"], "examples": ["dji", "parrot", "autel", "skydio"] }
+      }
+    },
+
+    "position": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "Aircraft position. Null when not reported. lat/lon of exactly 0,0 MUST be normalised to null (it means no GPS fix, not the Gulf of Guinea).",
+      "properties": {
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lon": { "type": "number", "minimum": -180, "maximum": 180 },
+        "alt_geodetic_m": { "type": ["number", "null"] },
+        "alt_pressure_m": { "type": ["number", "null"] },
+        "height_agl_m": { "type": ["number", "null"] },
+        "h_accuracy_m": { "type": ["number", "null"] },
+        "v_accuracy_m": { "type": ["number", "null"] }
+      },
+      "required": ["lat", "lon"]
+    },
+
+    "kinematics": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "speed_mps": { "type": ["number", "null"], "minimum": 0 },
+        "track_deg": { "type": ["number", "null"], "minimum": 0, "exclusiveMaximum": 360 },
+        "vertical_speed_mps": { "type": ["number", "null"] }
+      }
+    },
+
+    "operator": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "SENSITIVE. Operator ground position from F3411 System or DJI 0x10. Subject to separate short retention; omitted by the API unless explicitly enabled.",
+      "properties": {
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lon": { "type": "number", "minimum": -180, "maximum": 180 },
+        "alt_m": { "type": ["number", "null"] }
+      },
+      "required": ["lat", "lon"]
+    },
+
+    "signal_features": {
+      "type": ["object", "null"],
+      "description": "Class E/F only. Envelope characterisation for control links and analog video. Deliberately does NOT include demodulated payload - see legal-and-ethics.md.",
+      "additionalProperties": false,
+      "properties": {
+        "burst_rate_hz": { "type": ["number", "null"] },
+        "burst_duration_us": { "type": ["number", "null"] },
+        "duty_cycle": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "hop_count": { "type": ["integer", "null"] },
+        "occupied_bw_hz": { "type": ["integer", "null"] },
+        "protocol_hint": { "type": ["string", "null"], "examples": ["elrs_900", "crossfire", "rfd900", "fpv_analog_1g2"] }
+      }
+    },
+
+    "adsb": {
+      "type": ["object", "null"],
+      "description": "Class D only.",
+      "additionalProperties": false,
+      "properties": {
+        "icao": { "type": "string" },
+        "callsign": { "type": ["string", "null"] },
+        "alt_ft": { "type": ["integer", "null"] },
+        "ground_speed_kt": { "type": ["number", "null"] }
+      },
+      "required": ["icao"]
+    },
+
+    "raw": {
+      "type": ["object", "null"],
+      "description": "Source bytes, retained so parser fixes can be applied retroactively.",
+      "additionalProperties": false,
+      "properties": {
+        "encoding": { "const": "base64" },
+        "bytes": { "type": "string" },
+        "parser": { "type": "string", "examples": ["odid/1.2", "dji/0x10"] }
+      },
+      "required": ["encoding", "bytes", "parser"]
+    }
+  }
+}

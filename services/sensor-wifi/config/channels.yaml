@@ -1,0 +1,45 @@
+# Weighted channel plan for sensor-wifi.
+#
+# Remote ID beacons arrive at ~1 Hz. Uniform hopping across 13 channels at 250 ms
+# dwell gives a 3.25 s revisit and misses most beacons, so time is allocated in
+# proportion to the prior probability of Remote ID appearing on each channel.
+#
+# These weights are a STARTING HYPOTHESIS. Milestone 0 records which channel your
+# DJI actually uses - update `weight` accordingly before tuning anything else.
+#
+# Measured mt7921u hop latency is ~140 ms, so a 400 ms dwell is really ~400 ms of
+# listening plus 140 ms of blind retune. Watch `listening_fraction` in the hopper's
+# efficiency report; if it drops below ~0.6, increase dwell or trim the sweep tier.
+
+channels:
+  # --- Primary: where DJI Wi-Fi Remote ID is most commonly observed -----------
+  - { channel: 6,   freq_mhz: 2437, weight: 40.0 }
+
+  # --- Secondary: other common non-overlapping choices ------------------------
+  - { channel: 1,   freq_mhz: 2412, weight: 15.0 }
+  - { channel: 11,  freq_mhz: 2462, weight: 15.0 }
+
+  # --- Sweep: catch non-standard configurations -------------------------------
+  - { channel: 2,   freq_mhz: 2417, weight: 1.7 }
+  - { channel: 3,   freq_mhz: 2422, weight: 1.7 }
+  - { channel: 4,   freq_mhz: 2427, weight: 1.7 }
+  - { channel: 5,   freq_mhz: 2432, weight: 1.7 }
+  - { channel: 7,   freq_mhz: 2442, weight: 1.7 }
+  - { channel: 8,   freq_mhz: 2447, weight: 1.7 }
+  - { channel: 9,   freq_mhz: 2452, weight: 1.7 }
+  - { channel: 10,  freq_mhz: 2457, weight: 1.7 }
+  - { channel: 12,  freq_mhz: 2467, weight: 1.05 }
+  - { channel: 13,  freq_mhz: 2472, weight: 1.05 }
+
+  # --- 5 GHz: UNII-1 and UNII-3 subset ----------------------------------------
+  # Region-dependent. DFS channels are omitted deliberately: they add dwell cost
+  # for little return, and radar-detect behaviour varies by driver.
+  - { channel: 36,  freq_mhz: 5180, weight: 3.0 }
+  - { channel: 40,  freq_mhz: 5200, weight: 2.0 }
+  - { channel: 44,  freq_mhz: 5220, weight: 3.0 }   # Wi-Fi NAN social channel
+  - { channel: 48,  freq_mhz: 5240, weight: 2.0 }
+  - { channel: 149, freq_mhz: 5745, weight: 3.0 }   # Wi-Fi NAN social channel
+  - { channel: 157, freq_mhz: 5785, weight: 2.0 }
+
+# 6 GHz is deliberately absent: the US regdb sets NO-IR, which disables passive
+# listening, and no drone broadcasts Remote ID there.

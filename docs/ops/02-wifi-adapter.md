@@ -1,0 +1,143 @@
+# ALFA AWUS036AXML setup
+
+**Read this before plugging the adapter in.** There are two ways to make this device stop
+working that are easy to trigger and annoying to diagnose.
+
+## The two landmines
+
+### 1. Never set active monitor mode
+
+```bash
+sudo iw dev wlan1 set monitor active     # ← DO NOT. Wedges the driver.
+```
+
+Active monitor on `mt7921u` is a known driver bug that stops the adapter dead, usually
+requiring a physical replug.
+([mt76 #839](https://github.com/openwrt/mt76/issues/839),
+[USB-WiFi #275](https://github.com/morrownr/USB-WiFi/issues/275))
+
+Passive monitor is all ClassG needs — we only receive.
+
+### 2. Disable the adapter's Bluetooth
+
+On kernels 6.6+, the MT7921's Bluetooth sharing the USB device with `mt7921u` causes sporadic
+Wi-Fi crashes. Wi-Fi is the primary mission, so give it the whole device:
+
+```bash
+echo 'install btusb /bin/false' | sudo tee /etc/modprobe.d/classg-no-btusb.conf
+sudo reboot
+```
+
+Use a **separate** nRF52840 dongle for Bluetooth Remote ID (Milestone 4). Do not try to make
+one device do both.
+
+---
+
+## Setup
+
+### Verify kernel and firmware
+
+`mt7921u` is in-kernel since **Linux 5.18**:
+
+```bash
+uname -r
+```
+
+Install firmware blobs if missing:
+
+```bash
+sudo apt update && sudo apt install -y firmware-misc-nonfree linux-firmware
+```
+
+Plug in and confirm:
+
+```bash
+dmesg | grep -i mt7921
+lsusb | grep -i 0e8d
+iw dev
+```
+
+You want `mt7921u` bound and firmware loaded. If the driver loads but the adapter never
+initialises, firmware blobs are missing — that is the usual cause.
+
+### Enter monitor mode
+
+```bash
+sudo airmon-ng check kill                # stop NetworkManager/wpa_supplicant interference
+sudo ip link set wlan1 down
+sudo iw dev wlan1 set type monitor       # passive — no 'active'
+sudo ip link set wlan1 up
+sudo iw dev wlan1 set channel 6
+```
+
+Verify:
+
+```bash
+iw dev wlan1 info      # expect: type monitor, channel 6 (2437 MHz)
+```
+
+### Persist across reboots
+
+`scripts/setup-monitor.sh` handles this idempotently. Wire it into the sensor's systemd unit
+as `ExecStartPre=` so monitor mode is re-established after a replug or restart.
+
+---
+
+## First capture — do this before writing any code
+
+Capture your DJI powering up. This is Milestone 0's exit criterion and the ground truth
+everything else is built against.
+
+```bash
+sudo tcpdump -i wlan1 -w captures/dji-first-flight.pcap "type mgt subtype beacon"
+```
+
+Power on the drone, let it acquire GPS, hover briefly, land. Then inspect in Wireshark:
+
+- Filter `wlan.tag.number == 221` for vendor-specific IEs
+- Look for OUI `26:37:12` (DJI DroneID) and `fa:0b:bc` (ASTM F3411 Remote ID)
+- **Record the channel** the drone actually beacons on
+- **Record the beacon interval** — validates the ~1 Hz assumption driving channel dwell
+
+Write these into `docs/ops/04-calibration.md`.
+
+---
+
+## Channel behaviour
+
+```bash
+sudo iw dev wlan1 set channel 6          # 2.4 GHz
+sudo iw dev wlan1 set freq 5180          # 5 GHz by frequency
+```
+
+Measured channel-hop latency on this chipset is around **140 ms**, which is a meaningful
+fraction of the 1 s beacon interval and is exactly why weighted dwell matters. Factor hop
+latency into the dwell budget — a 250 ms dwell is really ~110 ms of listening.
+
+### 6 GHz — ignore it
+
+The US regulatory database sets `NO-IR` for 6 GHz, which disables passive listening. Drones do
+not broadcast Remote ID there. Not worth the regdb fight.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Adapter enumerates, never initialises | Missing firmware | `apt install firmware-misc-nonfree linux-firmware` |
+| Monitor mode set, zero frames | NetworkManager took the interface | `airmon-ng check kill` |
+| Adapter dead after a mode change | Active monitor was set | Physical replug; never set active again |
+| Random disappearance under load | USB power brownout | Powered hub, or better PSU; check `dmesg` for USB resets |
+| Sporadic Wi-Fi crashes | BT/Wi-Fi USB conflict | Disable `btusb` as above |
+| Works alone, fails with the SDR plugged in | USB bandwidth/power contention | Separate USB controllers (Pi 5), or powered hub |
+| No 6 GHz channels | `NO-IR` in regdb | Expected. Ignore. |
+
+## Sanity check before blaming your code
+
+```bash
+sudo tcpdump -i wlan1 -c 20 -e "type mgt subtype beacon"
+```
+
+If this shows nothing, the problem is the adapter or monitor mode — not the parser. Always
+establish that frames are arriving before debugging decode logic.

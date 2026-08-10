@@ -1,0 +1,61 @@
+# Wi-Fi vendor fingerprints -> detection Class C.
+#
+# WEAKEST evidence class in the system (confidence weight 0.10 in fusion). It exists
+# to catch drones broadcasting no Remote ID at all, and costs nothing on top of
+# frames already being captured.
+#
+# Two known failure modes, both handled in code:
+#   - MAC randomisation: locally-administered addresses are skipped entirely
+#     (fingerprint.py::_is_locally_administered), since the OUI is meaningless.
+#   - OUI reassignment / non-drone products from the same vendor: a DJI OUI could
+#     belong to a controller, a gimbal, or a handheld camera. Never a confirmation
+#     on its own.
+#
+# SSID patterns are stronger than OUIs and are checked first. Patterns are
+# fnmatch-style and matched case-insensitively.
+#
+# Verify additions against https://standards-oui.ieee.org/ before adding them.
+
+vendors:
+  - vendor: dji
+    ouis:
+      - "60:60:1f"
+      - "34:d2:62"
+      - "48:1c:b9"
+      - "e4:7a:2c"
+    ssid_patterns:
+      - "mavic-*"
+      - "phantom-*"
+      - "tello-*"
+      - "spark-*"
+      - "dji-*"
+      - "air-*"
+      - "mini-*"
+
+  - vendor: parrot
+    ouis:
+      - "90:03:b7"
+      - "00:12:1c"
+      - "a0:14:3d"
+    ssid_patterns:
+      - "bebop-*"
+      - "anafi-*"
+      - "ardrone*"
+      - "disco-*"
+
+  - vendor: autel
+    ouis: []
+    ssid_patterns:
+      - "autel-*"
+      - "evo-*"
+
+  - vendor: skydio
+    ouis: []
+    ssid_patterns:
+      - "skydio-*"
+
+  - vendor: yuneec
+    ouis: []
+    ssid_patterns:
+      - "typhoon-*"
+      - "yuneec-*"
