@@ -47,7 +47,8 @@ function SensorsView() {
     },
   })
 
-  const activeTracks = tracksData?.tracks.filter((track) => track.state !== 'CLOSED').length ?? 0
+  const activeTracks =
+    tracksData?.tracks.filter((track) => track.state !== 'CLOSED').length ?? 0
   const skyState = computeSkyState(health, activeTracks)
   const sensors = sensorsData ?? health?.sensors ?? []
   const restartError = restart.error instanceof ApiError ? restart.error : null
@@ -81,8 +82,8 @@ function SensorsView() {
             Sensor controls
           </h2>
           <p className="text-muted-foreground text-xs">
-            Capture interface and defaults are loaded from the root <code>.env</code> through the
-            API. Runtime limitations are shown on the affected sensor.
+            Capture interface and defaults are loaded from the root <code>.env</code> through
+            the API. Runtime limitations are shown on the affected sensor.
           </p>
         </div>
 
@@ -136,7 +137,11 @@ function SensorsView() {
         <CardContent>
           <dl>
             <DataRow label="Status" value={health?.status ?? '-'} mono />
-            <DataRow label="Uptime" value={health ? formatDuration(health.uptime_s) : '-'} mono />
+            <DataRow
+              label="Uptime"
+              value={health ? formatDuration(health.uptime_s) : '-'}
+              mono
+            />
             <DataRow label="Version" value={health?.version ?? '-'} mono />
           </dl>
           <p className="text-muted-foreground mt-3 text-xs leading-relaxed">

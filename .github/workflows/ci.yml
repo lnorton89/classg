@@ -45,7 +45,11 @@ jobs:
           cache-dependency-path: services/sensor-wifi/pyproject.toml
 
       - name: Install
-        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
+        # Includes the replay extra (scapy): analyze, replay and the real-capture
+        # vector tests are core functionality, not optional tooling. Installing
+        # only [dev] makes those tests fail on import rather than skip, which
+        # reads as a broken parser instead of a missing dependency.
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[dev,replay]'
 
       - name: Lint (ruff)
         run: python -m ruff check .
