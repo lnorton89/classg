@@ -100,6 +100,11 @@ def from_odid(sensor_id: str, beacon: Beacon, payload: OdidPayload,
         identity["serial"] = payload.basic_id.uas_id
         identity["id_type"] = payload.basic_id.id_type
         identity["ua_type"] = payload.basic_id.ua_type
+        # Vendor from the CTA-2063-A manufacturer code. Stronger than an OUI
+        # match: it comes from the Remote ID payload, so MAC randomisation
+        # cannot defeat it.
+        if payload.basic_id.vendor:
+            identity["vendor_hint"] = payload.basic_id.vendor
     if payload.operator_id:
         identity["operator_id"] = payload.operator_id.operator_id
     if payload.self_id:

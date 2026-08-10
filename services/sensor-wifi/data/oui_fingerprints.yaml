@@ -16,6 +16,12 @@
 #
 # Verify additions against https://standards-oui.ieee.org/ before adding them.
 
+# NOTE: for aircraft that broadcast ASTM F3411 Remote ID, vendor identification
+# now comes from the CTA-2063-A manufacturer code embedded in the serial number
+# (parsers/odid.py::CTA2063_MANUFACTURERS). That is strictly better than an OUI
+# match -- it is carried in the payload, so MAC randomisation cannot defeat it.
+# This file is the fallback for aircraft broadcasting no Remote ID at all.
+
 vendors:
   - vendor: dji
     ouis:
@@ -23,6 +29,12 @@ vendors:
       - "34:d2:62"
       - "48:1c:b9"
       - "e4:7a:2c"
+      # Observed 2026-08-10 transmitting Remote ID from a DJI Mini 5 Pro.
+      # The CTA-2063-A serial confirmed DJI (mfr code 1581); the OUI itself
+      # could NOT be confirmed against the IEEE registry, so this entry rests
+      # on a single observation. Verify at https://standards-oui.ieee.org/
+      # before relying on it - a wrong OUI produces false positives.
+      - "8c:1e:d9"
     ssid_patterns:
       - "mavic-*"
       - "phantom-*"
