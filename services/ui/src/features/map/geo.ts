@@ -91,6 +91,9 @@ export function boundsOf(points: { lat: number; lon: number }[]): Bounds | null 
 export function plottablePoints(tracks: Track[]): { lat: number; lon: number }[] {
   const points: { lat: number; lon: number }[] = []
   for (const track of tracks) {
+    for (const position of track.history ?? []) {
+      points.push({ lat: position.lat, lon: position.lon })
+    }
     if (track.current) points.push({ lat: track.current.lat, lon: track.current.lon })
     if (track.operator) points.push({ lat: track.operator.lat, lon: track.operator.lon })
   }

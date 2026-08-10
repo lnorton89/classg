@@ -167,7 +167,21 @@ const STATE_OPTIONS: { value: TrackState | 'ALL'; label: string }[] = [
   { value: 'CLOSED', label: 'Closed' },
 ]
 
-export function TracksTable({ tracks }: { tracks: Track[] }) {
+export interface TracksTableProps {
+  tracks: Track[]
+  caption?: string
+  emptyTitle?: string
+  emptyDescription?: string
+  showStateFilter?: boolean
+}
+
+export function TracksTable({
+  tracks,
+  caption = 'Detected drone tracks, sortable by column and filterable by identity and state',
+  emptyTitle = 'No tracks',
+  emptyDescription = 'Check the sensor health banner before concluding the sky is empty.',
+  showStateFilter = true,
+}: TracksTableProps) {
   const [sorting, setSorting] = useState<SortingState>([{ id: 'last_seen', desc: true }])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = useState('')
@@ -208,18 +222,20 @@ export function TracksTable({ tracks }: { tracks: Track[] }) {
           />
         </div>
 
-        <Select
-          aria-label="Filter tracks by state"
-          value={stateFilter}
-          options={STATE_OPTIONS}
-          onValueChange={(value) =>
-            setColumnFilters((old) => [
-              ...old.filter((f) => f.id !== 'state'),
-              ...(value === 'ALL' ? [] : [{ id: 'state', value }]),
-            ])
-          }
-          className="w-40"
-        />
+        {showStateFilter ? (
+          <Select
+            aria-label="Filter tracks by state"
+            value={stateFilter}
+            options={STATE_OPTIONS}
+            onValueChange={(value) =>
+              setColumnFilters((old) => [
+                ...old.filter((f) => f.id !== 'state'),
+                ...(value === 'ALL' ? [] : [{ id: 'state', value }]),
+              ])
+            }
+            className="w-40"
+          />
+        ) : null}
 
         <p className="text-muted-foreground ml-auto text-xs" aria-live="polite">
           {rows.length} of {tracks.length} tracks
@@ -228,9 +244,7 @@ export function TracksTable({ tracks }: { tracks: Track[] }) {
 
       <div className="border-border min-h-0 flex-1 overflow-auto rounded-lg border">
         <table className="w-full min-w-[52rem] border-collapse text-left text-sm">
-          <caption className="sr-only">
-            Detected drone tracks, sortable by column and filterable by identity and state
-          </caption>
+          <caption className="sr-only">{caption}</caption>
           <thead className="bg-card sticky top-0 z-10">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id} className="border-border border-b">
@@ -293,9 +307,9 @@ export function TracksTable({ tracks }: { tracks: Track[] }) {
         </table>
 
         {rows.length === 0 ? (
-          <EmptyState title={tracks.length === 0 ? 'No tracks' : 'No tracks match the filter'}>
+          <EmptyState title={tracks.length === 0 ? emptyTitle : 'No tracks match the filter'}>
             {tracks.length === 0
-              ? 'Check the sensor health banner before concluding the sky is empty.'
+              ? emptyDescription
               : 'Clear the search box or the state filter to see all tracks.'}
           </EmptyState>
         ) : null}

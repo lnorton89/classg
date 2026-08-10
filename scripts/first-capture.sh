@@ -139,7 +139,9 @@ cat <<EOS
   Drone IEs present. Now decode them with our own parsers:
 
     cd services/sensor-wifi
-    python -m classg_wifi.cli analyze ../../$(basename "$PCAP" | sed 's|^|captures/|')
+    python3 -m venv .venv
+    .venv/bin/python -m pip install -e '.[replay]'
+    .venv/bin/python -m classg_wifi.cli analyze ../../$(basename "$PCAP" | sed 's|^|captures/|')
 
   That prints the calibration values for docs/ops/04-calibration.md.
 EOS

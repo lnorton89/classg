@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { applyFrame } from './live-provider'
 import { queryKeys } from '@/lib/api/queries'
-import type { Detection, ServerFrame, Track, TracksResponse } from '@/lib/api/types'
+import type { Detection, SensorHealth, ServerFrame, Track, TracksResponse } from '@/lib/api/types'
 
 function track(trackId: string): Track {
   return {
@@ -53,8 +53,9 @@ describe('applyFrame', () => {
     ).toMatchObject({ confidence: 0.8 })
   })
 
-  it('removes closed tracks without underflowing totals', () => {
+  it('archives closed tracks in list and detail caches without changing totals', () => {
     const client = new QueryClient()
+    client.setQueryData(queryKeys.track('T1'), track('T1'))
     client.setQueryData<TracksResponse>(queryKeys.tracks(), {
       tracks: [track('T1')],
       next_cursor: null,
@@ -64,9 +65,10 @@ describe('applyFrame', () => {
     applyFrame(client, { type: 'track.closed', track_id: 'T1' })
 
     expect(client.getQueryData<TracksResponse>(queryKeys.tracks())).toMatchObject({
-      tracks: [],
-      total: 0,
+      tracks: [{ track_id: 'T1', state: 'CLOSED' }],
+      total: 1,
     })
+    expect(client.getQueryData<Track>(queryKeys.track('T1'))?.state).toBe('CLOSED')
   })
 
   it('only caches ADS-B detections from the live stream', () => {
@@ -80,5 +82,45 @@ describe('applyFrame', () => {
     expect(client.getQueryData<{ detections: Detection[] }>(query)?.detections).toEqual([
       expect.objectContaining({ detection_id: 'adsb' }),
     ])
+  })
+
+  it('does not erase runtime sensor config when a health frame arrives', () => {
+    const client = new QueryClient()
+    const configured: SensorHealth = {
+      sensor_id: 'wifi-0',
+      sensor_kind: 'wifi',
+      healthy: false,
+      last_heartbeat: '',
+      seconds_since_heartbeat: 0,
+      config: {
+        unit: 'classg-sensor-wifi.service',
+        stale_after_s: 30,
+        expected: true,
+        restart_command: 'systemctl restart classg-sensor-wifi.service',
+        restart_available: false,
+        capture: {
+          supported: true,
+          interface: 'wlan0',
+          channel: 6,
+          duration_s: 120,
+          label: 'sensor-capture',
+        },
+      },
+    }
+    client.setQueryData(queryKeys.sensors, [configured])
+
+    applyFrame(client, {
+      type: 'health',
+      health: {
+        status: 'ok',
+        uptime_s: 10,
+        version: 'test',
+        sensors: [{ ...configured, healthy: true, config: undefined }],
+      },
+    })
+
+    expect(client.getQueryData<SensorHealth[]>(queryKeys.sensors)?.[0]?.config?.capture).toMatchObject(
+      { interface: 'wlan0', duration_s: 120 },
+    )
   })
 })

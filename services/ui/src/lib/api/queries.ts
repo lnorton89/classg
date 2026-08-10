@@ -43,7 +43,7 @@ export const sensorsQuery = () =>
     staleTime: 10_000,
   })
 
-/** The live set. Fed by the socket; refetched wholesale on reconnect. */
+/** Active and archived tracks. Fed by the socket; refetched wholesale on reconnect. */
 export const tracksQuery = (query: TracksQuery = {}) =>
   queryOptions({
     queryKey: queryKeys.tracks(query),

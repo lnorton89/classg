@@ -3,8 +3,11 @@ package libsqlstore_test
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/classg/api/internal/model"
 	"github.com/classg/api/internal/store"
 	"github.com/classg/api/internal/store/libsqlstore"
 	"github.com/classg/api/internal/store/storetest"
@@ -29,6 +32,45 @@ func TestConformance(t *testing.T) {
 		t.Cleanup(func() { _ = s.Close() })
 		return s
 	})
+}
+
+func TestConcurrentTrackWritesAreSerialized(t *testing.T) {
+	if !libsqlstore.Supported {
+		t.Skip("libSQL is unavailable in this build")
+	}
+	s, err := libsqlstore.Open(context.Background(), libsqlstore.Options{
+		Path: filepath.Join(t.TempDir(), "classg.db"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 64)
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			now := time.Now().UTC().Add(time.Duration(n) * time.Millisecond)
+			errs <- s.UpsertTrack(context.Background(), model.Track{
+				SchemaVersion:  model.SchemaVersion,
+				TrackID:        "burst-track",
+				State:          "CONFIRMED",
+				FirstSeen:      now.Add(-time.Second),
+				LastSeen:       now,
+				DetectionCount: n + 1,
+				Confidence:     0.6,
+			})
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("concurrent upsert failed: %v", err)
+		}
+	}
 }
 
 // TestOfflineByDefault pins the property that matters most operationally: with

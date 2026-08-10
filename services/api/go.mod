@@ -5,6 +5,7 @@ go 1.23
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/go-zeromq/zmq4 v0.17.0
+	github.com/joho/godotenv v1.5.1
 	github.com/tursodatabase/go-libsql v0.0.0-20260424063416-3051e37e6e04
 )
 

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -40,6 +41,13 @@ func (s *Server) handleStartCapture(w http.ResponseWriter, r *http.Request) {
 	var req capture.Request
 	if err := decodeBody(r, &req); err != nil {
 		fail(w, err)
+		return
+	}
+	if req.Iface != s.cfg.WifiInterface {
+		fail(w, apierr.InvalidParameter(
+			"iface",
+			fmt.Sprintf("iface must match CLASSG_WIFI_INTERFACE (%s)", s.cfg.WifiInterface),
+		))
 		return
 	}
 	c, err := s.captures.Start(r.Context(), req)

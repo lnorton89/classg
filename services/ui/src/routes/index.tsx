@@ -9,6 +9,7 @@ import { LiveMap } from '@/features/map/live-map'
 import { MapLegend } from '@/features/map/legend'
 import { SkyStateBanner } from '@/features/health/components'
 import { computeSkyState } from '@/features/health/sky-state'
+import { partitionTracks } from '@/features/tracks/partition'
 import { adsbDetectionsQuery, healthQuery, tracksQuery } from '@/lib/api/queries'
 import { cn } from '@/lib/cn'
 
@@ -30,8 +31,10 @@ function LiveView() {
   const [mobilePane, setMobilePane] = useState<'map' | 'list'>('map')
 
   const tracks = tracksData?.tracks ?? []
+  const { active: activeTracks, closed: closedTracks } = partitionTracks(tracks)
   const adsb = adsbData?.detections ?? []
-  const skyState = computeSkyState(health, tracks.length)
+  const contactCount = activeTracks.length + closedTracks.length + adsb.length
+  const skyState = computeSkyState(health, activeTracks.length)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -43,7 +46,7 @@ function LiveView() {
       >
         <LiveMap
           className="absolute inset-0"
-          tracks={tracks}
+          tracks={activeTracks}
           adsb={adsb}
           selectedTrackId={selectedTrackId}
           onSelectTrack={setSelectedTrackId}
@@ -79,7 +82,7 @@ function LiveView() {
           aria-pressed={mobilePane === 'list'}
           onClick={() => setMobilePane('list')}
         >
-          <ListIcon aria-hidden /> Contacts ({tracks.length + adsb.length})
+          <ListIcon aria-hidden /> Contacts ({contactCount})
         </Button>
       </div>
 
@@ -91,7 +94,8 @@ function LiveView() {
         )}
       >
         <ContactsPanel
-          tracks={tracks}
+          tracks={activeTracks}
+          closedTracks={closedTracks}
           adsb={adsb}
           selectedTrackId={selectedTrackId}
           onSelectTrack={setSelectedTrackId}

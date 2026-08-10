@@ -1,42 +1,97 @@
-# Web tier only. Sensors run as systemd units on the host -- see README.md in
-# this directory for why.
+# Web tier only. Sensors run in WSL or on the Linux host. Containers reach the
+# sensor publisher through host.docker.internal and talk to each other over the
+# Compose network.
+
+name: classg
 
 services:
   fusion:
+    image: classg-fusion:local
+    container_name: classg-fusion
     build:
-      context: ../services/fusion
-    # Host networking so fusion can reach the sensors' ZMQ sockets on loopback.
-    network_mode: host
+      context: ..
+      dockerfile: services/fusion/Dockerfile
     environment:
-      CLASSG_DETECTION_ENDPOINT: tcp://127.0.0.1:5556
-      CLASSG_TRACK_ENDPOINT: tcp://127.0.0.1:5557
+      CLASSG_DETECTION_ENDPOINT: tcp://0.0.0.0:5556
+      CLASSG_FUSION_DETECTION_SOCKET_MODE: listen
+      CLASSG_TRACK_ENDPOINT: tcp://0.0.0.0:5557
+      CLASSG_DETECTION_TOPIC: ${CLASSG_DETECTION_TOPIC:-detection.}
+      CLASSG_HEARTBEAT_TOPIC: ${CLASSG_HEARTBEAT_TOPIC:-heartbeat.}
+      CLASSG_TRACK_TOPIC: ${CLASSG_TRACK_TOPIC:-track.}
+      CLASSG_FUSION_SENSOR_STALE_AFTER: ${CLASSG_FUSION_SENSOR_STALE_AFTER:-30s}
+      CLASSG_FUSION_TRACK_TTL: ${CLASSG_FUSION_TRACK_TTL:-5m}
+      CLASSG_FUSION_REAP_INTERVAL: ${CLASSG_FUSION_REAP_INTERVAL:-1s}
+    ports:
+      - "${CLASSG_BUS_PORT:-5556}:5556"
     restart: unless-stopped
 
   api:
+    image: classg-api:local
+    container_name: classg-api
     build:
-      context: ../services/api
-    network_mode: host
+      context: ..
+      dockerfile: services/api/Dockerfile
     environment:
-      CLASSG_TRACK_ENDPOINT: tcp://127.0.0.1:5557
-      CLASSG_LISTEN: ":8081"
+      CLASSG_VERSION: ${CLASSG_VERSION:-0.1.0}
+      CLASSG_LISTEN: ${CLASSG_LISTEN:-:8081}
+      CLASSG_STORE: ${CLASSG_STORE:-libsql}
       CLASSG_DB: /data/classg.db
-      # Operator ground position is sensitive. Off unless deliberately enabled.
-      # docs/research/06-legal-and-ethics.md#operator-location-is-the-sharp-edge
-      CLASSG_EXPOSE_OPERATOR_LOCATION: "false"
+      CLASSG_TURSO_URL: ${CLASSG_TURSO_URL:-}
+      CLASSG_TURSO_AUTH_TOKEN: ${CLASSG_TURSO_AUTH_TOKEN:-}
+      CLASSG_TURSO_SYNC_INTERVAL: ${CLASSG_TURSO_SYNC_INTERVAL:-1m}
+      CLASSG_TRACK_ENDPOINT: tcp://fusion:5557
+      CLASSG_DETECTION_ENDPOINT: tcp://fusion:5557
+      CLASSG_TRACK_TOPIC: ${CLASSG_TRACK_TOPIC:-track.}
+      CLASSG_DETECTION_TOPIC: ${CLASSG_DETECTION_TOPIC:-detection.}
+      CLASSG_HEARTBEAT_TOPIC: ${CLASSG_HEARTBEAT_TOPIC:-heartbeat.}
+      CLASSG_FUSION_TRACK_TTL: ${CLASSG_FUSION_TRACK_TTL:-5m}
+      CLASSG_EXPOSE_OPERATOR_LOCATION: ${CLASSG_EXPOSE_OPERATOR_LOCATION:-false}
+      CLASSG_EXPECTED_SENSORS: ${CLASSG_EXPECTED_SENSORS:-wifi-0:wifi}
+      CLASSG_SENSOR_STALE_AFTER: ${CLASSG_SENSOR_STALE_AFTER:-30s}
+      CLASSG_RETENTION_DETECTIONS: ${CLASSG_RETENTION_DETECTIONS:-168h}
+      CLASSG_RETENTION_TRACKS: ${CLASSG_RETENTION_TRACKS:-2160h}
+      CLASSG_RETENTION_INTERVAL: ${CLASSG_RETENTION_INTERVAL:-1h}
+      CLASSG_MAX_HISTORY: ${CLASSG_MAX_HISTORY:-512}
+      CLASSG_LOG_LEVEL: ${CLASSG_LOG_LEVEL:-info}
+      CLASSG_UI_DIR: "off"
+      CLASSG_CAPTURE_DIR: /captures
+      CLASSG_SENSOR_RESTART_COMMAND: ${CLASSG_SENSOR_RESTART_COMMAND:-systemctl restart %s}
+      CLASSG_WIFI_INTERFACE: ${CLASSG_WIFI_INTERFACE:-wlan1}
+      CLASSG_WIFI_CHANNEL: ${CLASSG_WIFI_CHANNEL:-6}
+      CLASSG_CAPTURE_DURATION_S: ${CLASSG_CAPTURE_DURATION_S:-120}
+      CLASSG_CAPTURE_LABEL: ${CLASSG_CAPTURE_LABEL:-sensor-capture}
     volumes:
       - classg-data:/data
+      - ../captures:/captures:ro
+    ports:
+      - "${CLASSG_API_PORT:-8081}:8081"
     restart: unless-stopped
     depends_on:
       - fusion
 
   ui:
+    image: classg-ui:local
+    container_name: classg-ui
     build:
-      context: ../services/ui
+      context: ..
+      dockerfile: services/ui/Dockerfile
+      args:
+        CLASSG_TILE_PRELOAD_BBOX: ${CLASSG_TILE_PRELOAD_BBOX:-}
+        CLASSG_TILE_PRELOAD_MIN_ZOOM: ${CLASSG_TILE_PRELOAD_MIN_ZOOM:-12}
+        CLASSG_TILE_PRELOAD_MAX_ZOOM: ${CLASSG_TILE_PRELOAD_MAX_ZOOM:-15}
+        CLASSG_TILE_PRELOAD_MAX_TILES: ${CLASSG_TILE_PRELOAD_MAX_TILES:-600}
+        CLASSG_TILE_PRELOAD_CONCURRENCY: ${CLASSG_TILE_PRELOAD_CONCURRENCY:-8}
+        CLASSG_SATELLITE_TILE_URL: ${CLASSG_SATELLITE_TILE_URL:-}
+    volumes:
+      - classg-tile-cache:/var/cache/nginx/satellite
     ports:
-      - "8080:80"
+      - "${CLASSG_UI_PORT:-8080}:80"
     restart: unless-stopped
     depends_on:
       - api
 
 volumes:
   classg-data:
+    name: classg-data
+  classg-tile-cache:
+    name: classg-tile-cache

@@ -213,8 +213,13 @@ def render_report(result: AnalysisResult) -> str:
 
     add("")
     add("=" * 72)
-    add("NEXT: copy the CALIBRATION block into docs/ops/04-calibration.md and")
-    add("compare each raw value against what the DJI app showed at capture time.")
+    if any(d.last_dji for d in drones):
+        add("NEXT: copy the CALIBRATION block into docs/ops/04-calibration.md and")
+        add("compare each raw value against what the DJI app showed at capture time.")
+    else:
+        add("No proprietary DJI Wi-Fi DroneID telemetry was present, so there are")
+        add("no raw DJI fields to calibrate. Record the ASTM Remote ID observation,")
+        add("channel, and beacon interval in docs/ops/04-calibration.md.")
     add("=" * 72)
     return "\n".join(out)
 

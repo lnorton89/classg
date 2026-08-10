@@ -11,9 +11,12 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConfigRouteImport } from './routes/config'
+import { Route as DocsRouteImport } from './routes/docs'
 import { Route as SensorsRouteImport } from './routes/sensors'
 import { Route as CapturesIndexRouteImport } from './routes/captures.index'
 import { Route as CapturesCaptureIdRouteImport } from './routes/captures.$captureId'
+import { Route as DocsIndexRouteImport } from './routes/docs.index'
+import { Route as DocsDocIdRouteImport } from './routes/docs.$docId'
 import { Route as TracksIndexRouteImport } from './routes/tracks.index'
 import { Route as TracksTrackIdRouteImport } from './routes/tracks.$trackId'
 
@@ -25,6 +28,11 @@ const IndexRoute = IndexRouteImport.update({
 const ConfigRoute = ConfigRouteImport.update({
   id: '/config',
   path: '/config',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsRoute = DocsRouteImport.update({
+  id: '/docs',
+  path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SensorsRoute = SensorsRouteImport.update({
@@ -42,6 +50,16 @@ const CapturesCaptureIdRoute = CapturesCaptureIdRouteImport.update({
   path: '/captures/$captureId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DocsIndexRoute = DocsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => DocsRoute,
+} as any)
+const DocsDocIdRoute = DocsDocIdRouteImport.update({
+  id: '/$docId',
+  path: '/$docId',
+  getParentRoute: () => DocsRoute,
+} as any)
 const TracksIndexRoute = TracksIndexRouteImport.update({
   id: '/tracks/',
   path: '/tracks/',
@@ -56,10 +74,13 @@ const TracksTrackIdRoute = TracksTrackIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/config': typeof ConfigRoute
+  '/docs': typeof DocsRouteWithChildren
   '/sensors': typeof SensorsRoute
   '/captures/$captureId': typeof CapturesCaptureIdRoute
+  '/docs/$docId': typeof DocsDocIdRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
   '/captures/': typeof CapturesIndexRoute
+  '/docs/': typeof DocsIndexRoute
   '/tracks/': typeof TracksIndexRoute
 }
 export interface FileRoutesByTo {
@@ -67,18 +88,23 @@ export interface FileRoutesByTo {
   '/config': typeof ConfigRoute
   '/sensors': typeof SensorsRoute
   '/captures/$captureId': typeof CapturesCaptureIdRoute
+  '/docs/$docId': typeof DocsDocIdRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
   '/captures': typeof CapturesIndexRoute
+  '/docs': typeof DocsIndexRoute
   '/tracks': typeof TracksIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/config': typeof ConfigRoute
+  '/docs': typeof DocsRouteWithChildren
   '/sensors': typeof SensorsRoute
   '/captures/$captureId': typeof CapturesCaptureIdRoute
+  '/docs/$docId': typeof DocsDocIdRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
   '/captures/': typeof CapturesIndexRoute
+  '/docs/': typeof DocsIndexRoute
   '/tracks/': typeof TracksIndexRoute
 }
 export interface FileRouteTypes {
@@ -86,10 +112,13 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/config'
+    | '/docs'
     | '/sensors'
     | '/captures/$captureId'
+    | '/docs/$docId'
     | '/tracks/$trackId'
     | '/captures/'
+    | '/docs/'
     | '/tracks/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -97,23 +126,29 @@ export interface FileRouteTypes {
     | '/config'
     | '/sensors'
     | '/captures/$captureId'
+    | '/docs/$docId'
     | '/tracks/$trackId'
     | '/captures'
+    | '/docs'
     | '/tracks'
   id:
     | '__root__'
     | '/'
     | '/config'
+    | '/docs'
     | '/sensors'
     | '/captures/$captureId'
+    | '/docs/$docId'
     | '/tracks/$trackId'
     | '/captures/'
+    | '/docs/'
     | '/tracks/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ConfigRoute: typeof ConfigRoute
+  DocsRoute: typeof DocsRouteWithChildren
   SensorsRoute: typeof SensorsRoute
   CapturesCaptureIdRoute: typeof CapturesCaptureIdRoute
   TracksTrackIdRoute: typeof TracksTrackIdRoute
@@ -137,6 +172,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfigRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/docs': {
+      id: '/docs'
+      path: '/docs'
+      fullPath: '/docs'
+      preLoaderRoute: typeof DocsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sensors': {
       id: '/sensors'
       path: '/sensors'
@@ -158,6 +200,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CapturesCaptureIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/docs/': {
+      id: '/docs/'
+      path: '/'
+      fullPath: '/docs/'
+      preLoaderRoute: typeof DocsIndexRouteImport
+      parentRoute: typeof DocsRoute
+    }
+    '/docs/$docId': {
+      id: '/docs/$docId'
+      path: '/$docId'
+      fullPath: '/docs/$docId'
+      preLoaderRoute: typeof DocsDocIdRouteImport
+      parentRoute: typeof DocsRoute
+    }
     '/tracks/': {
       id: '/tracks/'
       path: '/tracks'
@@ -175,9 +231,22 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface DocsRouteChildren {
+  DocsDocIdRoute: typeof DocsDocIdRoute
+  DocsIndexRoute: typeof DocsIndexRoute
+}
+
+const DocsRouteChildren: DocsRouteChildren = {
+  DocsDocIdRoute: DocsDocIdRoute,
+  DocsIndexRoute: DocsIndexRoute,
+}
+
+const DocsRouteWithChildren = DocsRoute._addFileChildren(DocsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ConfigRoute: ConfigRoute,
+  DocsRoute: DocsRouteWithChildren,
   SensorsRoute: SensorsRoute,
   CapturesCaptureIdRoute: CapturesCaptureIdRoute,
   TracksTrackIdRoute: TracksTrackIdRoute,

@@ -9,6 +9,7 @@ package ingest
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"strings"
 	"time"
@@ -39,6 +40,19 @@ func (in *Ingestor) Track(ctx context.Context, topic string, body []byte) {
 			TrackID string `json:"track_id"`
 		}
 		if err := json.Unmarshal(body, &closed); err == nil && closed.TrackID != "" {
+			t, err := in.Store.GetTrack(ctx, closed.TrackID)
+			switch {
+			case err == nil:
+				t.State = "CLOSED"
+				if err := in.Store.UpsertTrack(ctx, t); err != nil {
+					slog.Error("archiving closed track failed", "track_id", closed.TrackID, "err", err)
+				}
+			case errors.Is(err, store.ErrNotFound):
+				slog.Warn("closed track was not present in storage", "track_id", closed.TrackID)
+			default:
+				slog.Error("loading track for closure failed", "track_id", closed.TrackID, "err", err)
+			}
+			in.Registry.NoteFusionMessage(time.Now().UTC())
 			in.Hub.Broadcast(hub.Frame{Type: hub.TypeTrackClosed, TrackID: closed.TrackID})
 			return
 		}
@@ -52,21 +66,21 @@ func (in *Ingestor) Track(ctx context.Context, topic string, body []byte) {
 	if in.MaxHistory > 0 && len(t.History) > in.MaxHistory {
 		t.History = t.History[len(t.History)-in.MaxHistory:]
 	}
+	if t.State == "CLOSED" {
+		if err := in.Store.UpsertTrack(ctx, t); err != nil {
+			slog.Error("archiving closed track failed", "track_id", t.TrackID, "err", err)
+		}
+		in.Registry.NoteFusionMessage(time.Now().UTC())
+		in.Hub.Broadcast(hub.Frame{Type: hub.TypeTrackClosed, TrackID: t.TrackID})
+		return
+	}
 	if err := in.Store.UpsertTrack(ctx, t); err != nil {
 		slog.Error("storing track failed", "track_id", t.TrackID, "err", err)
 	}
 	in.Registry.NoteFusionMessage(time.Now().UTC())
 
-	frameType := hub.TypeTrackUpdate
-	if t.State == "CLOSED" {
-		frameType = hub.TypeTrackClosed
-	}
 	redacted := t.Redact(in.ExposeOperatorLocation)
-	if frameType == hub.TypeTrackClosed {
-		in.Hub.Broadcast(hub.Frame{Type: frameType, TrackID: t.TrackID})
-		return
-	}
-	in.Hub.Broadcast(hub.Frame{Type: frameType, Track: &redacted})
+	in.Hub.Broadcast(hub.Frame{Type: hub.TypeTrackUpdate, Track: &redacted})
 }
 
 // Detection handles one message from a sensor's detection topic.

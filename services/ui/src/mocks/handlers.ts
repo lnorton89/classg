@@ -13,7 +13,7 @@ import type {
   Capture,
   CapturesResponse,
   ChannelPlan,
-  ConfigPutResponse,
+  ConfigResponse,
   Detection,
   DetectionsResponse,
   FusionWeights,
@@ -72,13 +72,41 @@ export const handlers = [
   http.get(`${base}/health`, () => HttpResponse.json<Health>(getScenario().health)),
 
   http.get(`${base}/sensors`, () =>
-    HttpResponse.json<{ sensors: SensorHealth[] }>({ sensors: getScenario().health.sensors }),
+    HttpResponse.json<{ sensors: SensorHealth[] }>({
+      sensors: getScenario().health.sensors.map((sensor) => ({
+        ...sensor,
+        config: {
+          unit: `classg-sensor-${sensor.sensor_kind}.service`,
+          stale_after_s: 30,
+          expected: true,
+          restart_command: `systemctl restart classg-sensor-${sensor.sensor_kind}.service`,
+          restart_available: true,
+          capture:
+            sensor.sensor_kind === 'wifi'
+              ? {
+                  supported: true,
+                  interface: 'wlan0',
+                  channel: 6,
+                  duration_s: 120,
+                  label: 'sensor-capture',
+                }
+              : { supported: false },
+        },
+      })),
+    }),
   ),
 
   http.post<PathParams<'id'>>(`${base}/sensors/:id/restart`, ({ params }) => {
     const exists = getScenario().health.sensors.some((s) => s.sensor_id === params.id)
     if (!exists) return apiError(404, 'not_found', `no such sensor: ${String(params.id)}`)
-    return new HttpResponse(null, { status: 202 })
+    return HttpResponse.json(
+      {
+        sensor_id: String(params.id),
+        unit: 'classg-sensor-wifi.service',
+        accepted: true,
+      },
+      { status: 202 },
+    )
   }),
 
   // --- Tracks -------------------------------------------------------------
@@ -290,7 +318,12 @@ export const handlers = [
   }),
 
   // --- Config -------------------------------------------------------------
-  http.get(`${base}/config/channels`, () => HttpResponse.json<ChannelPlan>(channels)),
+  http.get(`${base}/config/channels`, () =>
+    HttpResponse.json<ConfigResponse<ChannelPlan>>({
+      value: channels,
+      restart_required: false,
+    }),
+  ),
 
   http.put<PathParams, ChannelPlan>(`${base}/config/channels`, async ({ request }) => {
     const body = await request.json()
@@ -307,10 +340,18 @@ export const handlers = [
       )
     }
     channels = body
-    return HttpResponse.json<ConfigPutResponse>({ restart_required: false })
+    return HttpResponse.json<ConfigResponse<ChannelPlan>>({
+      value: channels,
+      restart_required: false,
+    })
   }),
 
-  http.get(`${base}/config/weights`, () => HttpResponse.json<FusionWeights>(weights)),
+  http.get(`${base}/config/weights`, () =>
+    HttpResponse.json<ConfigResponse<FusionWeights>>({
+      value: weights,
+      restart_required: false,
+    }),
+  ),
 
   http.put<PathParams, FusionWeights>(`${base}/config/weights`, async ({ request }) => {
     const body = await request.json()
@@ -326,7 +367,10 @@ export const handlers = [
       }
     }
     weights = body
-    return HttpResponse.json<ConfigPutResponse>({ restart_required: false })
+    return HttpResponse.json<ConfigResponse<FusionWeights>>({
+      value: weights,
+      restart_required: false,
+    })
   }),
 
   // --- Mock control (dev only, never part of the real API) -----------------

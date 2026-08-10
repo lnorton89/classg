@@ -23,16 +23,22 @@ KREL=$(uname -r)
 echo "  kernel: $KREL"
 if grep -qi microsoft /proc/version 2>/dev/null; then
     IS_WSL=1
-    # A trailing '+' on the release string means a locally built kernel, which
-    # is exactly what the mt76 driver requires here.
-    case "$KREL" in
-        *+) pass "running under WSL on a custom kernel (mt76 support expected)" ;;
-        *)  warn "running under WSL on a stock kernel - it has no mt76 driver. See ./scripts/wsl-build-kernel.sh" ;;
-    esac
+    # Do not infer stock/custom from a trailing '+': rebuilding an unchanged
+    # tagged tree can legitimately remove it. Test the capability we need.
+    if modinfo mt7921u >/dev/null 2>&1; then
+        pass "running under WSL with mt7921u support"
+    else
+        warn "running under WSL on a kernel without mt7921u. See ./scripts/wsl-build-kernel.sh"
+    fi
 else
     IS_WSL=0
 fi
-[ -f /etc/os-release ] && . /etc/os-release && echo "  os: ${PRETTY_NAME:-unknown}"
+if [ -f /etc/os-release ]; then
+    # Standard distro metadata file; it is optional here.
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    echo "  os: ${PRETTY_NAME:-unknown}"
+fi
 
 section "Kernel wireless stack"
 for m in cfg80211 mac80211; do
@@ -72,14 +78,18 @@ if grep -qE "^(mt7921u|mt7921_common) " /proc/modules 2>/dev/null; then
 elif [ "$FOUND_MT" -eq 1 ]; then
     fail "mt7921u is present but NOT LOADED - nothing bound the adapter"
     echo "        Fix:  sudo modprobe mt7921u"
-    [ "$IS_WSL" -eq 1 ] && echo "        (expected under WSL: no udev autoload on usbip attach)"
+    if [ "$IS_WSL" -eq 1 ]; then
+        echo "        (expected under WSL: no udev autoload on usbip attach)"
+    fi
 fi
 
 section "Firmware"
 # mt7921u loads firmware at probe. Missing blobs = driver loads, probe fails,
 # no interface -- which looks identical to 'not loaded' unless you check.
-if ls /lib/firmware/mediatek/ 2>/dev/null | grep -qi 7961; then
-    pass "MT7961 firmware present ($(ls /lib/firmware/mediatek/ | grep -ci 7961) files)"
+shopt -s nullglob
+MT7961_FIRMWARE=(/lib/firmware/mediatek/*7961*)
+if [ "${#MT7961_FIRMWARE[@]}" -gt 0 ]; then
+    pass "MT7961 firmware present (${#MT7961_FIRMWARE[@]} files)"
 else
     fail "no MT7961 firmware in /lib/firmware/mediatek - driver will probe and fail"
     echo "        Fix:  sudo apt install firmware-misc-nonfree"
@@ -92,9 +102,15 @@ if command -v lsusb >/dev/null 2>&1; then
         pass "MT7921AU adapter enumerated ($(lsusb | grep -i '0e8d:7961' | head -1))"
     else
         fail "MT7921AU (0e8d:7961) not enumerated"
-        [ "$IS_WSL" -eq 1 ] && echo "        On WSL you must forward it: usbipd attach --wsl --busid <BUSID>"
+        if [ "$IS_WSL" -eq 1 ]; then
+            echo "        On WSL you must forward it: usbipd attach --wsl --busid <BUSID>"
+        fi
     fi
-    lsusb | grep -qi "0bda:2838" && pass "RTL-SDR enumerated" || warn "RTL-SDR not present (not needed for the first capture)"
+    if lsusb | grep -qi "0bda:2838"; then
+        pass "RTL-SDR enumerated"
+    else
+        warn "RTL-SDR not present (not needed for the first capture)"
+    fi
 else
     warn "lsusb missing - install usbutils"
 fi
@@ -105,7 +121,9 @@ if command -v iw >/dev/null 2>&1; then
     IFACES=$(iw dev 2>/dev/null | awk '/Interface/{print $2}')
     if [ -n "$IFACES" ]; then
         pass "wireless interfaces: $(echo "$IFACES" | tr '\n' ' ')"
-        [ -z "$IFACE" ] && IFACE=$(echo "$IFACES" | head -1)
+        if [ -z "$IFACE" ]; then
+            IFACE=$(echo "$IFACES" | head -1)
+        fi
     else
         fail "no wireless interfaces"
         # Point at the actual cause rather than a generic "did not bind".
@@ -125,7 +143,14 @@ fi
 section "Monitor mode capability"
 if [ -n "$IFACE" ] && command -v iw >/dev/null 2>&1; then
     PHY=$(iw dev "$IFACE" info 2>/dev/null | awk '/wiphy/{print "phy"$2}')
-    if [ -n "$PHY" ] && iw phy "$PHY" info 2>/dev/null | grep -qi "\* monitor"; then
+    if [ -n "$PHY" ]; then
+        IW_PHY_INFO=$(iw phy "$PHY" info 2>/dev/null || true)
+    else
+        IW_PHY_INFO=""
+    fi
+    # Avoid grep -q directly on `iw` under pipefail: grep's early exit can give
+    # iw SIGPIPE and incorrectly turn a successful match into a failed pipeline.
+    if [ -n "$PHY" ] && grep -qi "\* monitor" <<<"$IW_PHY_INFO"; then
         pass "$IFACE ($PHY) advertises monitor mode"
     else
         warn "could not confirm monitor mode support on $IFACE"
@@ -137,11 +162,17 @@ else
 fi
 
 section "Capture tools"
-for t in tcpdump; do
-    command -v "$t" >/dev/null 2>&1 && pass "$t present" || fail "$t missing - install $t"
-done
+if command -v tcpdump >/dev/null 2>&1; then
+    pass "tcpdump present"
+else
+    fail "tcpdump missing - install tcpdump"
+fi
 for t in tshark python3; do
-    command -v "$t" >/dev/null 2>&1 && pass "$t present" || warn "$t missing (useful for analysis, not capture)"
+    if command -v "$t" >/dev/null 2>&1; then
+        pass "$t present"
+    else
+        warn "$t missing (useful for analysis, not capture)"
+    fi
 done
 
 section "Interference"

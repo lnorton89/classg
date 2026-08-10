@@ -15,6 +15,25 @@ import { cn } from '@/lib/cn'
 import { DETECTION_CLASS_ORDER, detectionClassInfo, noisyOr } from '@/lib/detection-classes'
 import { formatConfidence, formatRelative } from '@/lib/format'
 
+const TRACK_STATES = [
+  {
+    state: 'TENTATIVE',
+    meaning: 'New contact; waiting for at least 2 detections spanning 2 seconds.',
+  },
+  {
+    state: 'CONFIRMED',
+    meaning: 'Corroborated contact receiving current detections.',
+  },
+  {
+    state: 'COASTING',
+    meaning: 'No detection for 30 seconds; retained in case the same aircraft returns.',
+  },
+  {
+    state: 'CLOSED',
+    meaning: 'No detection for 5 minutes; archived and removed from the active list.',
+  },
+] as const
+
 function sortEvidence(evidence: Evidence[]): Evidence[] {
   return [...evidence].sort(
     (a, b) => DETECTION_CLASS_ORDER.indexOf(a.class) - DETECTION_CLASS_ORDER.indexOf(b.class),
@@ -124,8 +143,8 @@ export function EvidenceBreakdown({
 
   return (
     <div className={cn('space-y-3', className)}>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[26rem] text-left text-xs">
+      <div className="overflow-x-auto [scrollbar-gutter:stable]">
+        <table className="mb-2 w-full min-w-[28rem] text-left text-xs">
           <caption className="sr-only">
             Evidence by detection class, with the weight each contributes to confidence
           </caption>
@@ -231,5 +250,34 @@ export function TrackStateBadge({ state }: { state: string }) {
     <Badge variant={variant} className="uppercase">
       {state.toLowerCase()}
     </Badge>
+  )
+}
+
+/** The lifecycle is time-driven, so changing badges are expected and need a key. */
+export function TrackStateKey() {
+  return (
+    <section
+      aria-labelledby="track-state-key-title"
+      className="border-border bg-card/50 rounded-lg border px-3 py-2"
+    >
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <h2 id="track-state-key-title" className="text-xs font-semibold">
+          Track state key
+        </h2>
+        <p className="text-muted-foreground text-[11px]">
+          States advance automatically as detections arrive or stop (default timings shown).
+        </p>
+      </div>
+      <dl className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {TRACK_STATES.map(({ state, meaning }) => (
+          <div key={state} className="flex min-w-0 items-start gap-2">
+            <dt className="shrink-0">
+              <TrackStateBadge state={state} />
+            </dt>
+            <dd className="text-muted-foreground pt-0.5 text-[11px] leading-snug">{meaning}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   )
 }

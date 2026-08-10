@@ -72,7 +72,7 @@ func TestMACTrackPromotedToSerialKeepsHistory(t *testing.T) {
 	mac := "aa:bb:cc:dd:ee:ff"
 
 	first := s.Ingest(det("A", "", mac, now), now)
-	first.addPosition(Position{Lat: 47.0, Lon: 8.0, At: now})
+	first.addPosition(Position{Lat: 47.0, Lon: 8.0, At: now}, HistoryDepth)
 
 	second := s.Ingest(det("A", "SER9", mac, now.Add(time.Second)), now)
 

@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "ClassG Wi-Fi sensor: monitor-mode capture and Remote ID / DJI DroneID decoding"
 requires-python = ">=3.11"
 dependencies = [
+    "python-dotenv>=1.0",
     "pyzmq>=25.1",
     "PyYAML>=6.0",
 ]

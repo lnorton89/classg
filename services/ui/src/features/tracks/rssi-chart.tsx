@@ -155,8 +155,8 @@ export function RssiChart({
         <summary className="text-muted-foreground cursor-pointer text-[11px]">
           Show RSSI samples as a table
         </summary>
-        <div className="mt-1 max-h-48 overflow-auto">
-          <table className="w-full text-left text-[11px]">
+        <div className="mt-1 max-h-48 overflow-auto [scrollbar-gutter:stable_both-edges]">
+          <table className="mb-2 w-full pr-3 text-left text-[11px]">
             <thead className="text-muted-foreground">
               <tr>
                 <th scope="col" className="py-1 pr-3 font-medium">

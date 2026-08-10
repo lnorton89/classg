@@ -11,10 +11,21 @@ import (
 // sensorConfig is the "with full config" part of GET /sensors that the
 // contract asks for beyond the /health array.
 type sensorConfig struct {
-	Unit           string `json:"unit"`
-	StaleAfterS    int    `json:"stale_after_s"`
-	Expected       bool   `json:"expected"`
-	RestartCommand string `json:"restart_command"`
+	Unit                     string        `json:"unit"`
+	StaleAfterS              int           `json:"stale_after_s"`
+	Expected                 bool          `json:"expected"`
+	RestartCommand           string        `json:"restart_command"`
+	RestartAvailable         bool          `json:"restart_available"`
+	RestartUnavailableReason string        `json:"restart_unavailable_reason,omitempty"`
+	Capture                  captureConfig `json:"capture"`
+}
+
+type captureConfig struct {
+	Supported bool   `json:"supported"`
+	Interface string `json:"interface,omitempty"`
+	Channel   int    `json:"channel,omitempty"`
+	DurationS int    `json:"duration_s,omitempty"`
+	Label     string `json:"label,omitempty"`
 }
 
 type sensorEntry struct {
@@ -34,14 +45,25 @@ func (s *Server) handleListSensors(w http.ResponseWriter, r *http.Request) {
 	}
 
 	out := make([]sensorEntry, 0, len(rep.Sensors))
+	restartAvailable, restartReason := restartAvailability(s.cfg.SensorRestartCommand)
 	for _, sensor := range rep.Sensors {
+		capture := captureConfig{Supported: sensor.SensorKind == "wifi"}
+		if capture.Supported {
+			capture.Interface = s.cfg.WifiInterface
+			capture.Channel = s.cfg.WifiChannel
+			capture.DurationS = s.cfg.CaptureDurationS
+			capture.Label = s.cfg.CaptureLabel
+		}
 		out = append(out, sensorEntry{
 			Sensor: sensor,
 			Config: sensorConfig{
-				Unit:           unitFor(sensor.SensorKind),
-				StaleAfterS:    int(s.cfg.SensorStaleAfter.Seconds()),
-				Expected:       expected[sensor.SensorID],
-				RestartCommand: restartCommandString(s.cfg.SensorRestartCommand, unitFor(sensor.SensorKind)),
+				Unit:                     unitFor(sensor.SensorKind),
+				StaleAfterS:              int(s.cfg.SensorStaleAfter.Seconds()),
+				Expected:                 expected[sensor.SensorID],
+				RestartCommand:           restartCommandString(s.cfg.SensorRestartCommand, unitFor(sensor.SensorKind)),
+				RestartAvailable:         restartAvailable,
+				RestartUnavailableReason: restartReason,
+				Capture:                  capture,
 			},
 		})
 	}

@@ -48,7 +48,7 @@ const OPERATOR_SVG = `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidde
 export interface DroneMarkerOptions {
   track: Track
   selected: boolean
-  onSelect: (trackId: string) => void
+  onSelect?: (trackId: string) => void
 }
 
 /** Aircraft: filled arrow, rotated to its reported track, trailing a history line. */
@@ -80,7 +80,11 @@ export function createDroneMarker(options: DroneMarkerOptions): HTMLElement {
   wrapper.append(label)
 
   updateDroneMarker(wrapper, options)
-  button.addEventListener('click', () => options.onSelect(options.track.track_id))
+  if (options.onSelect) {
+    button.addEventListener('click', () => options.onSelect?.(options.track.track_id))
+  } else {
+    button.tabIndex = -1
+  }
   return wrapper
 }
 
@@ -125,7 +129,10 @@ export function updateDroneMarker(node: HTMLElement, options: DroneMarkerOptions
       : 'height unknown',
     track.operator ? 'operator position known' : 'operator position not broadcast',
   ]
-  button.setAttribute('aria-label', `${parts.join(', ')}. Open track detail.`)
+  button.setAttribute(
+    'aria-label',
+    `${parts.join(', ')}.${options.onSelect ? ' Open track detail.' : ''}`,
+  )
   button.title = parts.slice(0, 5).join(' · ')
 }
 

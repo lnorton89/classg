@@ -20,6 +20,9 @@ cd services/ui && npm ci && npm run build
 cd ../api && go run ./cmd/classg-api
 ```
 
+The API automatically loads the nearest repository `.env`; an explicit process
+environment value wins. Set `CLASSG_ENV_FILE` to require a particular file.
+
 The default database is `services/api/classg.db`; set `CLASSG_STORE=memory` for
 an ephemeral development run. The API stays available when sensors or fusion
 are offline and reports that state through `/api/v1/health`.

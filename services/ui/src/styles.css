@@ -58,6 +58,7 @@
 
   --font-mono:
     ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  --font-brand: 'Manrope', ui-sans-serif, system-ui, sans-serif;
 }
 
 :root {
@@ -199,4 +200,18 @@
 .dark .maplibregl-ctrl-attrib {
   background: color-mix(in oklch, var(--card) 80%, transparent);
   color: var(--muted-foreground);
+}
+
+/* The wordmark remains live text: Manrope is bundled locally through @fontsource. */
+.classg-wordmark {
+  color: var(--foreground);
+  font-family: var(--font-brand);
+  font-size: 1.125rem;
+  font-weight: 800;
+  letter-spacing: -0.06em;
+  line-height: 1;
+}
+
+.classg-wordmark span {
+  color: var(--primary);
 }

@@ -51,7 +51,9 @@ echo "==> [2/6] MT7961 firmware"
 # The driver loads firmware BEFORE probe. Missing blobs produce a different
 # (and much more obvious) failure than the #12288 crash, so get them in place
 # first to keep the diagnosis clean.
-if ! ls /lib/firmware/mediatek/ 2>/dev/null | grep -qi 7961; then
+shopt -s nullglob
+MT7961_FIRMWARE=(/lib/firmware/mediatek/*7961*)
+if [ "${#MT7961_FIRMWARE[@]}" -eq 0 ]; then
     if ! sudo apt-get install -y firmware-misc-nonfree 2>/dev/null; then
         echo "    firmware-misc-nonfree unavailable (non-free-firmware component"
         echo "    probably not enabled); pulling blobs from linux-firmware instead"
@@ -62,10 +64,12 @@ if ! ls /lib/firmware/mediatek/ 2>/dev/null | grep -qi 7961; then
         rm -rf "$tmp"
     fi
 fi
-ls /lib/firmware/mediatek/ | grep -i 7961 | sed 's/^/    /' || {
+MT7961_FIRMWARE=(/lib/firmware/mediatek/*7961*)
+if [ "${#MT7961_FIRMWARE[@]}" -eq 0 ]; then
     echo "    ERROR: still no MT7961 firmware. Fix this before continuing." >&2
     exit 1
-}
+fi
+printf '    %s\n' "${MT7961_FIRMWARE[@]##*/}"
 
 # ---------------------------------------------------------------------------
 echo "==> [3/6] kernel source"
@@ -90,6 +94,14 @@ scripts/config --module  CONFIG_MT76_USB
 scripts/config --module  CONFIG_MT76_CONNAC_LIB
 scripts/config --module  CONFIG_MT7921_COMMON
 scripts/config --module  CONFIG_MT7921U
+# WSL runs several distro mount namespaces on one kernel (notably Debian and
+# docker-desktop). request_firmware() resolves from the kernel's initial mount
+# namespace, so blobs visible at Debian's /lib/firmware can still return ENOENT.
+# Compile the two blobs mt7921u needs into the image to make lookup independent
+# of whichever WSL distro happened to establish that namespace.
+scripts/config --set-str CONFIG_EXTRA_FIRMWARE \
+    "mediatek/WIFI_MT7961_patch_mcu_1_2_hdr.bin mediatek/WIFI_RAM_CODE_MT7961_1.bin"
+scripts/config --set-str CONFIG_EXTRA_FIRMWARE_DIR "/lib/firmware"
 # usbip client side, for receiving the forwarded adapter
 scripts/config --enable  CONFIG_USBIP_CORE
 scripts/config --module  CONFIG_USBIP_VHCI_HCD
@@ -99,7 +111,7 @@ scripts/config --enable  CONFIG_RFKILL
 make olddefconfig
 
 echo "    verifying the options actually took:"
-for opt in CONFIG_MT7921U CONFIG_MT76_USB CONFIG_CFG80211 CONFIG_MAC80211; do
+for opt in CONFIG_MT7921U CONFIG_MT76_USB CONFIG_CFG80211 CONFIG_MAC80211 CONFIG_EXTRA_FIRMWARE; do
     printf '      %-22s %s\n' "$opt" "$(grep -E "^($opt=|# $opt )" .config || echo MISSING)"
 done
 if grep -q "^# CONFIG_MT7921U is not set" .config; then
