@@ -93,8 +93,8 @@ classg/
 
 ## Quickstart
 
-Nothing is built yet — this repo currently contains the design, the schemas, and skeleton
-services. Start here:
+Hardware validation is still the critical path, but the Wi-Fi sensor, fusion service, Go API,
+and operator UI now have working implementations. Start here:
 
 1. **Read** [docs/research/02-hardware-capabilities.md](docs/research/02-hardware-capabilities.md)
    so you know what to expect from each radio.
@@ -110,9 +110,19 @@ is built against that ground truth.
 python -m sensor_wifi.cli capture --iface wlan1 --channel 6 --out captures/dji-first-flight.pcap
 ```
 
+The operator UI also runs without hardware by using deterministic mock scenarios:
+
+```bash
+cd services/ui
+npm ci
+npm run dev
+```
+
 ---
 
 ## Project status
 
-Greenfield. Milestone 0 (hardware bring-up) is the current work.
+Milestone 0 hardware bring-up remains the current validation work. The Milestone 1 software
+foundation is implemented, but it is not considered complete until it passes the real-flight
+exit criterion against the capture corpus.
 See [docs/planning/roadmap.md](docs/planning/roadmap.md).

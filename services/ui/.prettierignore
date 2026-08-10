@@ -1,0 +1,6 @@
+dist
+coverage
+public/mockServiceWorker.js
+src/routeTree.gen.ts
+src/lib/api/schema.gen.ts
+package-lock.json

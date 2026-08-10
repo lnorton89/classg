@@ -1,16 +1,28 @@
 # api (Go) — Milestone 1
 
-REST + WebSocket front end for `fusion`. Not yet implemented.
+REST + WebSocket front end for `fusion`, with local libSQL persistence and the
+built Vite application served as a single-page app.
 
-## Planned surface
+## Surface
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/tracks` | Active tracks |
-| `GET /api/tracks/{id}` | One track with history |
-| `GET /api/detections?since=` | Recent detections (debugging) |
-| `GET /api/health` | Per-sensor health |
-| `WS /ws` | Live track updates |
+| `GET /api/v1/tracks` | Active tracks |
+| `GET /api/v1/tracks/{id}` | One track with history |
+| `GET /api/v1/detections?since=` | Recent detections (debugging) |
+| `GET /api/v1/health` | Per-sensor and fusion health |
+| `WS /api/v1/stream` | Live track, detection, capture, and health updates |
+
+## Run locally
+
+```bash
+cd services/ui && npm ci && npm run build
+cd ../api && go run ./cmd/classg-api
+```
+
+The default database is `services/api/classg.db`; set `CLASSG_STORE=memory` for
+an ephemeral development run. The API stays available when sensors or fusion
+are offline and reports that state through `/api/v1/health`.
 
 ## Two requirements that are not negotiable
 
@@ -31,11 +43,11 @@ than being visibly offline. `detections_5m: 0` with `healthy: true` means a quie
 `healthy: false` means don't trust the quiet.
 See [ADR-0003](../../docs/architecture/adr/0003-sensor-process-isolation.md).
 
-**2. Operator location is omitted by default.**
+**2. Operator-location exposure is controlled in one place.**
 
-Strip `operator` from every response unless `CLASSG_EXPOSE_OPERATOR_LOCATION=true`. It is a
-live map of where pilots are physically standing.
+Set `CLASSG_EXPOSE_OPERATOR_LOCATION=false` to strip `operator` from every response. It is a
+live map of where pilots are physically standing, so deployments must make this choice
+deliberately.
 See [legal-and-ethics.md](../../docs/research/06-legal-and-ethics.md#operator-location-is-the-sharp-edge).
 
-Storage lives here too: SQLite with WAL, separate retention for operator location so it can be
-purged independently of everything else.
+Storage lives here too: embedded libSQL locally, with optional Turso sync.
