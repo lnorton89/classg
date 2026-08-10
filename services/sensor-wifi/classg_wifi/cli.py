@@ -14,6 +14,8 @@ import signal
 import sys
 import time
 from pathlib import Path
+from types import FrameType
+from typing import cast
 
 from .bus import DEFAULT_ENDPOINT, DetectionPublisher
 from .fingerprint import FingerprintMatcher
@@ -25,7 +27,7 @@ log = logging.getLogger("classg.sensor-wifi")
 _running = True
 
 
-def _handle_signal(signum, _frame) -> None:
+def _handle_signal(signum: int, _frame: FrameType | None) -> None:
     global _running
     log.info("received signal %d, shutting down", signum)
     _running = False
@@ -102,8 +104,11 @@ def cmd_run(args: argparse.Namespace) -> int:
         if now - last_heartbeat >= args.heartbeat_s:
             publisher.heartbeat(
                 healthy=False,
-                detail={"reason": "capture loop not implemented",
-                        "hopper": hopper.efficiency_report()},
+                detail={
+                    "reason": "capture loop not implemented",
+                    "hopper": hopper.efficiency_report(),
+                    "frames_seen": pipeline.stats.frames_seen,
+                },
             )
             last_heartbeat = now
         time.sleep(0.5)
@@ -145,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
-    return args.func(args)
+    return cast(int, args.func(args))
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ import logging
 import random
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -153,7 +154,7 @@ class ChannelHopper:
         }
 
 
-def load_channels(config: dict) -> list[ChannelSpec]:
+def load_channels(config: dict[str, Any]) -> list[ChannelSpec]:
     """Build the channel plan from config/channels.yaml."""
     specs: list[ChannelSpec] = []
     for entry in config.get("channels", []):

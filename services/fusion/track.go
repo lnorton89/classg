@@ -32,18 +32,18 @@ const (
 )
 
 type Position struct {
-	Lat          float64  `json:"lat"`
-	Lon          float64  `json:"lon"`
-	AltGeodeticM *float64 `json:"alt_geodetic_m,omitempty"`
-	HeightAGLM   *float64 `json:"height_agl_m,omitempty"`
+	Lat          float64   `json:"lat"`
+	Lon          float64   `json:"lon"`
+	AltGeodeticM *float64  `json:"alt_geodetic_m,omitempty"`
+	HeightAGLM   *float64  `json:"height_agl_m,omitempty"`
 	At           time.Time `json:"at"`
 }
 
 type Evidence struct {
-	Class      string  `json:"class"`
-	SensorKind string  `json:"sensor_kind"`
-	Weight     float64 `json:"weight"`
-	Count      int     `json:"count"`
+	Class      string    `json:"class"`
+	SensorKind string    `json:"sensor_kind"`
+	Weight     float64   `json:"weight"`
+	Count      int       `json:"count"`
 	LastSeen   time.Time `json:"last_seen"`
 }
 
