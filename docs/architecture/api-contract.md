@@ -159,8 +159,12 @@ channel usage, measured beacon interval, decoded identities, and the DJI calibra
 ### `GET /captures/{id}/report`
 The analysis as structured JSON (not the rendered text).
 
-**Never expose raw PCAP download over the API.** Captures contain every network in range, not
-just drones — see [legal-and-ethics](../research/06-legal-and-ethics.md#privacy-of-your-own-capture).
+### `GET /captures/{id}/download`
+Streams the raw `.pcap` — `Content-Type: application/vnd.tcpdump.pcap`, with a
+`Content-Disposition` filename. Streamed, never buffered whole, since captures get large.
+
+Opening a capture in Wireshark is the natural next step after a field capture, which is why
+this exists. Note that a capture contains every network in range, not only drones.
 
 ---
 
@@ -194,15 +198,26 @@ Codes: `invalid_parameter`, `not_found`, `conflict`, `privileges_required`,
 
 ---
 
-## Privacy (non-negotiable)
+## Data handling
 
-- `operator` is **omitted entirely** from every response unless
-  `CLASSG_EXPOSE_OPERATOR_LOCATION=true`. Clients must render correctly when it is absent, and
+- `operator` (the pilot's ground position) is **included by default**.
+  `CLASSG_EXPOSE_OPERATOR_LOCATION=false` turns it off. Clients must still render correctly
+  when it is absent — a drone that broadcasts no System message has no operator position — and
   must not treat absence as an error.
-- When present, the UI must visibly mark it as an operator position, not another aircraft.
-- No endpoint returns raw PCAP bytes.
-- There is no threat scoring anywhere in this API. `confidence` answers *"is this really a
-  drone"*. Clients must not relabel it as threat, priority, or risk.
+- The UI marks it distinctly from an aircraft, for the plain reason that a person standing on
+  the ground is not an aircraft.
+- **There is no threat scoring anywhere in this API.** `confidence` answers *"is this really a
+  drone"*. Clients must not relabel it as threat, priority, or risk — that is a policy
+  judgment belonging to whoever operates the system, not something to bake into the data model.
+
+## Constraints that are legal, not preferences
+
+These hold regardless of deployment choices, and are not configurable:
+
+- **Receive-only.** No endpoint causes RF transmission. No injection, deauth, or jamming
+  (47 U.S.C. §333, §302a).
+- **No payload demodulation.** Class E/F expose envelope and cadence only — never control-link
+  packet contents or FPV video. That is the Wiretap Act line.
 
 ## Auth
 
