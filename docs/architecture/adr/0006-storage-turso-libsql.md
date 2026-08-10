@@ -28,21 +28,20 @@ The genuine win over plain SQLite is embedded replicas: local-first writes that 
 connectivity loss, with the option of syncing to a durable remote when a network appears. That
 maps onto "Pi in a field, occasionally brought home" almost exactly.
 
-## Consequence 1: operator location must never leave the device
+## Consequence 1: everything syncs, by decision
 
-This is the significant one, and it did not exist under plain SQLite.
+Sync introduces a question plain SQLite did not: operator locations are **pilot ground
+positions**, and syncing them to a third-party cloud is a different posture from keeping them
+on the device.
 
-[data-model.md](../data-model.md#retention) already isolates operator location — the **pilot's
-ground position** — in its own store with short retention. Introducing a remote sync target
-turns that from a retention convenience into a **privacy boundary**. Syncing a database of
-pilot positions to a third-party cloud is a materially different posture from keeping it on
-the device, and no user asked for it.
+It was raised and **the operator of this system decided it is not a concern for this
+deployment**. So: one database, sync covers everything, uniform retention, and
+`CLASSG_EXPOSE_OPERATOR_LOCATION` defaults to true. The earlier design — two databases and
+unconditional sync exclusion — is dropped, which is a genuine simplification.
 
-**Operator location is excluded from sync, unconditionally.** If per-table sync exclusion
-cannot be expressed, the implementation uses two databases: a syncable one for
-tracks/detections/captures, and a local-only one for operator positions.
-
-This is not configurable. There is no flag to turn it on.
+Recorded because it is a deliberate choice rather than an oversight. Anyone redeploying this
+in a different context, particularly under GDPR where operator position is personal data,
+should revisit it. The `Store` interface below is where that separation would go back in.
 
 ## Consequence 2: CGO, and the loss of the static binary
 

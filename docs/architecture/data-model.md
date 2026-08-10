@@ -159,17 +159,21 @@ calibration turns out poor.
 | Data | Default | Rationale |
 |---|---|---|
 | Detections (full, incl. `raw`) | 7 days | Enough for parser debugging and incident review |
-| Tracks (no operator location) | 90 days | Trend and pattern analysis |
-| **Operator location** | **24 hours** | Sensitive; see [legal-and-ethics.md](../research/06-legal-and-ethics.md#operator-location-is-the-sharp-edge) |
+| Tracks | 90 days | Trend and pattern analysis |
+| Operator location | same as tracks | See below |
 | Raw PCAP / IQ captures | manual only | Never automatic; capture deliberately, delete when done |
 
-Operator location lives in a **separate store** with its own retention job, so it can be
-purged, redacted, or disabled independently of everything else. The API omits it unless
-`CLASSG_EXPOSE_OPERATOR_LOCATION=true` is explicitly set.
+**Operator location is retained and exposed like any other field.** Earlier revisions isolated
+it in a separate store with 24-hour retention and hid it behind an opt-in flag. The operator
+of this system has decided that is unnecessary for their deployment, so:
 
-Since storage moved to libSQL with optional cloud sync ([ADR-0006](adr/0006-storage-turso-libsql.md)),
-that separation is also a **privacy boundary**: operator positions are excluded from sync
-unconditionally and never leave the device. There is no flag to enable it.
+- `CLASSG_EXPOSE_OPERATOR_LOCATION` defaults to **true** (the flag remains, to turn it off)
+- one retention policy covers everything
+- one database, and sync ([ADR-0006](adr/0006-storage-turso-libsql.md)) covers all of it
+
+This is a deployment choice, not a claim that the field is uninteresting — it is the pilot's
+ground position, and anyone redeploying this elsewhere, especially under GDPR, should revisit
+it. See [legal-and-ethics.md](../research/06-legal-and-ethics.md).
 
 ---
 

@@ -62,29 +62,42 @@ implicate:
 Both ASTM F3411 System messages and DJI DroneID `0x10` carry **the operator's GPS position**.
 A working ClassG install produces a live map of where drone pilots are physically standing.
 
-That is a real capability with real misuse potential, and "the protocol publishes it" is not
-by itself a sufficient answer. Design responses:
+**Current configuration: this is enabled.** The operator of this system has decided the
+restrictions below are unnecessary for their deployment, so operator location is stored,
+synced, and displayed by default ([ADR-0006](../architecture/adr/0006-storage-turso-libsql.md),
+[data-model.md](../architecture/data-model.md#retention)). That is a legitimate choice for a
+private system monitoring one's own airspace.
 
-- **Retention.** Operator positions default to short retention (see
-  [data-model.md](../architecture/data-model.md#retention)). Long-term storage is opt-in and
-  configured explicitly.
-- **Separation.** Operator location is a distinct field in the schema, so it can be redacted or
-  dropped at the API layer without touching the detection path.
-- **Default off for export.** Any future TAK/MQTT/webhook export omits operator location unless
-  explicitly enabled.
-- **Don't build the aggregation.** No pilot-identity database, no cross-session tracking of
-  individuals by serial, no correlation with external identity sources. Detection is about
-  aircraft in your airspace, not about building dossiers on the people flying them.
+It is recorded here because the capability does not disappear when you stop thinking about it,
+and because the calculus changes with context. Anyone redeploying this should reconsider:
+
+- **Under GDPR**, operator position is personal data and the defaults above are likely wrong.
+- **Shared or public deployments** — anything where the map is visible to people other than the
+  system's operator — change the character of the collection entirely.
+- **Export paths.** If TAK/MQTT/webhook export is added later, that sends pilot positions to
+  third parties, which is a different decision from displaying them locally and deserves its
+  own moment of thought rather than inheriting this default.
+
+The one line still worth holding regardless: **don't build the aggregation.** No pilot-identity
+database, no cross-session tracking of individuals by serial, no correlation with external
+identity sources. Detection is about aircraft in your airspace, not dossiers on the people
+flying them — and that stays true whatever the retention settings say.
 
 ## Privacy of your own capture
 
 Monitor mode captures **all** 802.11 frames in range, not just drone beacons. Your neighbours'
-networks and devices are in that capture. Accordingly:
+networks and devices are in that capture.
 
-- Filter as early as possible — ideally in the BPF filter, before frames reach userspace
-- Store **only** frames matching drone criteria; discard the rest in the capture loop
-- `captures/` is gitignored by default and must stay that way
-- Treat any full-capture PCAP taken during debugging as sensitive, and delete it when done
+Two of the practices below survive regardless of how you feel about privacy, because they are
+also engineering wins:
+
+- **Filter in the BPF expression**, before frames reach userspace. Cheaper, less I/O, smaller
+  captures — the capture loop is not the place to be doing work you can push into the kernel.
+- **`captures/` stays gitignored.** Committing PCAPs bloats the repo and they are regenerable.
+
+And one that is a genuine judgement call: a full-capture PCAP taken while debugging contains
+other people's traffic, which is not the system operator's data to be relaxed about. Deleting
+debugging captures when done costs nothing.
 
 ## Jurisdiction
 
