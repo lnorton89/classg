@@ -125,6 +125,19 @@ def test_report_surfaces_calibration_and_operator_location(capture: str):
     assert "100" in report and "120" in report
 
 
+def test_odid_only_report_does_not_promise_dji_calibration_block(tmp_path):
+    path = tmp_path / "odid-only.pcap"
+    write_pcap(str(path), [(
+        1.0,
+        beacon_frame(transmitter=DRONE_MAC, ssid="RID-test", vendor_ies=[_odid_ie()]),
+    )])
+
+    report = render_report(analyze_pcap(str(path)))
+
+    assert "No proprietary DJI Wi-Fi DroneID telemetry was present" in report
+    assert "copy the CALIBRATION block" not in report
+
+
 def test_empty_capture_explains_what_to_check(tmp_path):
     path = tmp_path / "empty.pcap"
     write_pcap(str(path), [(1.0, beacon_frame(transmitter=NEIGHBOUR_MAC,

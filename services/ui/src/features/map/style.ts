@@ -12,7 +12,7 @@
 import type { StyleSpecification } from 'maplibre-gl'
 
 /** Where self-hosted tiles live, relative to the Vite base. */
-export const TILE_PATH = 'tiles/basemap/{z}/{x}/{y}.png'
+export const TILE_PATH = 'tiles/basemap/{z}/{x}/{y}.jpg'
 
 export type BasemapMode = 'tiles' | 'no-tiles'
 
@@ -146,8 +146,9 @@ export function tiledStyle(theme: 'dark' | 'light', baseUrl: string): StyleSpeci
         tiles: [`${baseUrl}${TILE_PATH}`],
         tileSize: 256,
         minzoom: 0,
-        maxzoom: 16,
-        attribution: 'Self-hosted tiles',
+        maxzoom: 15,
+        attribution:
+          '<a href="https://www.usgs.gov/programs/national-geospatial-program/national-map" target="_blank">USGS The National Map</a> (public domain)',
       },
       rings: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
     },
@@ -189,12 +190,19 @@ export function tiledStyle(theme: 'dark' | 'light', baseUrl: string): StyleSpeci
  */
 export async function tilesReachable(baseUrl: string, signal?: AbortSignal): Promise<boolean> {
   try {
-    const response = await fetch(`${baseUrl}tiles/basemap/0/0/0.png`, {
-      method: 'HEAD',
+    const response = await fetch(`${baseUrl}tiles/basemap/0/0/0.jpg`, {
+      method: 'GET',
       cache: 'no-store',
       ...(signal ? { signal } : {}),
     })
-    return response.ok
+    // The SPA server may answer an unknown tile path with index.html and a 200.
+    // Treat only image responses as tiles, otherwise MapLibre repeatedly tries
+    // to decode the HTML fallback as PNG data and floods the console.
+    return (
+      response.ok &&
+      response.headers.get('x-classg-basemap') !== 'offline fallback' &&
+      (response.headers.get('content-type')?.startsWith('image/') ?? false)
+    )
   } catch {
     return false
   }

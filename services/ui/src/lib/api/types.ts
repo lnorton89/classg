@@ -40,7 +40,31 @@ export interface SensorHealth {
   reason?: string
   detail?: Record<string, unknown>
   /** `GET /sensors` returns the same shape "with full config". */
-  config?: Record<string, unknown>
+  config?: SensorRuntimeConfig
+}
+
+export interface SensorCaptureConfig {
+  supported: boolean
+  interface?: string
+  channel?: number
+  duration_s?: number
+  label?: string
+}
+
+export interface SensorRuntimeConfig {
+  unit: string
+  stale_after_s: number
+  expected: boolean
+  restart_command: string
+  restart_available: boolean
+  restart_unavailable_reason?: string
+  capture: SensorCaptureConfig
+}
+
+export interface RestartSensorResponse {
+  sensor_id: string
+  unit: string
+  accepted: boolean
 }
 
 export interface Health {
@@ -198,6 +222,11 @@ export interface ChannelPlan {
 /** Fusion confidence weights, keyed by detection class. */
 export type FusionWeights = {
   weights: Partial<Record<DetectionClass, number>>
+}
+
+export interface ConfigResponse<T> {
+  value: T
+  restart_required: boolean
 }
 
 export interface ConfigPutResponse {

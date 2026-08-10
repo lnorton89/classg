@@ -96,6 +96,13 @@ classg/
 Hardware validation is still the critical path, but the Wi-Fi sensor, fusion service, Go API,
 and operator UI now have working implementations. Start here:
 
+Configuration is centralized in `.env`; bootstrap it from the committed contract before
+running services. See [docs/ops/00-configuration.md](docs/ops/00-configuration.md).
+
+```bash
+make env
+```
+
 1. **Read** [docs/research/02-hardware-capabilities.md](docs/research/02-hardware-capabilities.md)
    so you know what to expect from each radio.
 2. **Set up the Pi** — [docs/ops/01-pi-setup.md](docs/ops/01-pi-setup.md)
@@ -107,7 +114,11 @@ The first thing worth doing is capturing a PCAP of your DJI powering up. Everyth
 is built against that ground truth.
 
 ```bash
-python -m sensor_wifi.cli capture --iface wlan1 --channel 6 --out captures/dji-first-flight.pcap
+cd services/sensor-wifi
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[replay]'
+.venv/bin/python -m classg_wifi.cli capture \
+  --iface wlan1 --channel 6 --out ../../captures/dji-first-flight.pcap
 ```
 
 The operator UI also runs without hardware by using deterministic mock scenarios:
@@ -116,6 +127,16 @@ The operator UI also runs without hardware by using deterministic mock scenarios
 cd services/ui
 npm ci
 npm run dev
+```
+
+To run the real web stack through Windows Docker while the adapter remains in
+WSL, see [docker/README.md](docker/README.md):
+
+```bash
+make compose-up
+cd services/sensor-wifi
+.venv/bin/python -m classg_wifi.cli replay \
+  ../../captures/20260810-141223-dji-first-flight.pcap
 ```
 
 ---

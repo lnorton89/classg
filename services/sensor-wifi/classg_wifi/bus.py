@@ -27,21 +27,33 @@ class DetectionPublisher:
         endpoint: str = DEFAULT_ENDPOINT,
         hwm: int = DEFAULT_HWM,
         sensor_id: str = "wifi-0",
+        detection_topic: str = "detection.",
+        heartbeat_topic: str = "heartbeat.",
+        socket_mode: str = "bind",
     ) -> None:
         self.sensor_id = sensor_id
+        self.detection_topic = detection_topic
+        self.heartbeat_topic = heartbeat_topic
         self._ctx: zmq.Context[zmq.Socket[bytes]] = zmq.Context.instance()
         self._sock: zmq.Socket[bytes] = self._ctx.socket(zmq.PUB)
         self._sock.setsockopt(zmq.SNDHWM, hwm)
         # Drop immediately rather than blocking when the HWM is reached.
         self._sock.setsockopt(zmq.LINGER, 0)
-        self._sock.bind(endpoint)
-        log.info("publishing detections on %s (hwm=%d)", endpoint, hwm)
+        if socket_mode == "bind":
+            self._sock.bind(endpoint)
+        elif socket_mode == "connect":
+            self._sock.connect(endpoint)
+        else:
+            raise ValueError("socket_mode must be 'bind' or 'connect'")
+        log.info(
+            "publishing detections via %s (%s, hwm=%d)", endpoint, socket_mode, hwm
+        )
 
         self.published = 0
         self.dropped = 0
 
     def publish(self, detection: dict[str, Any]) -> bool:
-        topic = f"detection.{detection['detection_class']}"
+        topic = f"{self.detection_topic}{detection['detection_class']}"
         body = json.dumps(detection, separators=(",", ":"))
         try:
             self._sock.send_multipart(
@@ -73,7 +85,11 @@ class DetectionPublisher:
         }
         with contextlib.suppress(zmq.Again):
             self._sock.send_multipart(
-                [b"heartbeat.wifi", json.dumps(msg).encode()], flags=zmq.NOBLOCK
+                [
+                    f"{self.heartbeat_topic}wifi".encode(),
+                    json.dumps(msg).encode(),
+                ],
+                flags=zmq.NOBLOCK,
             )
 
     def close(self) -> None:

@@ -1,4 +1,5 @@
 import {
+  AttributionControl,
   GeoJSONSource,
   Map as MapLibreMap,
   Marker,
@@ -10,7 +11,7 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef, useState } from 'react'
 
-import { useTheme } from '@/app/theme'
+import { useTheme } from '@/app/theme-context'
 import type { Detection, Track } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
@@ -41,10 +42,13 @@ export interface LiveMapProps {
   tracks: Track[]
   adsb: Detection[]
   selectedTrackId: string | null
-  onSelectTrack: (trackId: string | null) => void
+  onSelectTrack?: (trackId: string | null) => void
   /** Dim + hatch the map when what it shows cannot be trusted. */
   coverageBroken: boolean
   className: string
+  ariaLabel?: string
+  fitOnTrackChanges?: boolean
+  fitMaxZoom?: number
 }
 
 export function LiveMap({
@@ -54,6 +58,9 @@ export function LiveMap({
   onSelectTrack,
   coverageBroken,
   className,
+  ariaLabel = 'Live airspace map',
+  fitOnTrackChanges = false,
+  fitMaxZoom = 16,
 }: LiveMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -61,6 +68,7 @@ export function LiveMap({
   const operatorMarkers = useRef(new Map<string, Marker>())
   const mannedMarkers = useRef(new Map<string, { marker: Marker; node: HTMLElement }>())
   const onSelectRef = useRef(onSelectTrack)
+  const fittedBoundsRef = useRef<string | null>(null)
 
   useEffect(() => {
     onSelectRef.current = onSelectTrack
@@ -95,21 +103,22 @@ export function LiveMap({
       cooperativeGestures: true,
     })
     mapRef.current = map
+    fittedBoundsRef.current = null
 
     map.addControl(new NavigationControl({ visualizePitch: false }), 'top-right')
     map.addControl(new ScaleControl({ maxWidth: 90, unit: 'metric' }), 'bottom-left')
+    if (basemap === 'tiles') {
+      map.addControl(new AttributionControl({ compact: true }), 'bottom-right')
+    }
 
     // MapLibre gives the canvas no accessible name and does not mark the map as
     // a region. Upstream issues #362/#364; fixed here rather than waited on.
     const container = map.getContainer()
     container.setAttribute('role', 'region')
-    container.setAttribute('aria-label', 'Live airspace map')
+    container.setAttribute('aria-label', ariaLabel)
     map
       .getCanvas()
-      .setAttribute(
-        'aria-label',
-        'Airspace map. Arrow keys pan, plus and minus zoom. A text list of all contacts is available beside the map.',
-      )
+      .setAttribute('aria-label', `${ariaLabel}. Arrow keys pan; plus and minus zoom.`)
     // Controls set both `title` and `aria-label`, which NVDA announces twice.
     for (const button of container.querySelectorAll('.maplibregl-ctrl button')) {
       button.removeAttribute('title')
@@ -193,7 +202,7 @@ export function LiveMap({
       map.remove()
       mapRef.current = null
     }
-  }, [basemap, theme])
+  }, [ariaLabel, basemap, theme])
 
   // --- line sources --------------------------------------------------------
   useEffect(() => {
@@ -215,25 +224,6 @@ export function LiveMap({
 
     for (const track of tracks) {
       const current = track.current
-      if (!current) continue // no GPS fix: listed in the contacts panel, not plotted
-      seen.add(track.track_id)
-
-      const options = {
-        track,
-        selected: track.track_id === selectedTrackId,
-        onSelect: (id: string) => onSelectRef.current(id),
-      }
-      const existing = droneMarkers.current.get(track.track_id)
-      if (existing) {
-        updateDroneMarker(existing.node, options)
-        existing.marker.setLngLat([current.lon, current.lat])
-      } else {
-        const node = createDroneMarker(options)
-        const marker = new Marker({ element: node })
-          .setLngLat([current.lon, current.lat])
-          .addTo(map)
-        droneMarkers.current.set(track.track_id, { marker, node })
-      }
 
       if (track.operator) {
         seenOperators.add(track.track_id)
@@ -249,6 +239,26 @@ export function LiveMap({
             .addTo(map)
           operatorMarkers.current.set(track.track_id, marker)
         }
+      }
+
+      if (!current) continue // history/operator can plot without a current aircraft fix
+      seen.add(track.track_id)
+
+      const options = {
+        track,
+        selected: track.track_id === selectedTrackId,
+        onSelect: onSelectRef.current ? (id: string) => onSelectRef.current?.(id) : undefined,
+      }
+      const existing = droneMarkers.current.get(track.track_id)
+      if (existing) {
+        updateDroneMarker(existing.node, options)
+        existing.marker.setLngLat([current.lon, current.lat])
+      } else {
+        const node = createDroneMarker(options)
+        const marker = new Marker({ element: node })
+          .setLngLat([current.lon, current.lat])
+          .addTo(map)
+        droneMarkers.current.set(track.track_id, { marker, node })
       }
     }
 
@@ -305,26 +315,39 @@ export function LiveMap({
     }
   }, [adsb, ready])
 
-  // --- first fit -----------------------------------------------------------
-  const fittedRef = useRef(false)
+  // --- route/contact fit ---------------------------------------------------
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !ready || fittedRef.current) return
+    if (!map || !ready) return
     const bounds = boundsOf(plottablePoints(tracks))
     if (!bounds) return
-    fittedRef.current = true
+    const signature = [bounds.west, bounds.south, bounds.east, bounds.north]
+      .map((value) => value.toFixed(7))
+      .join(',')
+    if (fittedBoundsRef.current === signature) return
+    if (!fitOnTrackChanges && fittedBoundsRef.current !== null) return
+    fittedBoundsRef.current = signature
+    map.resize()
     map.fitBounds(
       [
         [bounds.west, bounds.south],
         [bounds.east, bounds.north],
       ],
-      { padding: 96, maxZoom: 16, duration: 0 },
+      { padding: 64, maxZoom: fitMaxZoom, duration: 0 },
     )
-  }, [tracks, ready])
+  }, [fitMaxZoom, fitOnTrackChanges, tracks, ready])
 
   return (
     <div className={cn('relative isolate', className)}>
-      <div ref={containerRef} className="absolute inset-0" data-testid="map-canvas" />
+      <div
+        ref={containerRef}
+        className="absolute inset-0"
+        // MapLibre adds `.maplibregl-map { position: relative }` after mount.
+        // Its stylesheet loads after Tailwind and otherwise wins the cascade,
+        // collapsing this absolutely-positioned container to 0px tall.
+        style={{ position: 'absolute' }}
+        data-testid="map-canvas"
+      />
 
       {/*
         When coverage is broken the map is not just annotated, it is visibly

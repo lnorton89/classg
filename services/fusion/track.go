@@ -20,6 +20,24 @@ const (
 	StateClosed    TrackState = "CLOSED"
 )
 
+type Lifecycle struct {
+	ConfirmMinDetections int
+	ConfirmMinSpan       time.Duration
+	CoastAfter           time.Duration
+	CloseAfter           time.Duration
+	HistoryDepth         int
+}
+
+func DefaultLifecycle() Lifecycle {
+	return Lifecycle{
+		ConfirmMinDetections: ConfirmMinDetections,
+		ConfirmMinSpan:       ConfirmMinSpan,
+		CoastAfter:           CoastAfter,
+		CloseAfter:           CloseAfter,
+		HistoryDepth:         HistoryDepth,
+	}
+}
+
 // Lifecycle thresholds. Tuned against T2/T5 in docs/planning/test-plan.md --
 // coast must outlast a full channel-hop cycle plus a brief occlusion, or a
 // hovering drone splits into multiple tracks.
@@ -56,6 +74,7 @@ type Identity struct {
 }
 
 type Track struct {
+	SchemaVersion  string     `json:"schema_version"`
 	TrackID        string     `json:"track_id"`
 	State          TrackState `json:"state"`
 	FirstSeen      time.Time  `json:"first_seen"`
@@ -100,12 +119,12 @@ func (t *Track) addEvidence(class, sensorKind string, weight float64, at time.Ti
 	t.recomputeConfidence()
 }
 
-func (t *Track) updateState(now time.Time) {
+func (t *Track) updateState(now time.Time, lifecycle Lifecycle) {
 	since := now.Sub(t.LastSeen)
 	switch {
-	case since > CloseAfter:
+	case since > lifecycle.CloseAfter:
 		t.State = StateClosed
-	case since > CoastAfter:
+	case since > lifecycle.CoastAfter:
 		if t.State == StateConfirmed {
 			t.State = StateCoasting
 		}
@@ -113,18 +132,18 @@ func (t *Track) updateState(now time.Time) {
 		// Reacquired after occlusion. Same track ID by design -- see test T5.
 		t.State = StateConfirmed
 	case t.State == StateTentative:
-		if t.DetectionCount >= ConfirmMinDetections &&
-			t.LastSeen.Sub(t.FirstSeen) >= ConfirmMinSpan {
+		if t.DetectionCount >= lifecycle.ConfirmMinDetections &&
+			t.LastSeen.Sub(t.FirstSeen) >= lifecycle.ConfirmMinSpan {
 			t.State = StateConfirmed
 		}
 	}
 }
 
-func (t *Track) addPosition(p Position) {
+func (t *Track) addPosition(p Position, historyDepth int) {
 	t.Current = &p
 	t.History = append(t.History, p)
-	if len(t.History) > HistoryDepth {
-		t.History = t.History[len(t.History)-HistoryDepth:]
+	if len(t.History) > historyDepth {
+		t.History = t.History[len(t.History)-historyDepth:]
 	}
 }
 
@@ -134,21 +153,27 @@ func (t *Track) addPosition(p Position) {
 // stale aircraft that are no longer flying, which is worse than briefly having no
 // tracks -- fusion rebuilds from live detections within seconds. See test T6.
 type TrackStore struct {
-	mu       sync.RWMutex
-	bySerial map[string]*Track
-	byMAC    map[string]*Track
-	all      map[string]*Track
-	weights  map[string]float64
-	newID    func() string
+	mu        sync.RWMutex
+	bySerial  map[string]*Track
+	byMAC     map[string]*Track
+	all       map[string]*Track
+	weights   map[string]float64
+	newID     func() string
+	lifecycle Lifecycle
 }
 
 func NewTrackStore(weights map[string]float64, newID func() string) *TrackStore {
+	return NewTrackStoreWithLifecycle(weights, newID, DefaultLifecycle())
+}
+
+func NewTrackStoreWithLifecycle(weights map[string]float64, newID func() string, lifecycle Lifecycle) *TrackStore {
 	return &TrackStore{
-		bySerial: make(map[string]*Track),
-		byMAC:    make(map[string]*Track),
-		all:      make(map[string]*Track),
-		weights:  weights,
-		newID:    newID,
+		bySerial:  make(map[string]*Track),
+		byMAC:     make(map[string]*Track),
+		all:       make(map[string]*Track),
+		weights:   weights,
+		newID:     newID,
+		lifecycle: lifecycle,
 	}
 }
 
@@ -190,11 +215,12 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 	t := s.resolve(serial, mac)
 	if t == nil {
 		t = &Track{
-			TrackID:   s.newID(),
-			State:     StateTentative,
-			FirstSeen: d.TS,
-			Evidence:  make(map[string]*Evidence),
-			Identity:  Identity{Serial: serial, Vendor: d.Identity.VendorHint},
+			SchemaVersion: "1.0",
+			TrackID:       s.newID(),
+			State:         StateTentative,
+			FirstSeen:     d.TS,
+			Evidence:      make(map[string]*Evidence),
+			Identity:      Identity{Serial: serial, Vendor: d.Identity.VendorHint},
 		}
 		s.all[t.TrackID] = t
 		if serial != "" {
@@ -228,13 +254,13 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 			AltGeodeticM: d.Position.AltGeodeticM,
 			HeightAGLM:   d.Position.HeightAGLM,
 			At:           d.TS,
-		})
+		}, s.lifecycle.HistoryDepth)
 	}
 	if d.Operator != nil {
 		t.Operator = &Position{Lat: d.Operator.Lat, Lon: d.Operator.Lon, At: d.TS}
 	}
 
-	t.updateState(now)
+	t.updateState(now, s.lifecycle)
 	return t
 }
 
@@ -248,7 +274,7 @@ func (s *TrackStore) Reap(now time.Time) []*Track {
 	var changed []*Track
 	for id, t := range s.all {
 		prev := t.State
-		t.updateState(now)
+		t.updateState(now, s.lifecycle)
 		if t.State != prev {
 			changed = append(changed, t)
 		}

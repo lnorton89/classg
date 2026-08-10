@@ -6,7 +6,7 @@
  * to read the situation on a phone, so it is visible rather than sr-only.
  */
 import { Link } from '@tanstack/react-router'
-import { PlaneIcon, SatelliteDishIcon, UserIcon } from 'lucide-react'
+import { ArchiveIcon, PlaneIcon, SatelliteDishIcon, UserIcon } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/misc'
@@ -19,6 +19,7 @@ import { bearingDegrees, distanceMetres } from './geo'
 
 export interface ContactsPanelProps {
   tracks: Track[]
+  closedTracks?: Track[]
   adsb: Detection[]
   selectedTrackId: string | null
   onSelectTrack: (trackId: string | null) => void
@@ -27,6 +28,7 @@ export interface ContactsPanelProps {
 
 export function ContactsPanel({
   tracks,
+  closedTracks = [],
   adsb,
   selectedTrackId,
   onSelectTrack,
@@ -42,7 +44,7 @@ export function ContactsPanel({
           id="contacts-drones"
           className="text-muted-foreground bg-card/95 sticky top-0 z-10 px-3 py-2 text-xs font-semibold tracking-wide uppercase backdrop-blur"
         >
-          Drone tracks ({tracks.length})
+          Active drone tracks ({tracks.length})
         </h2>
 
         {tracks.length === 0 ? (
@@ -59,6 +61,28 @@ export function ContactsPanel({
                   selected={track.track_id === selectedTrackId}
                   onSelect={onSelectTrack}
                 />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section aria-labelledby="contacts-closed" className="border-border max-h-64 border-t">
+        <h2
+          id="contacts-closed"
+          className="text-muted-foreground px-3 py-2 text-xs font-semibold tracking-wide uppercase"
+        >
+          Closed tracks ({closedTracks.length})
+        </h2>
+        {closedTracks.length === 0 ? (
+          <p className="text-muted-foreground px-3 pb-3 text-xs">
+            No archived tracks. Closed tracks remain available here for review.
+          </p>
+        ) : (
+          <ul className="divide-border divide-y overflow-y-auto">
+            {closedTracks.map((track) => (
+              <li key={track.track_id}>
+                <ClosedTrackRow track={track} />
               </li>
             ))}
           </ul>
@@ -96,6 +120,29 @@ export function ContactsPanel({
           </ul>
         )}
       </section>
+    </div>
+  )
+}
+
+function ClosedTrackRow({ track }: { track: Track }) {
+  const name = track.identity?.serial ?? track.identity?.macs?.[0] ?? track.track_id
+
+  return (
+    <div className="hover:bg-accent/30 flex items-start gap-2 px-3 py-2.5 transition-colors">
+      <ArchiveIcon className="text-muted-foreground mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <span className="block truncate font-mono text-xs font-medium">{name}</span>
+        <span className="text-muted-foreground mt-0.5 block text-[11px]">
+          closed {formatRelative(track.last_seen)} · {track.detection_count} detections
+        </span>
+      </div>
+      <Link
+        to="/tracks/$trackId"
+        params={{ trackId: track.track_id }}
+        className="text-primary shrink-0 rounded text-[11px] underline-offset-2 hover:underline"
+      >
+        Review
+      </Link>
     </div>
   )
 }

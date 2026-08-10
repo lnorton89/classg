@@ -1,0 +1,362 @@
+{
+  "version": 2,
+  "title": "ClassG documentation",
+  "summary": "Operator workflows and component-level documentation for the passive multi-sensor drone detector.",
+  "documents": [
+    {
+      "id": "operator-guide",
+      "title": "Operator guide",
+      "area": "Start here",
+      "treePath": ["docs", "operator-guide"],
+      "summary": "Bring up the detector, prove coverage, collect ground truth, and interpret the console.",
+      "sections": [
+        {
+          "title": "Quick start",
+          "description": "Start with configuration and hardware truth before interpreting an empty map.",
+          "items": [
+            { "title": "Create configuration", "body": "Copy the committed environment contract and review interface names and storage paths for this machine.", "command": "make env" },
+            { "title": "Verify the radios", "body": "A missing sensor means no coverage, not a quiet sky. Confirm monitor mode and the RTL-SDR driver before flight testing.", "command": "./scripts/check-capture-env.sh" },
+            { "title": "Run mock traffic", "body": "Exercise the map, health states, captures, and configuration without hardware.", "command": "cd services/ui\nnpm ci\nnpm run dev" }
+          ]
+        },
+        {
+          "title": "Ground-truth workflow",
+          "description": "A verified PCAP is the basis for parser and calibration decisions.",
+          "items": [
+            { "title": "Capture", "body": "Power on the drone, wait for GPS, hover, land, and stop the passive recording.", "command": "classg-sensor-wifi capture --iface wlan1 --channel 6 --out captures/dji-first-flight.pcap" },
+            { "title": "Analyze", "body": "Confirm channel, beacon interval, identity messages, and calibration samples.", "command": "classg-sensor-wifi analyze captures/dji-first-flight.pcap" },
+            { "title": "Replay", "body": "Run the deterministic parser regression path without radio hardware.", "command": "classg-sensor-wifi replay captures/dji-first-flight.pcap" }
+          ]
+        },
+        {
+          "title": "Reading the console",
+          "description": "Coverage, confidence, and track state answer different questions.",
+          "items": [
+            { "title": "Coverage comes first", "body": "Healthy sensors with no detections mean quiet sky. Unhealthy or missing sensors mean the sky is not being observed reliably." },
+            { "title": "Confidence is explainable", "body": "Evidence combines with noisy-OR. Track detail shows each contributing class, count, weight, and last observation; confidence is never a threat score." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sensor-wifi",
+      "title": "Wi-Fi sensor",
+      "area": "services/sensor-wifi",
+      "treePath": ["services", "sensor-wifi"],
+      "summary": "Passive monitor-mode capture and parsing for Wi-Fi Remote ID, DJI DroneID, and fingerprints.",
+      "sections": [
+        {
+          "title": "Architecture",
+          "description": "This is the current hardware path that can observe the DJI aircraft.",
+          "items": [
+            { "title": "Capture", "body": "Listens to management beacons through a monitor-mode interface and never associates with, transmits to, or disrupts nearby networks." },
+            { "title": "Decode", "body": "Parses ASTM F3411 OpenDroneID messages and DJI vendor information elements into normalized Detection records." },
+            { "title": "Publish", "body": "Emits detections and regular health heartbeats over ZeroMQ so quiet sky remains distinguishable from sensor failure." }
+          ]
+        },
+        {
+          "title": "Environment variables",
+          "description": "CLI flags override the centralized values loaded from the root .env file.",
+          "items": [
+            { "title": "Identity and radio", "body": "CLASSG_WIFI_SENSOR_ID, CLASSG_WIFI_INTERFACE, CLASSG_WIFI_CHANNEL, CLASSG_WIFI_CHANNELS_FILE, and CLASSG_WIFI_FINGERPRINTS_FILE select the receiver and parsing inputs.", "path": ".env.example" },
+            { "title": "Timing and transport", "body": "CLASSG_WIFI_DWELL_MS, CLASSG_WIFI_HEARTBEAT_S, CLASSG_WIFI_ZMQ_HWM, and CLASSG_WIFI_SOCKET_MODE control hopping and publisher behavior." },
+            { "title": "Shared bus", "body": "CLASSG_DETECTION_ENDPOINT, CLASSG_DETECTION_TOPIC, and CLASSG_HEARTBEAT_TOPIC must agree with fusion and API subscribers." },
+            { "title": "Capture output", "body": "CLASSG_WIFI_CAPTURE_OUT sets the default PCAP destination." }
+          ]
+        },
+        {
+          "title": "Commands",
+          "description": "The packaged command is classg-sensor-wifi.",
+          "items": [
+            { "title": "Live help", "body": "Show commands plus the shared documentation catalog.", "command": "classg-sensor-wifi --help" },
+            { "title": "Focused help", "body": "Print this component page in the terminal.", "command": "classg-sensor-wifi --help-topic sensor-wifi" },
+            { "title": "Tests", "body": "Parser, property, replay, CLI, and environment tests live beside the package.", "command": "cd services/sensor-wifi\npython -m pytest" }
+          ]
+        },
+        {
+          "title": "Configuration and references",
+          "description": "Channel weights are hypotheses that must be revised from capture evidence.",
+          "items": [
+            { "title": "Channel plan", "body": "Weighted hopping favors observed Remote ID channels while continuing to survey the supported bands.", "path": "services/sensor-wifi/config/channels.yaml" },
+            { "title": "Protocol references", "body": "Wire formats and calibration notes are documented separately.", "path": "docs/research/03-protocol-remote-id.md" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fusion",
+      "title": "Fusion service",
+      "area": "services/fusion",
+      "treePath": ["services", "fusion"],
+      "summary": "Correlates immutable detections into stateful tracks with identity precedence and explainable confidence.",
+      "sections": [
+        {
+          "title": "Architecture",
+          "description": "Fusion is the only service that decides which observations belong to the same aircraft.",
+          "items": [
+            { "title": "Identity precedence", "body": "Serial number wins, MAC address is the fallback, and a MAC-keyed track is promoted without losing history when a serial arrives." },
+            { "title": "Lifecycle", "body": "Tracks move through TENTATIVE, CONFIRMED, COASTING, and CLOSED. Reacquisition keeps the same track identifier." },
+            { "title": "Confidence", "body": "Distinct evidence classes combine using noisy-OR. Repeated observations within one class increase count, not weight." }
+          ]
+        },
+        {
+          "title": "Environment variables",
+          "description": "Fusion reads the shared root environment before it starts its bus loops.",
+          "items": [
+            { "title": "Bus topology", "body": "CLASSG_DETECTION_ENDPOINT, CLASSG_TRACK_ENDPOINT, CLASSG_DETECTION_TOPIC, CLASSG_HEARTBEAT_TOPIC, CLASSG_TRACK_TOPIC, and CLASSG_FUSION_DETECTION_SOCKET_MODE define transport roles." },
+            { "title": "Track lifecycle", "body": "CLASSG_FUSION_SENSOR_STALE_AFTER, CLASSG_FUSION_TRACK_TTL, and CLASSG_FUSION_REAP_INTERVAL control coasting, closure, and cleanup cadence.", "path": ".env.example" }
+          ]
+        },
+        {
+          "title": "Development",
+          "description": "The store is deliberately in memory; stale aircraft must not resurrect after a restart.",
+          "items": [
+            { "title": "Run tests", "body": "Race detection matters because bus ingestion and track reads share state.", "command": "cd services/fusion\ngo test -race -count=1 ./..." },
+            { "title": "Data model", "body": "Detection classes, confidence math, and retention rationale.", "path": "docs/architecture/data-model.md" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "title": "Go API",
+      "area": "services/api",
+      "treePath": ["services", "api"],
+      "summary": "REST, WebSocket, persistence, capture control, health aggregation, and static UI delivery.",
+      "sections": [
+        {
+          "title": "Architecture",
+          "description": "The API remains available when radios or fusion are down so it can report degraded coverage.",
+          "items": [
+            { "title": "REST and stream", "body": "Versioned endpoints expose tracks, detections, sensors, health, captures, configuration, and a live WebSocket stream." },
+            { "title": "Storage", "body": "Embedded libSQL is the local default with optional Turso synchronization; an in-memory backend supports development and tests." },
+            { "title": "Static application", "body": "The built Vite bundle is served with SPA fallback, while missing assets retain real 404 responses." }
+          ]
+        },
+        {
+          "title": "Environment variables",
+          "description": "API configuration is grouped by server, storage, streams, operations, and retention.",
+          "items": [
+            { "title": "Server and storage", "body": "CLASSG_LISTEN, CLASSG_VERSION, CLASSG_STORE, CLASSG_DB, CLASSG_TURSO_URL, CLASSG_TURSO_AUTH_TOKEN, and CLASSG_TURSO_SYNC_INTERVAL configure the process and database." },
+            { "title": "Streams and health", "body": "CLASSG_TRACK_ENDPOINT, CLASSG_DETECTION_ENDPOINT, topic variables, CLASSG_EXPECTED_SENSORS, and CLASSG_SENSOR_STALE_AFTER define live inputs and coverage health." },
+            { "title": "UI and capture control", "body": "CLASSG_UI_DIR, CLASSG_CAPTURE_DIR, CLASSG_SENSOR_WIFI_DIR, CLASSG_PYTHON, CLASSG_CAPTURE_ALLOW_UNPRIVILEGED, and CLASSG_SENSOR_RESTART_COMMAND configure operator actions." },
+            { "title": "Privacy and retention", "body": "CLASSG_EXPOSE_OPERATOR_LOCATION, CLASSG_RETENTION_DETECTIONS, CLASSG_RETENTION_TRACKS, CLASSG_RETENTION_INTERVAL, CLASSG_MAX_HISTORY, and CLASSG_LOG_LEVEL govern exposure and storage bounds.", "path": ".env.example" }
+          ]
+        },
+        {
+          "title": "Development",
+          "description": "The API can run without any bus publishers attached.",
+          "items": [
+            { "title": "Run locally", "body": "Use an ephemeral store while developing against the UI.", "command": "cd services/api\nCLASSG_STORE=memory go run ./cmd/classg-api" },
+            { "title": "Verify", "body": "Run formatting, vet, and the HTTP/WebSocket/store suites.", "command": "cd services/api\ngo vet ./...\ngo test ./..." },
+            { "title": "Contract", "body": "The normative v1 request, response, error, and stream shapes.", "path": "docs/architecture/api-contract.md" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ui",
+      "title": "Operator UI",
+      "area": "services/ui",
+      "treePath": ["services", "ui"],
+      "summary": "A static React and MapLibre console for live airspace, evidence, health, captures, and configuration.",
+      "sections": [
+        {
+          "title": "Architecture",
+          "description": "Every view is designed around evidence and coverage rather than invented threat labels.",
+          "items": [
+            { "title": "Live map", "body": "Plots aircraft, operators when supplied by policy, trails, range rings, and visually distinct ADS-B traffic." },
+            { "title": "Tracks and evidence", "body": "Shows identity, lifecycle, position history, RSSI, and the exact evidence behind confidence." },
+            { "title": "Operations", "body": "Sensor health, capture workflow, configuration editors, and this documentation are available without a Node runtime in deployment." }
+          ]
+        },
+        {
+          "title": "Environment variables",
+          "description": "Only VITE_-prefixed values are compiled into browser code; port variables configure local or container hosting.",
+          "items": [
+            { "title": "Browser configuration", "body": "VITE_USE_MSW selects deterministic mock traffic and VITE_API_BASE sets the browser-facing API prefix." },
+            { "title": "Development proxy", "body": "VITE_API_TARGET selects the API origin used by the Vite development proxy." },
+            { "title": "Published ports", "body": "CLASSG_UI_PORT and CLASSG_API_PORT select host ports for the container stack.", "path": ".env.example" }
+          ]
+        },
+        {
+          "title": "Development",
+          "description": "Mock Service Worker provides deterministic scenarios when no backend is present.",
+          "items": [
+            { "title": "Start", "body": "Mock mode is enabled by default in development.", "command": "cd services/ui\nnpm ci\nnpm run dev" },
+            { "title": "Verify", "body": "Formatting, lint, tests, type generation, TypeScript, and Vite production output are CI gates.", "command": "npm run format:check\nnpm run lint\nnpm test -- --run\nnpm run build" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sensor-sdr",
+      "title": "SDR sensor",
+      "area": "services/sensor-sdr",
+      "treePath": ["services", "sensor-sdr"],
+      "summary": "Rust scaffolding for ADS-B context and sub-2 GHz energy and cadence detection.",
+      "sections": [
+        {
+          "title": "Architecture and hardware",
+          "description": "The RTL-SDR V4 tunes only to about 1.766 GHz.",
+          "items": [
+            { "title": "What it can see", "body": "ADS-B, 433/868/915 MHz control links, 1.2/1.3 GHz analog FPV, and GNSS L1 interference indicators." },
+            { "title": "What it cannot see", "body": "DJI OcuSync at 2.4 and 5.8 GHz is physically outside tuner range. Gain or antennas cannot change that." },
+            { "title": "Privacy boundary", "body": "Future sweep logic characterizes envelopes and cadence only; it must never demodulate payload or video content." }
+          ]
+        },
+        {
+          "title": "Environment variables",
+          "description": "Reserved values document the future runtime contract while the acquisition loop is still scaffolding.",
+          "items": [
+            { "title": "Receiver identity", "body": "CLASSG_SDR_SENSOR_ID identifies the receiver in health and detection streams." },
+            { "title": "Sweep timing", "body": "CLASSG_SDR_DWELL_MS sets the planned dwell duration per sweep step.", "path": ".env.example" }
+          ]
+        },
+        {
+          "title": "Development",
+          "description": "The current crate contains tuner abstractions, buffer logic, noise-floor estimation, and sweep planning.",
+          "items": [
+            { "title": "Verify", "body": "Rust formatting, Clippy, and unit tests are required.", "command": "cd services/sensor-sdr\ncargo fmt --check\ncargo clippy --all-targets -- -D warnings\ncargo test" },
+            { "title": "Hardware decision", "body": "Why the tuner cannot cover DJI and where it still adds value.", "path": "docs/architecture/adr/0004-rtlsdr-scope.md" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sensor-ble",
+      "title": "Bluetooth sensor",
+      "area": "services/sensor-ble",
+      "treePath": ["services", "sensor-ble"],
+      "summary": "Planned BLE Remote ID coverage using a dedicated receiver capable of the required PHYs.",
+      "sections": [
+        {
+          "title": "Architecture and status",
+          "description": "This component is planned and requires hardware not currently in the system.",
+          "items": [
+            { "title": "Coverage gap", "body": "Bluetooth-only Remote ID aircraft remain invisible until this sensor is implemented." },
+            { "title": "Receiver", "body": "An nRF52840-class dongle running Sniffle is the intended path for legacy and extended advertising, including LE Coded PHY." },
+            { "title": "Reuse", "body": "The ASTM F3411 payload parser should be shared with the Wi-Fi sensor; only transport encapsulation changes." }
+          ]
+        },
+        {
+          "title": "Environment variables",
+          "description": "The BLE runtime is planned, but its identity is reserved in the centralized contract.",
+          "items": [
+            { "title": "Receiver identity", "body": "CLASSG_BLE_SENSOR_ID will identify BLE health and Remote ID detections.", "path": ".env.example" }
+          ]
+        },
+        {
+          "title": "Exit criterion",
+          "description": "Cross-transport identity must not manufacture duplicate aircraft.",
+          "items": [
+            { "title": "Deduplication", "body": "A drone broadcasting the same serial over Wi-Fi and BLE must produce one fusion track." },
+            { "title": "Roadmap", "body": "Implementation and validation belong to Milestone 4.", "path": "docs/planning/roadmap.md" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "schemas",
+      "title": "Schemas and contracts",
+      "area": "schemas",
+      "treePath": ["schemas"],
+      "summary": "Normative cross-language Detection and Track wire contracts plus generated UI types.",
+      "sections": [
+        {
+          "title": "Architecture and ownership",
+          "description": "Schemas define the wire format; service-local structs are implementations, not authorities.",
+          "items": [
+            { "title": "Detection", "body": "An immutable sensor observation containing identity, RF, position, kinematics, and optional protocol-specific evidence.", "path": "schemas/detection.schema.json" },
+            { "title": "Track", "body": "Fusion correlation over time, including lifecycle, confidence, identity, evidence, and position history.", "path": "schemas/track.schema.json" },
+            { "title": "Generated TypeScript", "body": "The UI generates and checks its core wire types from these schemas during every build." }
+          ]
+        },
+        {
+          "title": "Change discipline",
+          "description": "A schema change is a multi-service API change.",
+          "items": [
+            { "title": "Regenerate", "body": "Update committed TypeScript output after changing a schema.", "command": "cd services/ui\nnpm run gen:types" },
+            { "title": "Validate", "body": "CI validates schema structure, examples, generated output, and consuming service tests." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "captures",
+      "title": "Capture corpus",
+      "area": "captures",
+      "treePath": ["captures"],
+      "summary": "Ground-truth PCAP and IQ artifacts used for parser regression, calibration, and measured decisions.",
+      "sections": [
+        {
+          "title": "Architecture and purpose",
+          "description": "Real frames outrank assumptions about undocumented aircraft behavior.",
+          "items": [
+            { "title": "Record context", "body": "Store aircraft model, firmware, observed channel, beacon interval, flight sequence, and expected identities beside each capture." },
+            { "title": "Keep raw evidence local", "body": "Captures may contain nearby broadcast traffic and are gitignored. Share only deliberately scrubbed fixtures." },
+            { "title": "Regression", "body": "Parser fixes should be replayed across the corpus so correcting one aircraft does not silently break another." }
+          ]
+        },
+        {
+          "title": "Workflow",
+          "description": "Capture, inspect in Wireshark, analyze, and record findings before calibration changes.",
+          "items": [
+            { "title": "First-flight procedure", "body": "The complete operating checklist and evidence template.", "path": "docs/ops/06-first-capture.md" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "scripts",
+      "title": "Diagnostics and scripts",
+      "area": "scripts",
+      "treePath": ["scripts"],
+      "summary": "Host and hardware bring-up tools for monitor mode, adapter diagnosis, environment checks, and first capture.",
+      "sections": [
+        {
+          "title": "Architecture and responsibilities",
+          "description": "They encode known driver, WSL, USB, privilege, and passive-mode failure modes.",
+          "items": [
+            { "title": "Capture readiness", "body": "Checks required commands, interfaces, monitor mode, driver state, output paths, and service prerequisites.", "path": "scripts/check-capture-env.sh" },
+            { "title": "Adapter diagnosis", "body": "Explains enumeration, firmware, driver binding, rfkill, and monitor-mode failures.", "path": "scripts/diagnose-adapter.sh" },
+            { "title": "First capture", "body": "Orchestrates a guarded ground-truth capture using centralized configuration.", "path": "scripts/first-capture.sh" }
+          ]
+        },
+        {
+          "title": "Safety",
+          "description": "Scripts must preserve the receive-only constraint.",
+          "items": [
+            { "title": "Never transmit", "body": "No script may associate, inject, deauthenticate, jam, spoof, or take control of an aircraft or network." }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "deployment",
+      "title": "Deployment and configuration",
+      "area": "docker, .env, Makefile",
+      "treePath": ["docker & config"],
+      "summary": "Centralized environment configuration, local builds, container orchestration, and Raspberry Pi service operation.",
+      "sections": [
+        {
+          "title": "Environment variables",
+          "description": "The root .env is the local contract; explicit process environment always wins.",
+          "items": [
+            { "title": "Bootstrap", "body": "Create the ignored local file from the committed example.", "command": "make env" },
+            { "title": "Reference", "body": "Variable ownership, precedence, paths, and deployment examples.", "path": "docs/ops/00-configuration.md" }
+          ]
+        },
+        {
+          "title": "Architecture and deployment",
+          "description": "The Go API serves the built static UI; radio access remains host-specific.",
+          "items": [
+            { "title": "Local verification", "body": "Run all language suites through the repository targets.", "command": "make test\nmake lint\nmake build-ui" },
+            { "title": "Containers", "body": "Compose covers the web tier and configuration wiring; USB and monitor-mode setup remain explicit host responsibilities.", "path": "docker/docker-compose.yml" },
+            { "title": "Pi operations", "body": "Installation, drivers, tuning, and troubleshooting procedures.", "path": "docs/ops/01-pi-setup.md" }
+          ]
+        }
+      ]
+    }
+  ]
+}

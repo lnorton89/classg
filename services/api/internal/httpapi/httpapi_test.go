@@ -448,7 +448,12 @@ func TestHealthReportsDetectionCounts(t *testing.T) {
 // --- sensors ---------------------------------------------------------------
 
 func TestSensorsAndRestart(t *testing.T) {
-	h := newHarness(t, nil)
+	h := newHarness(t, map[string]string{
+		"CLASSG_WIFI_INTERFACE":     "wlan-test",
+		"CLASSG_WIFI_CHANNEL":       "11",
+		"CLASSG_CAPTURE_DURATION_S": "45",
+		"CLASSG_CAPTURE_LABEL":      "flight-test",
+	})
 	h.reg.Heartbeat(health.Heartbeat{SensorID: "wifi-0", SensorKind: "wifi", Healthy: true, TS: time.Now()})
 
 	w := h.do(t, "GET", "/api/v1/sensors", "")
@@ -459,7 +464,14 @@ func TestSensorsAndRestart(t *testing.T) {
 		Sensors []struct {
 			SensorID string `json:"sensor_id"`
 			Config   struct {
-				Unit string `json:"unit"`
+				Unit    string `json:"unit"`
+				Capture struct {
+					Supported bool   `json:"supported"`
+					Interface string `json:"interface"`
+					Channel   int    `json:"channel"`
+					DurationS int    `json:"duration_s"`
+					Label     string `json:"label"`
+				} `json:"capture"`
 			} `json:"config"`
 		} `json:"sensors"`
 	}
@@ -469,10 +481,27 @@ func TestSensorsAndRestart(t *testing.T) {
 	if len(resp.Sensors) != 1 || resp.Sensors[0].Config.Unit != "classg-sensor-wifi.service" {
 		t.Fatalf("sensors: %+v", resp.Sensors)
 	}
+	captureCfg := resp.Sensors[0].Config.Capture
+	if !captureCfg.Supported || captureCfg.Interface != "wlan-test" || captureCfg.Channel != 11 ||
+		captureCfg.DurationS != 45 || captureCfg.Label != "flight-test" {
+		t.Fatalf("capture config did not round-trip from env: %+v", captureCfg)
+	}
 
 	w = h.do(t, "POST", "/api/v1/sensors/wifi-0/restart", "")
 	if w.Code != 202 {
 		t.Fatalf("restart: got %d want 202 (%s)", w.Code, w.Body.String())
+	}
+}
+
+func TestCaptureInterfaceMustMatchEnvironment(t *testing.T) {
+	h := newHarness(t, map[string]string{"CLASSG_WIFI_INTERFACE": "wlan-test"})
+	w := h.do(t, "POST", "/api/v1/captures", `{"iface":"wlan0","channel":6,"duration_s":5}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d want 400 (%s)", w.Code, w.Body.String())
+	}
+	err := decodeErr(t, w)
+	if err.Error.Field != "iface" || !strings.Contains(err.Error.Message, "wlan-test") {
+		t.Fatalf("unexpected error: %+v", err.Error)
 	}
 }
 

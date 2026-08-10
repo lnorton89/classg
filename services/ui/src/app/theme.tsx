@@ -4,29 +4,13 @@
  * outdoors at night; a full-screen white flash is a real problem, not a polish
  * item.
  */
-import { createContext, use, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
-export type ThemePreference = 'dark' | 'light' | 'system'
-export type ResolvedTheme = 'dark' | 'light'
+import { ThemeContext } from './theme-context'
+import type { ResolvedTheme, ThemePreference } from './theme-context'
 
 const STORAGE_KEY = 'classg.theme'
-
-interface ThemeContextValue {
-  preference: ThemePreference
-  theme: ResolvedTheme
-  setPreference: (preference: ThemePreference) => void
-}
-
-const ThemeContext = createContext<ThemeContextValue>({
-  preference: 'dark',
-  theme: 'dark',
-  setPreference: () => undefined,
-})
-
-export function useTheme(): ThemeContextValue {
-  return use(ThemeContext)
-}
 
 function readStored(): ThemePreference {
   if (typeof localStorage === 'undefined') return 'dark'

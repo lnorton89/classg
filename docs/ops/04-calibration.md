@@ -38,12 +38,14 @@ controller's GPS), including operator altitude. This is the sensitive field — 
 2. **Class A (ASTM F3411) is the live detection path**, not Class B.
 3. The parser's handling of absent fields is correct — verified in `tests/test_real_drone.py`.
 
-### Open question: does the Mini 5 Pro emit DJI DroneID at all?
+### Resolved: the Mini 5 Pro did not emit proprietary DJI DroneID
 
-The Android app decodes only standard Remote ID, so it cannot tell us whether the proprietary
-DJI vendor IE (`26:37:12`) is also present.
+The first monitor-mode capture, `20260810-141223-dji-first-flight.pcap`, contained 176 ASTM
+F3411 Remote ID beacons and zero proprietary DJI vendor IEs (`26:37:12`). All 779 captured
+beacons parsed without error. For this aircraft, Class A is the live detection path and DJI
+raw-field calibration is not applicable.
 
-**Prediction: probably not, over Wi-Fi.** The proprietary Wi-Fi DroneID belongs to DJI's older
+This matches the prediction: the proprietary Wi-Fi DroneID belongs to DJI's older
 Wi-Fi-link drones. The Mini 5 Pro uses OcuSync, which carries DJI's own DroneID on the
 2.4/5.8 GHz link — [out of reach of both our radios](../architecture/adr/0004-rtlsdr-scope.md) —
 while standards-compliant Remote ID goes out over Wi-Fi Beacon.
@@ -58,8 +60,9 @@ available. Note that in the results section rather than chasing it.
 The app reported `Msg Δ 12.6 s`. **Do not take this as the beacon rate.** Android throttles
 Wi-Fi scans for apps (roughly 4 scans per 2 minutes), so the phone cannot observe the true
 interval. Only a monitor-mode capture can, which is exactly what
-`classg_wifi.cli analyze` measures. The ~1 Hz assumption in
-[channels.yaml](../../services/sensor-wifi/config/channels.yaml) is still untested.
+`classg_wifi.cli analyze` measures. The PCAP measured a 240 ms median interval across 175
+deltas, approximately 4.17 Hz. The prior ~1 Hz assumption is wrong for this aircraft.
+Channel 6 was confirmed with 176 drone beacons.
 
 ---
 

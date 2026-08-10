@@ -22,6 +22,16 @@ func restartCommandString(argv []string, unit string) string {
 	return strings.Join(out, " ")
 }
 
+func restartAvailability(argv []string) (bool, string) {
+	if len(argv) == 0 {
+		return false, "no restart command configured"
+	}
+	if _, err := exec.LookPath(argv[0]); err != nil {
+		return false, argv[0] + " is not available in the API runtime"
+	}
+	return true, ""
+}
+
 // SystemdSensors restarts sensors through the configured command.
 //
 // The command template comes from configuration rather than the request, and

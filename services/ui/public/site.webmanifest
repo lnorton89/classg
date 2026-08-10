@@ -1,0 +1,9 @@
+{
+  "name": "ClassG",
+  "short_name": "ClassG",
+  "description": "Passive drone detection console",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }],
+  "theme_color": "#061827",
+  "background_color": "#061827",
+  "display": "standalone"
+}

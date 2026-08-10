@@ -32,6 +32,9 @@ func TestDefaults(t *testing.T) {
 		{"detection retention", cfg.RetentionDetections, 7 * 24 * time.Hour},
 		{"track retention", cfg.RetentionTracks, 90 * 24 * time.Hour},
 		{"no turso url", cfg.TursoURL, ""},
+		{"wifi interface", cfg.WifiInterface, "wlan1"},
+		{"wifi channel", cfg.WifiChannel, 6},
+		{"capture duration", cfg.CaptureDurationS, 120},
 	}
 	for _, tc := range tests {
 		if tc.got != tc.want {
@@ -132,6 +135,16 @@ func TestValidation(t *testing.T) {
 			name:    "max history below one",
 			env:     map[string]string{"CLASSG_MAX_HISTORY": "0"},
 			wantErr: "CLASSG_MAX_HISTORY",
+		},
+		{
+			name:    "invalid wifi channel",
+			env:     map[string]string{"CLASSG_WIFI_CHANNEL": "200"},
+			wantErr: "CLASSG_WIFI_CHANNEL",
+		},
+		{
+			name:    "invalid capture duration",
+			env:     map[string]string{"CLASSG_CAPTURE_DURATION_S": "0"},
+			wantErr: "CLASSG_CAPTURE_DURATION_S",
 		},
 	}
 	for _, tc := range tests {

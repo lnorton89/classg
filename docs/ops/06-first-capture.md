@@ -5,9 +5,9 @@ record of the drone's model, firmware, channel, and beacon interval.
 
 ---
 
-## ⚠️ WSL2 cannot do this as-is
+## WSL2 status: working with the custom kernel
 
-Measured on this machine, 2026-08-10:
+Initial stock-kernel baseline measured on this machine, 2026-08-10:
 
 | Check | Result |
 |---|---|
@@ -24,6 +24,12 @@ Measured on this machine, 2026-08-10:
 **The conclusion:** USB forwarding would work, but there is no MediaTek driver in the WSL
 kernel for the adapter to bind to. No driver → no `wlan` interface → no monitor mode → no
 capture. This is not a configuration problem; the module was never built.
+
+**Final result on the same date:** the 6.18.33.2 custom kernel works with this adapter at
+USB 2 high speed (480 Mbit/s). The two required MT7961 Wi-Fi blobs must be compiled into the
+kernel image: WSL's shared kernel can otherwise resolve firmware from an initial mount
+namespace where Debian's `/lib/firmware` is not visible. With embedded firmware, `mt7921u`
+reports its WM firmware version and registers `phy0` / `wlan0` without usbip URB errors.
 
 The commonly repeated "WSL has no wireless support at all" is now outdated — kernel 6.18 does
 ship `cfg80211`/`mac80211`. But the mt76 driver family specifically is not included.
@@ -126,6 +132,11 @@ module autoloading. The driver just sits on disk, unloaded.
 sudo modprobe mt7921u
 ```
 
+The build script embeds `WIFI_MT7961_patch_mcu_1_2_hdr.bin` and
+`WIFI_RAM_CODE_MT7961_1.bin` in the kernel. Seeing those same files under Debian's
+`/lib/firmware` is not sufficient on WSL when the kernel's initial mount namespace belongs
+to another system distro such as Docker Desktop.
+
 `scripts/setup-monitor.sh` and `scripts/first-capture.sh` now do this automatically, and
 `check-capture-env.sh` distinguishes *driver missing* from *driver present but not loaded*
 from *loaded but probe failed*.
@@ -187,7 +198,9 @@ to re-run on.
 
 ```bash
 cd services/sensor-wifi
-python -m classg_wifi.cli analyze ../../captures/<file>.pcap
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[replay]'
+.venv/bin/python -m classg_wifi.cli analyze ../../captures/<file>.pcap
 ```
 
 This runs the capture through the project's own parsers and reports:

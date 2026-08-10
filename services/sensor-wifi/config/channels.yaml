@@ -1,8 +1,8 @@
 # Weighted channel plan for sensor-wifi.
 #
-# Remote ID beacons arrive at ~1 Hz. Uniform hopping across 13 channels at 250 ms
-# dwell gives a 3.25 s revisit and misses most beacons, so time is allocated in
-# proportion to the prior probability of Remote ID appearing on each channel.
+# The Mini 5 Pro was measured at ~4.17 Hz (240 ms median) on channel 6. Other
+# aircraft may differ. Time is allocated in proportion to the prior probability
+# of Remote ID appearing on each channel, while retaining a broad sweep.
 #
 # These weights are a STARTING HYPOTHESIS. Milestone 0 records which channel your
 # DJI actually uses - update `weight` accordingly before tuning anything else.
@@ -13,7 +13,7 @@
 
 channels:
   # --- Primary: where DJI Wi-Fi Remote ID is most commonly observed -----------
-  - { channel: 6,   freq_mhz: 2437, weight: 40.0 }
+  - { channel: 6,   freq_mhz: 2437, weight: 40.0 }  # confirmed: Mini 5 Pro
 
   # --- Secondary: other common non-overlapping choices ------------------------
   - { channel: 1,   freq_mhz: 2412, weight: 15.0 }

@@ -54,6 +54,7 @@ type Config struct {
 	TrackTopic        string
 	DetectionTopic    string
 	HeartbeatTopic    string
+	FusionTrackTTL    time.Duration
 
 	// ExposeOperatorLocation gates the operator ground position on every
 	// response. Defaults to true; set false to strip it.
@@ -73,6 +74,10 @@ type Config struct {
 	SensorWifiDir            string
 	PythonBin                string
 	CaptureAllowUnprivileged bool
+	WifiInterface            string
+	WifiChannel              int
+	CaptureDurationS         int
+	CaptureLabel             string
 
 	// SensorRestartCommand is a template argv; %s is replaced with the systemd
 	// unit derived from the sensor kind (ADR-0003 names the units).
@@ -163,6 +168,7 @@ func Load(getenv func(string) string) (*Config, error) {
 		TrackTopic:        get("CLASSG_TRACK_TOPIC", "track."),
 		DetectionTopic:    get("CLASSG_DETECTION_TOPIC", "detection."),
 		HeartbeatTopic:    get("CLASSG_HEARTBEAT_TOPIC", "heartbeat."),
+		FusionTrackTTL:    getDuration("CLASSG_FUSION_TRACK_TTL", 5*time.Minute),
 
 		ExposeOperatorLocation: getBool("CLASSG_EXPOSE_OPERATOR_LOCATION", true),
 
@@ -178,6 +184,10 @@ func Load(getenv func(string) string) (*Config, error) {
 		SensorWifiDir:            get("CLASSG_SENSOR_WIFI_DIR", filepath.Join("..", "sensor-wifi")),
 		PythonBin:                get("CLASSG_PYTHON", "python3"),
 		CaptureAllowUnprivileged: getBool("CLASSG_CAPTURE_ALLOW_UNPRIVILEGED", false),
+		WifiInterface:            get("CLASSG_WIFI_INTERFACE", "wlan1"),
+		WifiChannel:              getInt("CLASSG_WIFI_CHANNEL", 6),
+		CaptureDurationS:         getInt("CLASSG_CAPTURE_DURATION_S", 120),
+		CaptureLabel:             get("CLASSG_CAPTURE_LABEL", "sensor-capture"),
 
 		MaxHistory: getInt("CLASSG_MAX_HISTORY", 512),
 	}
@@ -211,6 +221,15 @@ func Load(getenv func(string) string) (*Config, error) {
 
 	if cfg.MaxHistory < 1 {
 		bad("CLASSG_MAX_HISTORY: must be >= 1, got %d", cfg.MaxHistory)
+	}
+	if cfg.WifiInterface == "" || len(cfg.WifiInterface) > 15 {
+		bad("CLASSG_WIFI_INTERFACE: must be a Linux interface name of 1-15 characters")
+	}
+	if cfg.WifiChannel < 1 || cfg.WifiChannel > 165 {
+		bad("CLASSG_WIFI_CHANNEL: must be between 1 and 165, got %d", cfg.WifiChannel)
+	}
+	if cfg.CaptureDurationS < 1 || cfg.CaptureDurationS > 3600 {
+		bad("CLASSG_CAPTURE_DURATION_S: must be between 1 and 3600, got %d", cfg.CaptureDurationS)
 	}
 
 	for _, e := range []struct{ key, val string }{

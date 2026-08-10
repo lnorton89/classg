@@ -19,8 +19,11 @@ fi
 
 echo "=== before ==="
 echo -n "  usb device: "; lsusb | grep -i 0e8d || echo "NOT PRESENT"
-echo -n "  link speed: "; cat /sys/bus/usb/devices/2-1/speed 2>/dev/null || echo "?"
-echo -n "  phy:        "; ls /sys/class/ieee80211/ 2>/dev/null | tr '\n' ' '; echo
+USB_DEV=$(find /sys/bus/usb/devices -maxdepth 2 -type f -name idVendor \
+    -exec grep -lix 0e8d {} + 2>/dev/null | sed 's,/idVendor$,,' | head -1)
+USB_SPEED=$(cat "$USB_DEV/speed" 2>/dev/null || echo "?")
+echo "  link speed: $USB_SPEED"
+echo -n "  phy:        "; find /sys/class/ieee80211 -mindepth 1 -maxdepth 1 -printf '%f ' 2>/dev/null; echo
 
 echo
 echo "=== unloading driver ==="
@@ -47,19 +50,21 @@ dmesg -l err,warn 2>/dev/null | grep -v dxg | tail -20 || echo "  (none)"
 
 echo
 echo "=== after ==="
-echo -n "  phy:        "; ls /sys/class/ieee80211/ 2>/dev/null | tr '\n' ' '; echo
+echo -n "  phy:        "; find /sys/class/ieee80211 -mindepth 1 -maxdepth 1 -printf '%f ' 2>/dev/null; echo
 echo -n "  interfaces: "; iw dev 2>/dev/null | awk '/Interface/{printf "%s ", $2}'; echo
-echo -n "  bound:      "; ls /sys/bus/usb/drivers/mt7921u/ 2>/dev/null | grep -E '^[0-9]' | tr '\n' ' '; echo
+echo -n "  bound:      "; find /sys/bus/usb/drivers/mt7921u -mindepth 1 -maxdepth 1 -name '[0-9]*' -printf '%f ' 2>/dev/null; echo
 
 echo
 echo "=== usbip link state ==="
 grep -vE "^hs .* 000000 0-0$" /sys/devices/platform/vhci_hcd.0/status 2>/dev/null | head -10
 
 echo
-if [ -n "$(ls /sys/class/ieee80211/ 2>/dev/null)" ]; then
+PHY_PATH=$(find /sys/class/ieee80211 -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)
+if [ -n "$PHY_PATH" ]; then
     echo "SUCCESS: a wireless phy registered. Run ./scripts/check-capture-env.sh"
 else
-    cat <<'EOS'
+    if [ "$USB_SPEED" = "5000" ] || [ "$USB_SPEED" = "10000" ]; then
+        cat <<'EOS'
 STILL NO PHY.
 
 The adapter is attached at USB 3.0 SuperSpeed (speed 5000). SuperSpeed devices
@@ -81,4 +86,15 @@ Highest-value next step, and it is a physical one:
 If it still fails at high speed, this is where WSL stops being worth it -- the
 Pi or a live USB will just work. See docs/ops/06-first-capture.md.
 EOS
+    else
+        cat <<'EOS'
+STILL NO PHY AT USB 2 HIGH SPEED.
+
+The USB 2 forcing test succeeded, but mt7921u still could not complete its MCU
+handshake over usbip. Look above for "Failed to get patch semaphore" and
+vhci_hcd URB errors. If firmware is embedded in the custom kernel and this
+still happens, the remaining failure is usbip transport compatibility with
+this adapter; use the Pi or a native/live Linux boot.
+EOS
+    fi
 fi

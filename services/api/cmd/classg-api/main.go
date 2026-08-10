@@ -42,7 +42,14 @@ func main() {
 }
 
 func run() error {
+	loaded, err := config.LoadDotEnv()
+	if err != nil {
+		return err
+	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel()})))
+	if loaded != "" {
+		slog.Info("loaded environment file", "path", loaded)
+	}
 
 	cfg, err := config.FromEnv()
 	if err != nil {
@@ -133,6 +140,11 @@ func run() error {
 		Detections: cfg.RetentionDetections,
 		Tracks:     cfg.RetentionTracks,
 		Interval:   cfg.RetentionInterval,
+	}).Run(ctx)
+	go (&ingest.StaleTrackCloser{
+		Store: st,
+		Hub:   h,
+		TTL:   cfg.FusionTrackTTL,
 	}).Run(ctx)
 
 	httpServer := &http.Server{

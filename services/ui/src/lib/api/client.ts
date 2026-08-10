@@ -16,11 +16,13 @@ import type {
   CapturesResponse,
   ChannelPlan,
   ConfigPutResponse,
+  ConfigResponse,
   DetectionsQuery,
   DetectionsResponse,
   Evidence,
   FusionWeights,
   Health,
+  RestartSensorResponse,
   SensorHealth,
   StartCaptureRequest,
   Track,
@@ -137,6 +139,19 @@ export function normalizeTrack(raw: Track): Track {
   }
 }
 
+/**
+ * Config endpoints return an envelope so PUT can report whether another
+ * service must restart. Accept the direct shape as well for compatibility with
+ * older API builds, but keep the unwrap at the transport boundary so views
+ * never have to know about both representations.
+ */
+export function unwrapConfigValue<T>(response: ConfigResponse<T> | T): T {
+  if (typeof response === 'object' && response !== null && 'value' in response) {
+    return response.value
+  }
+  return response
+}
+
 // ---------------------------------------------------------------------------
 // Endpoints
 // ---------------------------------------------------------------------------
@@ -152,8 +167,8 @@ export const api = {
     )
   },
 
-  restartSensor(sensorId: string): Promise<void> {
-    return request<void>(`/sensors/${encodeURIComponent(sensorId)}/restart`, {
+  restartSensor(sensorId: string): Promise<RestartSensorResponse> {
+    return request<RestartSensorResponse>(`/sensors/${encodeURIComponent(sensorId)}/restart`, {
       method: 'POST',
     })
   },
@@ -238,7 +253,9 @@ export const api = {
   },
 
   channelPlan(): Promise<ChannelPlan> {
-    return request<ChannelPlan>('/config/channels')
+    return request<ConfigResponse<ChannelPlan> | ChannelPlan>('/config/channels').then(
+      unwrapConfigValue,
+    )
   },
 
   putChannelPlan(body: ChannelPlan): Promise<ConfigPutResponse> {
@@ -249,7 +266,9 @@ export const api = {
   },
 
   weights(): Promise<FusionWeights> {
-    return request<FusionWeights>('/config/weights')
+    return request<ConfigResponse<FusionWeights> | FusionWeights>('/config/weights').then(
+      unwrapConfigValue,
+    )
   },
 
   putWeights(body: FusionWeights): Promise<ConfigPutResponse> {

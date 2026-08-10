@@ -45,3 +45,7 @@ dist/
 *.db-wal
 *.db-shm
 .env
+.env.local
+.env.*.local
+!.env.example
+!**/.env.example

@@ -38,10 +38,10 @@ function CaptureDetail() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-3 sm:p-4">
       <div>
         <Link
-          to="/captures"
+          to="/sensors"
           className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded text-xs"
         >
-          <ArrowLeftIcon className="size-3.5" aria-hidden /> All captures
+          <ArrowLeftIcon className="size-3.5" aria-hidden /> Sensors and captures
         </Link>
         <div className="mt-1 flex flex-wrap items-center gap-2">
           <h1 className="font-mono text-lg font-semibold tracking-tight">

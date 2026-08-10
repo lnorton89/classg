@@ -112,7 +112,10 @@ dmesg -w | grep -i usb
 lsusb | grep -Ei "0e8d|0bda"
 
 # Exercise the pipeline with no hardware
-cd services/sensor-wifi && python -m classg_wifi.cli replay ../../captures/dji-first-flight.pcap
+cd services/sensor-wifi
+python3 -m venv .venv
+.venv/bin/python -m pip install -e '.[replay]'
+.venv/bin/python -m classg_wifi.cli replay ../../captures/dji-first-flight.pcap
 ```
 
 ## Before filing a bug against your own code

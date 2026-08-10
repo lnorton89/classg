@@ -76,6 +76,12 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	// go-libsql's local file driver can open multiple SQLite connections, but
+	// concurrent detection and track writes then race for SQLite's single writer
+	// lock. A field detector values lossless ingestion over parallel SQL writes;
+	// one pooled connection serializes them without application-level retries.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	s := &Store{db: db, closeDriver: closeDriver, synced: synced}
 	if err := s.migrate(ctx); err != nil {
 		_ = s.Close()

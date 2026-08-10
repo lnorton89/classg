@@ -8,6 +8,7 @@ import (
 
 	"github.com/classg/api/internal/health"
 	"github.com/classg/api/internal/hub"
+	"github.com/classg/api/internal/model"
 	"github.com/classg/api/internal/store"
 	"github.com/classg/api/internal/store/memstore"
 )
@@ -63,10 +64,21 @@ func TestTrackIngest(t *testing.T) {
 }
 
 func TestTrackClosed(t *testing.T) {
-	in, _, _, h := newIngestor(true)
+	in, st, _, h := newIngestor(true)
 	c := h.Register([]string{hub.TopicTracks})
+	ctx := context.Background()
+	if err := st.UpsertTrack(ctx, model.Track{TrackID: "T1", State: "COASTING"}); err != nil {
+		t.Fatal(err)
+	}
 
-	in.Track(context.Background(), "track.closed", []byte(`{"track_id":"T1"}`))
+	in.Track(ctx, "track.closed", []byte(`{"track_id":"T1"}`))
+	closed, err := st.GetTrack(ctx, "T1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed.State != "CLOSED" {
+		t.Fatalf("closed track should remain archived in storage, got state %q", closed.State)
+	}
 
 	f := <-c.Frames
 	if f.Type != hub.TypeTrackClosed || f.TrackID != "T1" {
@@ -74,6 +86,27 @@ func TestTrackClosed(t *testing.T) {
 	}
 	if f.Track != nil {
 		t.Fatal("a closed frame carries only the id")
+	}
+}
+
+func TestClosedTrackDocumentIsArchived(t *testing.T) {
+	in, st, _, h := newIngestor(true)
+	c := h.Register([]string{hub.TopicTracks})
+	ctx := context.Background()
+	if err := st.UpsertTrack(ctx, model.Track{TrackID: "T1", State: "COASTING"}); err != nil {
+		t.Fatal(err)
+	}
+
+	in.Track(ctx, "track.update", []byte(`{"track_id":"T1","state":"CLOSED"}`))
+	closed, err := st.GetTrack(ctx, "T1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if closed.State != "CLOSED" {
+		t.Fatalf("closed track should remain archived in storage, got state %q", closed.State)
+	}
+	if frame := <-c.Frames; frame.Type != hub.TypeTrackClosed || frame.TrackID != "T1" {
+		t.Fatalf("frame: %+v", frame)
 	}
 }
 

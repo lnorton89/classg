@@ -19,7 +19,7 @@ import type { ReactNode } from 'react'
 import { API_BASE, normalizeTrack } from '@/lib/api/client'
 import { LiveStream, streamUrl, type ConnectionState } from '@/lib/api/live'
 import { queryKeys } from '@/lib/api/queries'
-import type { DetectionsResponse, ServerFrame, TracksResponse } from '@/lib/api/types'
+import type { DetectionsResponse, ServerFrame, Track, TracksResponse } from '@/lib/api/types'
 
 export interface LiveContextValue {
   connection: ConnectionState
@@ -121,11 +121,16 @@ export function applyFrame(queryClient: QueryClientLike, frame: ServerFrame): vo
     }
 
     case 'track.closed': {
+      queryClient.setQueryData<Track>(queryKeys.track(frame.track_id), (old) =>
+        old ? { ...old, state: 'CLOSED' } : old,
+      )
       queryClient.setQueriesData<TracksResponse>({ queryKey: ['tracks', 'list'] }, (old) => {
         if (!old) return old
-        const tracks = old.tracks.filter((t) => t.track_id !== frame.track_id)
-        if (tracks.length === old.tracks.length) return old
-        return { ...old, tracks, total: Math.max(0, old.total - 1) }
+        const index = old.tracks.findIndex((t) => t.track_id === frame.track_id)
+        if (index === -1 || old.tracks[index]?.state === 'CLOSED') return old
+        const tracks = old.tracks.slice()
+        tracks[index] = { ...tracks[index]!, state: 'CLOSED' }
+        return { ...old, tracks }
       })
       break
     }
@@ -148,7 +153,9 @@ export function applyFrame(queryClient: QueryClientLike, frame: ServerFrame): vo
 
     case 'health': {
       queryClient.setQueryData(queryKeys.health, frame.health)
-      queryClient.setQueryData(queryKeys.sensors, frame.health.sensors)
+      // /sensors includes resolved runtime config that /health deliberately
+      // omits. Do not overwrite that richer cache entry with heartbeat-only
+      // data, or capture and restart controls silently lose their settings.
       break
     }
 

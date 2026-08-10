@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import {
-  DiscAlbumIcon,
+  BookOpenIcon,
   MapIcon,
   MonitorIcon,
   MoonIcon,
@@ -11,7 +11,8 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-import { useTheme, type ThemePreference } from '@/app/theme'
+import { useTheme, type ThemePreference } from '@/app/theme-context'
+import { ClassGLogo } from '@/components/brand/classg-logo'
 import { Button } from '@/components/ui/button'
 import { SystemStatusPill, StreamStatusPill } from '@/features/health/components'
 import { cn } from '@/lib/cn'
@@ -21,9 +22,9 @@ import { MockScenarioSwitcher } from './mock-scenario-switcher'
 const NAV = [
   { to: '/', label: 'Live', icon: MapIcon, exact: true },
   { to: '/tracks', label: 'Tracks', icon: RadarIcon, exact: false },
-  { to: '/captures', label: 'Captures', icon: DiscAlbumIcon, exact: false },
   { to: '/sensors', label: 'Sensors', icon: SlidersHorizontalIcon, exact: false },
   { to: '/config', label: 'Config', icon: SettingsIcon, exact: false },
+  { to: '/docs', label: 'Docs', icon: BookOpenIcon, exact: false },
 ] as const
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -34,10 +35,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
 
       <header className="border-border bg-card/80 sticky top-0 z-40 border-b backdrop-blur">
-        <div className="flex h-14 items-center gap-2 px-3 sm:px-4">
+        <div className="flex h-16 items-center gap-2 px-3 sm:px-4">
           <Link to="/" className="flex shrink-0 items-center gap-2 rounded">
-            <RadarIcon className="text-primary size-5" aria-hidden />
-            <span className="text-sm font-semibold tracking-tight">ClassG</span>
+            <ClassGLogo className="flex items-center gap-1.5" />
           </Link>
 
           <nav

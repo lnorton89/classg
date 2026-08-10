@@ -8,6 +8,10 @@ import { ThemeProvider } from '@/app/theme'
 import { USE_MSW } from '@/lib/env'
 import { routeTree } from '@/routeTree.gen'
 
+import '@fontsource/manrope/400.css'
+import '@fontsource/manrope/500.css'
+import '@fontsource/manrope/600.css'
+import '@fontsource/manrope/700.css'
 import '@/styles.css'
 import 'maplibre-gl/dist/maplibre-gl.css'
 

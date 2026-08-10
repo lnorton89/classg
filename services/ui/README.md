@@ -11,6 +11,8 @@ npm run build
 ```
 
 Set `VITE_USE_MSW=false` to use a real API through the Vite proxy.
+Vite loads `VITE_*` settings from the repository-root `.env`, shared with the API
+and sensors. See `docs/ops/00-configuration.md`.
 
 ## Why MapLibre
 
@@ -18,6 +20,13 @@ Offline tiles. A field-deployed Pi has no internet, and a drone-detection map th
 tile CDN is useless exactly when you'd want it. MapLibre + a self-hosted TileServer handles
 this; the approach is borrowed from
 [RemoteIDReceiver](https://github.com/cyber-defence-campus/RemoteIDReceiver).
+
+The container uses public-domain USGS imagery as a satellite basemap in the United States.
+It serves build-seeded tiles first, fetches missing tiles while online, and retains runtime
+downloads in the `classg-tile-cache` Docker volume. Set
+`CLASSG_TILE_PRELOAD_BBOX=west,south,east,north` before `docker compose build` to seed an
+operations area at zoom levels 12–15. If neither the cache nor internet is available, the
+map keeps its range-ring fallback.
 
 ## Views
 
