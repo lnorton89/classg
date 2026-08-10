@@ -1,0 +1,47 @@
+# Captures contain everything in RF range, not just drones -- your neighbours'
+# networks are in there. Treat as sensitive; never commit.
+# See docs/research/06-legal-and-ethics.md#privacy-of-your-own-capture
+captures/*
+!captures/README.md
+!captures/.gitkeep
+*.pcap
+*.pcapng
+*.cfile
+*.iq
+*.fc32
+
+# Test vectors ARE committed -- they are the parser regression net.
+!services/sensor-wifi/tests/vectors/**
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.hypothesis/
+
+# Go
+/services/fusion/fusion
+/services/api/api
+*.test
+
+# Rust
+target/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Local config and data
+*.local.yaml
+*.db
+*.db-wal
+*.db-shm
+.env

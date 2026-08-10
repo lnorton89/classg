@@ -1,0 +1,42 @@
+# Web tier only. Sensors run as systemd units on the host -- see README.md in
+# this directory for why.
+
+services:
+  fusion:
+    build:
+      context: ../services/fusion
+    # Host networking so fusion can reach the sensors' ZMQ sockets on loopback.
+    network_mode: host
+    environment:
+      CLASSG_DETECTION_ENDPOINT: tcp://127.0.0.1:5556
+      CLASSG_TRACK_ENDPOINT: tcp://127.0.0.1:5557
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ../services/api
+    network_mode: host
+    environment:
+      CLASSG_TRACK_ENDPOINT: tcp://127.0.0.1:5557
+      CLASSG_LISTEN: ":8081"
+      CLASSG_DB: /data/classg.db
+      # Operator ground position is sensitive. Off unless deliberately enabled.
+      # docs/research/06-legal-and-ethics.md#operator-location-is-the-sharp-edge
+      CLASSG_EXPOSE_OPERATOR_LOCATION: "false"
+    volumes:
+      - classg-data:/data
+    restart: unless-stopped
+    depends_on:
+      - fusion
+
+  ui:
+    build:
+      context: ../services/ui
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    depends_on:
+      - api
+
+volumes:
+  classg-data:
