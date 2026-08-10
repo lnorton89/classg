@@ -27,6 +27,7 @@ import (
 	"github.com/classg/api/internal/hub"
 	"github.com/classg/api/internal/ingest"
 	"github.com/classg/api/internal/model"
+	"github.com/classg/api/internal/settings"
 	"github.com/classg/api/internal/store"
 	"github.com/classg/api/internal/store/libsqlstore"
 	"github.com/classg/api/internal/store/memstore"
@@ -42,28 +43,68 @@ func main() {
 }
 
 func run() error {
+	// ADR-0007 configuration tiers, in dependency order: Tier 1 from the
+	// environment opens the store, the store supplies Tier 2, and the seed file
+	// fills whatever the store has not been told.
 	loaded, err := config.LoadDotEnv()
 	if err != nil {
 		return err
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel()})))
-	if loaded != "" {
-		slog.Info("loaded environment file", "path", loaded)
-	}
 
-	cfg, err := config.FromEnv()
+	boot, err := config.BootstrapFromEnv()
 	if err != nil {
 		return err
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr,
+		&slog.HandlerOptions{Level: logLevel(boot.LogLevel)})))
+	if loaded != "" {
+		slog.Info("loaded environment file", "path", loaded)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	st, err := openStore(ctx, cfg)
+	st, err := openStore(ctx, boot)
 	if err != nil {
 		return err
 	}
 	defer st.Close()
+
+	seed, err := settings.LoadSeed(boot.SeedPath)
+	if err != nil {
+		return err
+	}
+	if seeded, err := settings.SeedIfEmpty(ctx, st, seed); err != nil {
+		return err
+	} else if seeded {
+		slog.Info("seeded settings from file", "path", boot.SeedPath, "count", len(seed))
+	}
+	stored, err := settings.LoadFromStore(ctx, st)
+	if err != nil {
+		return err
+	}
+	set, err := settings.Resolve(stored, seed, os.Getenv)
+	if err != nil {
+		return err
+	}
+
+	cfg, err := config.Assemble(boot, set)
+	if err != nil {
+		return err
+	}
+
+	// Environment overrides of database settings are legal but never silent:
+	// the invisible-source problem is the whole reason ADR-0007 exists.
+	var overridden []string
+	for _, k := range set.Keys() {
+		if set.Source(k) == settings.SourceEnv {
+			overridden = append(overridden, k)
+		}
+	}
+	if len(overridden) > 0 {
+		slog.Warn("settings overridden by environment; stored values are ignored for these",
+			"keys", strings.Join(overridden, ","))
+	}
 
 	registry := health.NewRegistry(cfg.SensorStaleAfter)
 	for _, d := range cfg.ExpectedSensors {
@@ -98,6 +139,7 @@ func run() error {
 		Registry: registry,
 		Hub:      h,
 		Captures: captures,
+		Settings: set,
 		Sensors:  httpapi.SystemdSensors{Argv: cfg.SensorRestartCommand},
 		Started:  time.Now(),
 	})
@@ -180,30 +222,31 @@ func run() error {
 	return httpServer.Shutdown(shutdownCtx)
 }
 
-func openStore(ctx context.Context, cfg *config.Config) (store.Store, error) {
-	if cfg.Store == config.StoreMemory {
-		slog.Warn("CLASSG_STORE=memory: nothing will be persisted across a restart")
+func openStore(ctx context.Context, boot *config.Bootstrap) (store.Store, error) {
+	if boot.Store == config.StoreMemory {
+		slog.Warn("CLASSG_STORE=memory: nothing persists across a restart, " +
+			"and settings come entirely from the seed file")
 		return memstore.New(), nil
 	}
 	st, err := libsqlstore.Open(ctx, libsqlstore.Options{
-		Path:         cfg.DBPath,
-		SyncURL:      cfg.TursoURL,
-		AuthToken:    cfg.TursoAuthToken,
-		SyncInterval: cfg.TursoSyncInterval,
+		Path:         boot.DBPath,
+		SyncURL:      boot.TursoURL,
+		AuthToken:    boot.TursoAuthToken,
+		SyncInterval: boot.TursoSyncInterval,
 	})
 	if err != nil {
 		return nil, err
 	}
 	if st.Synced() {
-		slog.Info("libSQL embedded replica: syncing to Turso", "interval", cfg.TursoSyncInterval)
+		slog.Info("libSQL embedded replica: syncing to Turso", "interval", boot.TursoSyncInterval)
 	} else {
-		slog.Info("libSQL local database: no sync configured", "path", cfg.DBPath)
+		slog.Info("libSQL local database: no sync configured", "path", boot.DBPath)
 	}
 	return st, nil
 }
 
-func logLevel() slog.Level {
-	switch strings.ToLower(os.Getenv("CLASSG_LOG_LEVEL")) {
+func logLevel(level string) slog.Level {
+	switch strings.ToLower(level) {
 	case "debug":
 		return slog.LevelDebug
 	case "warn":

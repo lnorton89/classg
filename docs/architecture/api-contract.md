@@ -177,6 +177,41 @@ this exists. Note that a capture contains every network in range, not only drone
 
 ## Config
 
+### `GET /config/settings`
+
+Every Tier 2 setting with its provenance ([ADR-0007](adr/0007-configuration-tiers.md)).
+Returning values without `source` would recreate the bug that ADR was written against.
+
+```jsonc
+{
+  "settings": {
+    "retention.tracks":   { "value": "2160h", "source": "seed", "mutable": true,
+                            "doc": "how long tracks are kept" },
+    "bus.track_endpoint": { "value": "tcp://fusion:5557", "source": "env", "mutable": false }
+  },
+  "env_overridden": ["bus.track_endpoint"]
+}
+```
+
+`source` is one of `env` · `db` · `seed` · `default`, in descending precedence.
+`env_overridden` lets a UI explain why a field is read-only instead of looking broken.
+
+### `PUT /config/settings`
+
+Partial update; values are strings regardless of the setting's type, so every tier shares one
+parser.
+
+```jsonc
+{ "retention.tracks": "720h", "sensors.stale_after": "45s" }
+```
+
+- `400 invalid_parameter` — unknown key, unparseable value, or a setting that is not mutable
+- `409 conflict` — the key is currently held by the environment, which would silently ignore
+  the stored value. Refused rather than accepted-and-ignored.
+- Validation runs over the whole body before anything is written, so a body with one bad value
+  leaves stored settings untouched rather than half-applied.
+- `restart_required` is `true`: the process holds its assembled config in memory.
+
 ### `GET|PUT /config/channels` — the weighted channel plan.
 ### `GET|PUT /config/weights` — fusion confidence weights.
 

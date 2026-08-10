@@ -62,7 +62,7 @@ retention:
 # Defaults for operator-initiated captures. The interface is deliberately not
 # settable from the browser.
 capture:
-  wifi_interface: wlan0
+  wifi_interface: wlan1
   # Measured: the DJI Mini 5 Pro beacons on channel 6 at ~4.17 Hz.
   # See docs/ops/04-calibration.md.
   wifi_channel: 6

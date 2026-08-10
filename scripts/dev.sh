@@ -40,6 +40,47 @@ for arg in "$@"; do
     esac
 done
 
+# --- reclaim ports from a previous run --------------------------------------
+# A killed terminal leaves `go run`'s child binary and Vite holding their ports,
+# and the next `make dev` fails with a bind error that names a port rather than
+# a cause. Reclaiming up front is what makes the loop restartable.
+
+port_pids() {
+    local port="$1"
+    if command -v lsof >/dev/null 2>&1; then
+        lsof -ti "tcp:${port}" -sTCP:LISTEN 2>/dev/null
+    elif command -v ss >/dev/null 2>&1; then
+        ss -lptnH "sport = :${port}" 2>/dev/null |
+            grep -oE 'pid=[0-9]+' | cut -d= -f2 | sort -u
+    elif command -v fuser >/dev/null 2>&1; then
+        fuser -n tcp "${port}" 2>/dev/null | tr -s ' ' '\n' | grep -E '^[0-9]+$'
+    fi
+}
+
+reclaim_port() {
+    local port="$1" label="$2" pids
+    pids="$(port_pids "$port" || true)"
+    [ -z "$pids" ] && return 0
+    for pid in $pids; do
+        # Say what is being killed rather than doing it silently -- if it is not
+        # actually a leftover, the user needs to know before it dies.
+        local name
+        name="$(ps -p "$pid" -o comm= 2>/dev/null || echo '?')"
+        echo "  reclaiming port $port ($label) from pid $pid [$name]"
+        kill "$pid" 2>/dev/null || true
+    done
+    # Give them a moment to release, then insist.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        pids="$(port_pids "$port" || true)"
+        [ -z "$pids" ] && return 0
+        sleep 0.2
+    done
+    for pid in $(port_pids "$port" || true); do
+        echo "  port $port still held by pid $pid, sending SIGKILL"
+        kill -9 "$pid" 2>/dev/null || true
+    done
+}
+
 PIDS=()
 cleanup() {
     echo
@@ -64,6 +105,22 @@ start() {
 
 echo "ClassG dev loop"
 echo
+
+# Only reclaim ports this run is about to bind. 5556 is deliberately excluded:
+# in the WSL layout the Wi-Fi sensor binds it, and that is a legitimately
+# running process, not a leftover of ours.
+[ "$RUN_UI" -eq 1 ]     && reclaim_port 5173 "vite"
+[ "$RUN_API" -eq 1 ]    && reclaim_port 8081 "api"
+[ "$RUN_FUSION" -eq 1 ] && reclaim_port 5557 "fusion tracks"
+
+# Stale `go run` children survive their parent and keep rebuilding stale code.
+for stale in classg-api classg-fusion; do
+    pids="$(pgrep -x "$stale" 2>/dev/null || true)"
+    for pid in $pids; do
+        echo "  killing leftover $stale (pid $pid)"
+        kill "$pid" 2>/dev/null || true
+    done
+done
 
 if [ "$RUN_FUSION" -eq 1 ]; then
     start fusion sh -c 'cd services/fusion && go run ./cmd/classg-fusion'

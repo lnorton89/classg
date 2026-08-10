@@ -16,6 +16,7 @@ import (
 	"github.com/classg/api/internal/httpapi"
 	"github.com/classg/api/internal/hub"
 	"github.com/classg/api/internal/model"
+	"github.com/classg/api/internal/settings"
 	"github.com/classg/api/internal/store"
 	"github.com/classg/api/internal/store/memstore"
 )
@@ -47,7 +48,18 @@ func newHarness(t *testing.T, env map[string]string) *harness {
 		env["CLASSG_UI_DIR"] = t.TempDir() // exists but has no index.html
 	}
 
-	cfg, err := config.Load(func(k string) string { return env[k] })
+	getenv := func(k string) string { return env[k] }
+	boot, err := config.LoadBootstrap(getenv)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	// No seed and no stored settings: the harness exercises built-in defaults
+	// plus whatever the test puts in the environment.
+	set, err := settings.Resolve(nil, nil, getenv)
+	if err != nil {
+		t.Fatalf("settings: %v", err)
+	}
+	cfg, err := config.Assemble(boot, set)
 	if err != nil {
 		t.Fatalf("config: %v", err)
 	}
@@ -58,7 +70,8 @@ func newHarness(t *testing.T, env map[string]string) *harness {
 
 	return &harness{
 		server: httpapi.New(httpapi.Options{
-			Config: cfg, Store: st, Registry: reg, Hub: h,
+			Settings: set,
+			Config:   cfg, Store: st, Registry: reg, Hub: h,
 			Captures: caps, Sensors: fakeSensors{}, Started: time.Now(),
 		}),
 		store: st, reg: reg, hub: h, cfg: cfg,
