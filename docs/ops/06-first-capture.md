@@ -38,12 +38,9 @@ ready, use it. Follow [01-pi-setup.md](01-pi-setup.md) → [02-wifi-adapter.md](
 native USB, no kernel build, no forwarding layer. ~15 minutes to write the stick. The most
 reliable way to get a capture *today* without the Pi.
 
-**3. Custom WSL2 kernel.** Buildable here — 16 cores and 930 GB free make it a ~20–30 minute
-job. Steps below. **Caveat worth weighing:** monitor mode over usbip adds an unproven layer.
-The USB bulk transfers that carry captured frames are being tunnelled over TCP into a VM, and
-I could find no confirmation that mt7921u monitor mode works reliably through that path. It
-may work fine; it may drop frames in ways that look like drone-side problems. For the *first*
-capture, where you need to trust a negative result, that ambiguity is expensive.
+**3. Custom WSL2 kernel — possible, but a coin flip on this specific chipset.** See
+[the WSL section below](#can-it-work-in-wsl-yes-with-one-real-risk) for the evidence and the
+automated build script.
 
 **4. Android phone + OpenDroneID receiver.** Not a PCAP, so it does not satisfy Milestone 0 —
 but it takes two minutes and answers the single most important question before you invest in
@@ -55,52 +52,76 @@ firmware are Bluetooth-only. Install
 > Bluetooth-only, then no amount of Wi-Fi capture work will ever see it, and the answer is the
 > nRF52840 dongle from Milestone 4 instead.
 
-### Building a WSL2 kernel with mt76 (option 3)
+---
+
+## Can it work in WSL? Yes — with one real risk
+
+### Why a kernel rebuild is unavoidable
+
+| Probe | Result |
+|---|---|
+| `CONFIG_MT7921U` in the running kernel | `# CONFIG_MT7921U is not set` — **explicitly disabled** |
+| `/lib/modules/$(uname -r)/build` | **absent** → cannot build the driver out-of-tree |
+| `CONFIG_MODULE_SIG_FORCE` | not set → self-built modules will load fine |
+| MT7961 firmware in `/lib/firmware/mediatek` | **absent** → must be installed |
+
+There is no shortcut. Replacing the kernel is the only route.
+
+### The technique is proven — just not on this chipset
+
+Monitor mode in WSL2 over `usbipd` genuinely works. There are working write-ups for
+**Atheros AR9271** ([wsl2-ar9271-monitor](https://github.com/BicycleJunkie1971/wsl2-ar9271-monitor))
+and **Realtek RTL8812AU** ([wsl2-wifi-adapter-setup](https://github.com/akulihin/wsl2-wifi-adapter-setup)),
+both including injection. So the architecture — custom kernel, usbip forwarding, `mac80211`
+monitor mode — is not the problem.
+
+**The problem is MediaTek specifically.**
+[microsoft/WSL#12288](https://github.com/microsoft/WSL/issues/12288) reports USB ID
+`0e8d:7961` — byte-for-byte the AWUS036AXML — attached over `usbipd` to a custom WSL2 kernel,
+**crashing the entire WSL VM during `mt7921u` initialisation**. The log ends at
+`WM Firmware Version:` and the session drops back to PowerShell, so firmware loads and the
+crash comes at driver probe. Reported on kernels 6.1 and 6.6. Closed unresolved, no
+workaround, no community reply.
+
+### Why it might still work for you
+
+That report is against 6.1/6.6. This build targets **6.18.33.2**, matching your running
+kernel — many `mt7921u` fixes newer than the failure. Nobody has published a confirmed
+success on this chipset, and nobody has published a confirmed failure on 6.18 either. It is
+genuinely untested territory.
+
+Realistic odds: a coin flip, for ~30 minutes of build time, with a clean bail-out.
+
+### Doing it
 
 ```bash
-sudo apt update && sudo apt install -y build-essential flex bison libssl-dev libelf-dev \
-  bc dwarves python3 pahole git tcpdump iw usbutils linux-tools-generic firmware-misc-nonfree
-git clone --depth 1 --branch linux-msft-wsl-6.6.y \
-  https://github.com/microsoft/WSL2-Linux-Kernel.git ~/WSL2-Linux-Kernel
-cd ~/WSL2-Linux-Kernel
-cp Microsoft/config-wsl .config
+./scripts/wsl-build-kernel.sh
 ```
 
-Enable the MediaTek USB driver and monitor-mode support:
+Handles dependencies, firmware blobs, source checkout at the matching tag, config, build, and
+module install, then prints the Windows-side steps. It verifies `CONFIG_MT7921U` actually
+stuck before spending 30 minutes compiling.
 
-```bash
-scripts/config --enable  CONFIG_CFG80211
-scripts/config --enable  CONFIG_MAC80211
-scripts/config --enable  CONFIG_WLAN_VENDOR_MEDIATEK
-scripts/config --module  CONFIG_MT7921U
-scripts/config --module  CONFIG_MT7921_COMMON
-scripts/config --module  CONFIG_MT76_USB
-scripts/config --module  CONFIG_MT76_CONNAC_LIB
-scripts/config --enable  CONFIG_USBIP_CORE
-scripts/config --module  CONFIG_USBIP_VHCI_HCD
-make olddefconfig
-make -j"$(nproc)" && sudo make modules_install
-cp arch/x86/boot/bzImage /mnt/c/Users/Lawrence/wsl-kernel-classg
-```
-
-Then add to `C:\Users\Lawrence\.wslconfig` under the existing `[wsl2]` section:
-
-```ini
-kernel=C:\\Users\\Lawrence\\wsl-kernel-classg
-```
-
-`wsl --shutdown`, reopen, then forward the adapter **from an Administrator PowerShell**:
+Everything up to the `usbipd attach` is **safe and reversible**. The moment of truth is the
+attach:
 
 ```powershell
-usbipd bind --busid 2-9
+usbipd bind   --busid 2-9
 usbipd attach --wsl --busid 2-9
 ```
 
-Verify with `./scripts/check-capture-env.sh` before going further.
+- **WSL survives and `iw dev` shows an interface** → you win, carry on to the capture.
+- **WSL dies instantly** → that is #12288. No known fix. Switch to the Pi or a live USB.
 
-> Your `.wslconfig` currently sets `vmIdleTimeout=-1`, `processors=16`, `memory=16GB`. Adding
-> a `kernel=` line does not disturb those, but it applies to **every** distro including Docker
-> Desktop's — if Docker misbehaves afterwards, that is the cause. Remove the line to revert.
+Then:
+
+```bash
+./scripts/check-capture-env.sh
+```
+
+> **Two notes.** Adding `kernel=` to `.wslconfig` applies to **every** distro, Docker
+> Desktop's included — remove the line to revert. And attaching the adapter removes it from
+> Windows for the duration; your Intel PCI card keeps Windows online.
 
 ---
 
