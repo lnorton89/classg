@@ -17,7 +17,7 @@ import {
   useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { GripVerticalIcon, RotateCcwIcon } from 'lucide-react'
+import { GripVerticalIcon, RotateCcwIcon, type LucideIcon } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,12 @@ const STORAGE_KEY = 'classg.track-detail.card-order.v1'
 export interface TrackDetailCard {
   id: TrackDetailCardId
   label: string
+  /** Required, not optional: cards are reorderable, so a header that is
+   *  decorated on some cards and bare on others looks like a rendering fault
+   *  rather than a distinction. */
+  icon: LucideIcon
+  /** Only for an icon that keys back to the map. Defaults to muted. */
+  iconClassName?: string
   title: ReactNode
   description?: ReactNode
   headerExtra?: ReactNode
@@ -62,6 +68,31 @@ function persistOrder(order: TrackDetailCardId[]): void {
   }
 }
 
+/**
+ * Forget a dragged layout, for the Tracks settings category.
+ *
+ * Only clears storage. The grid reads its order once on mount, so an already
+ * open track detail keeps the order it is showing until it remounts — which is
+ * the honest behaviour: nothing should rearrange itself under the cursor of
+ * someone reading a track.
+ */
+export function resetTrackDetailOrder(): void {
+  try {
+    window.localStorage.removeItem(STORAGE_KEY)
+  } catch {
+    /* nothing stored to forget */
+  }
+}
+
+/** Whether a dragged layout is currently stored, so the reset can be disabled. */
+export function hasStoredTrackDetailOrder(): boolean {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY) !== null
+  } catch {
+    return false
+  }
+}
+
 export function SortableTrackDetailGrid({ cards }: { cards: TrackDetailCard[] }) {
   const [order, setOrder] = useState<TrackDetailCardId[]>(readStoredOrder)
   const [activeId, setActiveId] = useState<TrackDetailCardId | null>(null)
@@ -70,6 +101,7 @@ export function SortableTrackDetailGrid({ cards }: { cards: TrackDetailCard[] })
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
   const byId = useMemo(() => new Map(cards.map((card) => [card.id, card])), [cards])
+  const activeCard = activeId ? byId.get(activeId) : undefined
 
   function handleDragStart(event: DragStartEvent) {
     setActiveId(event.active.id as TrackDetailCardId)
@@ -125,11 +157,12 @@ export function SortableTrackDetailGrid({ cards }: { cards: TrackDetailCard[] })
         </SortableContext>
 
         <DragOverlay>
-          {activeId ? (
+          {activeCard ? (
             <Card className="border-primary/60 w-72 shadow-xl">
               <CardHeader className="flex-row items-center gap-2 p-3">
                 <GripVerticalIcon className="text-primary size-4" aria-hidden />
-                <CardTitle>{byId.get(activeId)?.label}</CardTitle>
+                <activeCard.icon className="text-muted-foreground size-4" aria-hidden />
+                <CardTitle>{activeCard.label}</CardTitle>
               </CardHeader>
             </Card>
           ) : null}
@@ -159,7 +192,13 @@ function SortableDetailCard({ card }: { card: TrackDetailCard }) {
       <Card className="h-full min-w-0 overflow-hidden">
         <CardHeader className="flex-row items-start justify-between gap-3 p-4 pb-3">
           <div className="min-w-0 flex-1">
-            <CardTitle>{card.title}</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <card.icon
+                className={cn('size-4 shrink-0', card.iconClassName ?? 'text-muted-foreground')}
+                aria-hidden
+              />
+              <span className="min-w-0">{card.title}</span>
+            </CardTitle>
             {card.description ? (
               <CardDescription className="mt-1 leading-relaxed">
                 {card.description}

@@ -1,10 +1,20 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, notFound } from '@tanstack/react-router'
-import { ArrowLeftIcon, ChevronRightIcon, HistoryIcon, UserIcon } from 'lucide-react'
+import {
+  ActivityIcon,
+  ArrowLeftIcon,
+  ChevronRightIcon,
+  FingerprintIcon,
+  HistoryIcon,
+  LocateFixedIcon,
+  RouteIcon,
+  ScanSearchIcon,
+  UserIcon,
+} from 'lucide-react'
 
 import { useFormat, useTicker } from '@/app/use-format'
 import { CopyButton } from '@/components/ui/copy-button'
-import { Alert, DataRow, EmptyState } from '@/components/ui/misc'
+import { Alert, DataList, DataRow, EmptyState } from '@/components/ui/misc'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip } from '@/components/ui/tooltip'
 import { bearingDegrees, distanceMetres } from '@/features/map/geo'
@@ -60,18 +70,22 @@ function TrackDetail() {
     rssiSamples.length ? Math.max(...rssiSamples.map((sample) => sample.rssi)) : null,
   )
 
+  // Card icons are muted by default. Colour is spent only where it keys back to
+  // the map — the aircraft in `--track`, the operator in `--operator` — so a
+  // coloured icon here means "this is the thing you are looking at on the map".
   const cards: TrackDetailCard[] = [
     {
       id: 'evidence',
       label: 'Detection evidence',
+      icon: ScanSearchIcon,
       title: 'Why this is a detection',
       className: 'md:col-span-2',
       headerExtra: (
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <ConfidenceBar confidence={track.confidence} className="w-32 sm:w-40" />
-          <span className="font-mono text-base font-semibold">
+        <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-2">
+          <span className="font-mono text-lg leading-none font-semibold">
             {format.confidence(track.confidence)}
           </span>
+          <ConfidenceBar confidence={track.confidence} className="w-32 self-center sm:w-40" />
           <span className="text-muted-foreground text-xs">confidence that this is a drone</span>
         </div>
       ),
@@ -82,66 +96,77 @@ function TrackDetail() {
     {
       id: 'identity',
       label: 'Identity',
+      icon: FingerprintIcon,
       title: 'Identity',
       content: (
-        <dl className="space-y-0.5">
-          <DataRow
-            label="Serial"
-            mono
-            value={
-              serial.manufacturerCode ? (
-                <span>
-                  <Tooltip content="ANSI/CTA-2063-A manufacturer code. Decoded from the serial, so it survives MAC randomisation — unlike an OUI.">
-                    <span className="text-primary underline decoration-dotted">
-                      {serial.manufacturerCode}
-                    </span>
-                  </Tooltip>
-                  {serial.rest}
-                </span>
-              ) : (
-                EMPTY
-              )
-            }
-          />
-          <DataRow label="Vendor" value={track.identity?.vendor ?? EMPTY} />
-          <DataRow label="Model hint" value={track.identity?.model_hint ?? EMPTY} />
-          <DataRow label="UA type" value={track.identity?.ua_type ?? EMPTY} />
-          <DataRow label="Operator ID" value={track.identity?.operator_id ?? EMPTY} mono />
-          <DataRow
-            label="MACs"
-            mono
-            value={
-              track.identity?.macs?.length ? (
-                <span className="flex flex-col items-end gap-0.5">
-                  {track.identity.macs.map((mac) => (
-                    <span key={mac} className="inline-flex items-center gap-1">
-                      {mac}
-                      <CopyButton value={mac} label="MAC address" />
-                    </span>
-                  ))}
-                </span>
-              ) : (
-                EMPTY
-              )
-            }
-          />
-          <DataRow label="Detections" value={track.detection_count} mono />
-          <DataRow
-            label={`First seen (${format.zoneLabel})`}
-            value={format.timestamp(track.first_seen)}
-            mono
-          />
-          <DataRow
-            label={`Last seen (${format.zoneLabel})`}
-            value={`${format.timestamp(track.last_seen)} (${format.relative(track.last_seen)})`}
-            mono
-          />
-        </dl>
+        <div className="space-y-3">
+          <DataList label="Broadcast identity">
+            <DataRow
+              label="Serial"
+              mono
+              value={
+                serial.manufacturerCode ? (
+                  <span>
+                    <Tooltip content="ANSI/CTA-2063-A manufacturer code. Decoded from the serial, so it survives MAC randomisation — unlike an OUI.">
+                      <span className="text-primary underline decoration-dotted">
+                        {serial.manufacturerCode}
+                      </span>
+                    </Tooltip>
+                    {serial.rest}
+                  </span>
+                ) : (
+                  EMPTY
+                )
+              }
+            />
+            <DataRow label="Vendor" value={track.identity?.vendor ?? EMPTY} />
+            <DataRow label="Model hint" value={track.identity?.model_hint ?? EMPTY} />
+            <DataRow label="UA type" value={track.identity?.ua_type ?? EMPTY} />
+            <DataRow label="Operator ID" value={track.identity?.operator_id ?? EMPTY} mono />
+            <DataRow
+              label="MACs"
+              mono
+              value={
+                track.identity?.macs?.length ? (
+                  <span className="flex flex-col items-end gap-0.5">
+                    {track.identity.macs.map((mac) => (
+                      <span key={mac} className="inline-flex items-center gap-1">
+                        {mac}
+                        <CopyButton value={mac} label="MAC address" />
+                      </span>
+                    ))}
+                  </span>
+                ) : (
+                  EMPTY
+                )
+              }
+            />
+          </DataList>
+
+          <DataList label="Activity">
+            <DataRow label="Detections" value={track.detection_count} mono />
+            <DataRow
+              label={`First seen (${format.zoneLabel})`}
+              value={format.timestamp(track.first_seen)}
+              mono
+            />
+            {/* The age is the reading an operator scans for; the absolute stamp
+                is what they quote later. Stacking them keeps both without
+                running one long string off the edge of a narrow card. */}
+            <DataRow
+              label={`Last seen (${format.zoneLabel})`}
+              value={format.timestamp(track.last_seen)}
+              hint={format.relative(track.last_seen)}
+              mono
+            />
+          </DataList>
+        </div>
       ),
     },
     {
       id: 'flight',
       label: 'Flight path',
+      icon: RouteIcon,
       title: 'Flight path',
       description:
         'Latest aircraft position, reported route, and operator ground position when available.',
@@ -157,46 +182,54 @@ function TrackDetail() {
     {
       id: 'position',
       label: 'Current position',
+      icon: LocateFixedIcon,
+      iconClassName: 'text-track',
       title: 'Current position',
       content: current ? (
-        <dl className="space-y-0.5">
-          <DataRow
-            label="Latitude, longitude"
-            value={
-              <span className="inline-flex items-center gap-1">
-                {format.coords(current.lat, current.lon)}
-                <CopyButton
-                  value={`${current.lat.toFixed(6)}, ${current.lon.toFixed(6)}`}
-                  label="coordinates"
-                />
-              </span>
-            }
-            mono
-          />
-          <DataRow
-            label="Geodetic altitude"
-            value={format.length(current.alt_geodetic_m)}
-            mono
-          />
-          <DataRow
-            label="Height AGL"
-            value={
-              <Tooltip content="Some aircraft report height above the takeoff point rather than above ground level. The Mini 5 Pro does; see docs/ops/04-calibration.md.">
-                <span className="underline decoration-dotted">
-                  {format.length(current.height_agl_m)}
+        <div className="space-y-3">
+          <DataList label="Where">
+            <DataRow
+              label="Latitude, longitude"
+              value={
+                <span className="inline-flex items-center gap-1">
+                  {format.coords(current.lat, current.lon)}
+                  <CopyButton
+                    value={`${current.lat.toFixed(6)}, ${current.lon.toFixed(6)}`}
+                    label="coordinates"
+                  />
                 </span>
-              </Tooltip>
-            }
-            mono
-          />
-          <DataRow label="Ground speed" value={format.speed(current.speed_mps)} mono />
-          <DataRow label="Track" value={format.heading(current.track_deg)} mono />
-          <DataRow
-            label={`Reported at (${format.zoneLabel})`}
-            value={format.clock(current.at)}
-            mono
-          />
-        </dl>
+              }
+              mono
+            />
+            <DataRow
+              label="Geodetic altitude"
+              value={format.length(current.alt_geodetic_m)}
+              mono
+            />
+            <DataRow
+              label="Height AGL"
+              value={
+                <Tooltip content="Some aircraft report height above the takeoff point rather than above ground level. The Mini 5 Pro does; see docs/ops/04-calibration.md.">
+                  <span className="underline decoration-dotted">
+                    {format.length(current.height_agl_m)}
+                  </span>
+                </Tooltip>
+              }
+              mono
+            />
+          </DataList>
+
+          <DataList label="Motion">
+            <DataRow label="Ground speed" value={format.speed(current.speed_mps)} mono />
+            <DataRow label="Track" value={format.heading(current.track_deg)} mono />
+            <DataRow
+              label={`Reported at (${format.zoneLabel})`}
+              value={format.clock(current.at)}
+              hint={format.relative(current.at)}
+              mono
+            />
+          </DataList>
+        </div>
       ) : (
         <EmptyState title="No position reported">
           This track has identity evidence but no GPS fix, so it cannot be plotted. Coordinates
@@ -207,22 +240,31 @@ function TrackDetail() {
     {
       id: 'operator',
       label: 'Operator position',
-      title: (
-        <span className="flex items-center gap-2">
-          <UserIcon className="text-operator size-4" aria-hidden />
-          Operator position
-        </span>
-      ),
+      icon: UserIcon,
+      iconClassName: 'text-operator',
+      title: 'Operator position',
       content: operator ? (
-        <dl className="space-y-0.5">
-          <DataRow
-            label="Latitude, longitude"
-            value={format.coords(operator.lat, operator.lon)}
-            mono
-          />
-          <DataRow label="Altitude" value={format.length(operator.alt_geodetic_m)} mono />
+        <div className="space-y-3">
+          <DataList label="Reported">
+            <DataRow
+              label="Latitude, longitude"
+              value={format.coords(operator.lat, operator.lon)}
+              mono
+            />
+            <DataRow label="Altitude" value={format.length(operator.alt_geodetic_m)} mono />
+            <DataRow
+              label={`Reported at (${format.zoneLabel})`}
+              value={format.clock(operator.at)}
+              hint={format.relative(operator.at)}
+              mono
+            />
+          </DataList>
+
+          {/* Split out because these two are computed here, not broadcast. Sat
+              among the reported fields they read as something the aircraft
+              said. */}
           {current ? (
-            <>
+            <DataList label="Derived from both positions">
               <DataRow
                 label="Distance from aircraft"
                 value={format.range(distanceMetres(current, operator))}
@@ -233,25 +275,20 @@ function TrackDetail() {
                 value={format.heading(bearingDegrees(current, operator))}
                 mono
               />
-            </>
+            </DataList>
           ) : null}
-          <DataRow
-            label={`Reported at (${format.zoneLabel})`}
-            value={format.clock(operator.at)}
-            mono
-          />
-        </dl>
+        </div>
       ) : (
-        <p className="text-muted-foreground text-sm leading-relaxed">
-          Not broadcast. Operator position comes from an ASTM F3411 System message or DJI
-          DroneID <code>0x10</code>; many tracks never carry one. This is a normal state, not an
-          error.
-        </p>
+        <EmptyState icon={UserIcon} title="Not broadcast">
+          Operator position comes from an ASTM F3411 System message or DJI DroneID{' '}
+          <code>0x10</code>; many tracks never carry one. This is a normal state, not an error.
+        </EmptyState>
       ),
     },
     {
       id: 'signal',
       label: 'Signal strength',
+      icon: ActivityIcon,
       title: 'Signal strength over time',
       description: `${rssiSamples.length} RSSI samples · peak ${peakRssi}`,
       content: <RssiChart samples={rssiSamples} height={160} />,
@@ -311,8 +348,10 @@ function PositionHistory({ history }: { history: Position[] }) {
         <HistoryIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
         <span className="font-medium">Position history</span>
         <span className="text-muted-foreground text-xs">{history.length} reported points</span>
+        {/* The order is not obvious from a table of timestamps alone, and
+            reading it backwards inverts every climb and descent. */}
         <span className="text-muted-foreground ml-auto hidden text-xs sm:inline">
-          Collapsed by default
+          Newest first
         </span>
       </summary>
 
@@ -326,7 +365,7 @@ function PositionHistory({ history }: { history: Position[] }) {
                 <caption className="sr-only">Reported aircraft position history</caption>
                 <thead className="text-muted-foreground bg-card sticky top-0 z-10">
                   <tr className="border-border border-b">
-                    <th scope="col" className="py-2 pr-4 font-medium">
+                    <th scope="col" className="py-2 pr-4 pl-2 font-medium">
                       Time ({format.zoneLabel})
                     </th>
                     <th scope="col" className="py-2 pr-4 font-medium">
@@ -341,28 +380,35 @@ function PositionHistory({ history }: { history: Position[] }) {
                     <th scope="col" className="py-2 pr-4 text-right font-medium">
                       Speed
                     </th>
-                    <th scope="col" className="py-2 pr-1 text-right font-medium">
+                    <th scope="col" className="py-2 pr-2 text-right font-medium">
                       Track
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-border divide-y font-mono">
+                {/* Zebra rather than rules: six columns is wide enough that the
+                    eye drifts a row between the timestamp and the heading. */}
+                <tbody className="font-mono">
                   {[...history].reverse().map((position, index) => (
-                    <tr key={`${position.at ?? index}-${position.lat}`}>
-                      <td className="py-1.5 pr-4">{format.clock(position.at)}</td>
-                      <td className="py-1.5 pr-4">
+                    <tr
+                      key={`${position.at ?? index}-${position.lat}`}
+                      className="odd:bg-foreground/[0.035] hover:bg-accent/40"
+                    >
+                      <td className="py-1.5 pr-4 pl-2 whitespace-nowrap">
+                        {format.clock(position.at)}
+                      </td>
+                      <td className="py-1.5 pr-4 whitespace-nowrap">
                         {format.coords(position.lat, position.lon)}
                       </td>
-                      <td className="py-1.5 pr-4 text-right">
+                      <td className="py-1.5 pr-4 text-right whitespace-nowrap">
                         {format.length(position.height_agl_m)}
                       </td>
-                      <td className="py-1.5 pr-4 text-right">
+                      <td className="py-1.5 pr-4 text-right whitespace-nowrap">
                         {format.length(position.alt_geodetic_m)}
                       </td>
-                      <td className="py-1.5 pr-4 text-right">
+                      <td className="py-1.5 pr-4 text-right whitespace-nowrap">
                         {format.speed(position.speed_mps)}
                       </td>
-                      <td className="py-1.5 pr-1 text-right">
+                      <td className="py-1.5 pr-2 text-right whitespace-nowrap">
                         {format.heading(position.track_deg)}
                       </td>
                     </tr>
