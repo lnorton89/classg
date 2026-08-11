@@ -136,6 +136,24 @@ func run() error {
 		slog.Warn("recording is PAUSED at startup; detections will be discarded until resumed")
 	}
 
+	// If the web app is up, the system is recording. Opening it resumes a
+	// paused detector rather than silently showing an empty map that the
+	// operator has no reason to distrust.
+	//
+	// The consequence worth knowing: a pause does not survive a page reload,
+	// because a reload is a fresh connection and therefore the UI coming up
+	// again. Pausing is for a deliberate stretch with the app open.
+	h.OnFirstClient(func() {
+		if recording.Enabled() {
+			return
+		}
+		slog.Info("web app connected; resuming recording")
+		recording.Set(true, "resumed automatically: web app connected", time.Now().UTC())
+		if err := settings.PutOne(ctx, st, httpapi.SettingMonitoringEnabled, "true"); err != nil {
+			slog.Warn("could not persist the resumed recording state", "err", err)
+		}
+	})
+
 	captures := capture.NewManager(st, capture.Options{
 		Dir:               cfg.CaptureDir,
 		AllowUnprivileged: cfg.CaptureAllowUnprivileged,

@@ -27,19 +27,19 @@ SELECT doc FROM tracks WHERE track_id = ?;
 
 -- name: CountTracks :one
 SELECT COUNT(*) FROM tracks
-WHERE (sqlc.narg('since')          IS NULL OR last_seen  >= sqlc.narg('since'))
-  AND (sqlc.narg('min_confidence') IS NULL OR confidence >= sqlc.narg('min_confidence'))
-  AND (sqlc.narg('filter_states')  IS NULL OR state IN (sqlc.slice('states')));
+WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.narg('since'))
+  AND (CAST(sqlc.narg('min_confidence') AS REAL) IS NULL OR confidence >= sqlc.narg('min_confidence'))
+  AND (CAST(sqlc.narg('filter_states') AS INTEGER)  IS NULL OR state IN (sqlc.slice('states')));
 
 -- name: ListTracks :many
 -- Keyset paging on (last_seen DESC, track_id DESC), matching idx_tracks_page.
 -- Offset paging would silently skip rows on a table being appended to.
 SELECT doc, last_seen, track_id FROM tracks
-WHERE (sqlc.narg('since')          IS NULL OR last_seen  >= sqlc.narg('since'))
-  AND (sqlc.narg('min_confidence') IS NULL OR confidence >= sqlc.narg('min_confidence'))
-  AND (sqlc.narg('filter_states')  IS NULL OR state IN (sqlc.slice('states')))
+WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.narg('since'))
+  AND (CAST(sqlc.narg('min_confidence') AS REAL) IS NULL OR confidence >= sqlc.narg('min_confidence'))
+  AND (CAST(sqlc.narg('filter_states') AS INTEGER)  IS NULL OR state IN (sqlc.slice('states')))
   AND (
-        sqlc.narg('cursor_ts') IS NULL
+        CAST(sqlc.narg('cursor_ts') AS TEXT) IS NULL
         OR last_seen < sqlc.narg('cursor_ts')
         OR (last_seen = sqlc.narg('cursor_ts') AND track_id < sqlc.narg('cursor_id'))
       )
@@ -54,17 +54,17 @@ ON CONFLICT(detection_id) DO NOTHING;
 
 -- name: CountDetections :one
 SELECT COUNT(*) FROM detections
-WHERE (sqlc.narg('since')      IS NULL OR ts        >= sqlc.narg('since'))
-  AND (sqlc.narg('sensor_id')  IS NULL OR sensor_id  = sqlc.narg('sensor_id'))
-  AND (sqlc.narg('filter_classes') IS NULL OR detection_class IN (sqlc.slice('classes')));
+WHERE (CAST(sqlc.narg('since') AS TEXT)      IS NULL OR ts        >= sqlc.narg('since'))
+  AND (CAST(sqlc.narg('sensor_id') AS TEXT)  IS NULL OR sensor_id  = sqlc.narg('sensor_id'))
+  AND (CAST(sqlc.narg('filter_classes') AS INTEGER) IS NULL OR detection_class IN (sqlc.slice('classes')));
 
 -- name: ListDetections :many
 SELECT doc, ts, detection_id FROM detections
-WHERE (sqlc.narg('since')      IS NULL OR ts        >= sqlc.narg('since'))
-  AND (sqlc.narg('sensor_id')  IS NULL OR sensor_id  = sqlc.narg('sensor_id'))
-  AND (sqlc.narg('filter_classes') IS NULL OR detection_class IN (sqlc.slice('classes')))
+WHERE (CAST(sqlc.narg('since') AS TEXT)      IS NULL OR ts        >= sqlc.narg('since'))
+  AND (CAST(sqlc.narg('sensor_id') AS TEXT)  IS NULL OR sensor_id  = sqlc.narg('sensor_id'))
+  AND (CAST(sqlc.narg('filter_classes') AS INTEGER) IS NULL OR detection_class IN (sqlc.slice('classes')))
   AND (
-        sqlc.narg('cursor_ts') IS NULL
+        CAST(sqlc.narg('cursor_ts') AS TEXT) IS NULL
         OR ts < sqlc.narg('cursor_ts')
         OR (ts = sqlc.narg('cursor_ts') AND detection_id < sqlc.narg('cursor_id'))
       )
