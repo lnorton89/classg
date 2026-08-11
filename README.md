@@ -17,6 +17,11 @@ where almost nobody is watching.
 drone. See [docs/research/06-legal-and-ethics.md](docs/research/06-legal-and-ethics.md) — this
 is a design constraint, not a disclaimer.
 
+![ClassG operator console — live map with active drone tracks, manned traffic, and a per-track confidence/evidence list](docs/assets/screenshot.jpg)
+
+*The operator console, shown here against the "active sky" mock scenario — see
+[Getting started](#getting-started) to run it yourself without any hardware.*
+
 ## Contents
 
 - [What this actually detects](#what-this-actually-detects)
