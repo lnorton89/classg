@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { HistoryIcon } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { tracksQuery } from '@/lib/api/queries'
 import type { Track } from '@/lib/api/types'
-import { cn } from '@/lib/cn'
-import { formatConfidence, formatMetres, formatRelative } from '@/lib/format'
+import { useFormat } from '@/app/use-format'
 
 /**
  * How many recent flights to list.
@@ -87,10 +88,14 @@ export function FlightsDrawer() {
         }
         className="relative"
       >
-        Flights
+        <HistoryIcon aria-hidden />
+        {/* The word costs ~50px, which is the difference between the mobile
+            header being one row and two. The icon plus the label above keeps it
+            identifiable; the accessible name is unchanged either way. */}
+        <span className="hidden sm:inline">Flights</span>
         {unread > 0 && (
           <span
-            className="bg-primary text-primary-foreground ml-1.5 inline-flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold"
+            className="bg-primary text-primary-foreground ml-1.5 inline-flex min-w-4 items-center justify-center rounded-full px-1 text-2xs font-semibold"
             aria-hidden
           >
             {unread > 99 ? '99+' : unread}
@@ -114,7 +119,7 @@ export function FlightsDrawer() {
             <header className="border-border flex items-center justify-between border-b px-4 py-3">
               <div>
                 <h2 className="text-sm font-semibold">Recent flights</h2>
-                <p className="text-muted-foreground text-[11px]">
+                <p className="text-muted-foreground text-2xs">
                   Probable drone activity in range of the receiver
                 </p>
               </div>
@@ -148,6 +153,7 @@ export function FlightsDrawer() {
 }
 
 function FlightRow({ flight, onNavigate }: { flight: Track; onNavigate: () => void }) {
+  const format = useFormat()
   const durationMs =
     new Date(flight.last_seen).getTime() - new Date(flight.first_seen).getTime()
   const minutes = Math.max(1, Math.round(durationMs / 60_000))
@@ -164,36 +170,41 @@ function FlightRow({ flight, onNavigate }: { flight: Track; onNavigate: () => vo
         <span className="truncate font-mono text-xs">
           {flight.identity?.serial ?? 'unidentified'}
         </span>
-        <span className="text-muted-foreground shrink-0 text-[11px]">
-          {formatRelative(flight.last_seen)}
+        <span className="text-muted-foreground shrink-0 text-2xs">
+          {format.relative(flight.last_seen)}
         </span>
       </div>
-      <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px]">
+      <div className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-2xs">
         <span>{flight.identity?.vendor ?? 'unknown vendor'}</span>
         <span>{minutes} min</span>
         <span>{flight.detection_count} detections</span>
-        {altitude != null && <span>{formatMetres(altitude)}</span>}
+        {altitude != null && <span>{format.length(altitude)}</span>}
         {/* Always shown: a track is evidence, not proof. */}
-        <span>{formatConfidence(flight.confidence)} confidence</span>
+        <span>{format.confidence(flight.confidence)} confidence</span>
       </div>
       <StateChip state={flight.state} />
     </Link>
   )
 }
 
+/**
+ * The same badge the tables use, so a state means one visual thing everywhere.
+ * It previously hardcoded palette hues, which read correctly only in dark mode
+ * and drifted from the token set the rest of the interface shares.
+ */
 function StateChip({ state }: { state: Track['state'] }) {
+  const variant =
+    state === 'CONFIRMED'
+      ? ('ok' as const)
+      : state === 'COASTING'
+        ? ('warn' as const)
+        : state === 'CLOSED'
+          ? ('muted' as const)
+          : ('default' as const)
   return (
-    <span
-      className={cn(
-        'mt-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-medium',
-        state === 'CONFIRMED' && 'bg-emerald-500/15 text-emerald-400',
-        state === 'COASTING' && 'bg-amber-500/15 text-amber-300',
-        state === 'CLOSED' && 'bg-muted text-muted-foreground',
-        state === 'TENTATIVE' && 'bg-sky-500/15 text-sky-300',
-      )}
-    >
+    <Badge variant={variant} className="mt-1.5 uppercase">
       {state === 'CONFIRMED' ? 'in flight' : state.toLowerCase()}
-    </span>
+    </Badge>
   )
 }
 
