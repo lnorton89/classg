@@ -8,6 +8,16 @@
 -- that can be verified at build time and have no string-building to get wrong.
 -- At a Pi's data volumes -- weeks of detections, not billions -- the trade is
 -- firmly worth it.
+--
+-- Set filters ("state IN (...)") pass a JSON array as ONE parameter and expand
+-- it with json_each, rather than using sqlc.slice(). That is not a style
+-- preference. sqlc numbers parameters explicitly (?1, ?2, ...) as soon as a
+-- query uses named parameters, but sqlc.slice() expands to bare `?`, which
+-- SQLite numbers as "one past the highest so far". The two schemes only agree
+-- when the slice happens to hold exactly one element; at zero or two the
+-- parameters after it silently shift and a confidence float ends up compared
+-- against a timestamp. A JSON array is a single parameter of fixed position, so
+-- the numbering cannot drift, and NULL still means "no filter".
 
 -- name: UpsertTrack :exec
 INSERT INTO tracks (
@@ -29,7 +39,8 @@ SELECT doc FROM tracks WHERE track_id = ?;
 SELECT COUNT(*) FROM tracks
 WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.narg('since'))
   AND (CAST(sqlc.narg('min_confidence') AS REAL) IS NULL OR confidence >= sqlc.narg('min_confidence'))
-  AND (CAST(sqlc.narg('filter_states') AS INTEGER)  IS NULL OR state IN (sqlc.slice('states')));
+  AND (CAST(sqlc.narg('states') AS TEXT)         IS NULL
+       OR state IN (SELECT value FROM json_each(sqlc.narg('states'))));
 
 -- name: ListTracks :many
 -- Keyset paging on (last_seen DESC, track_id DESC), matching idx_tracks_page.
@@ -37,14 +48,15 @@ WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.n
 SELECT doc, last_seen, track_id FROM tracks
 WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.narg('since'))
   AND (CAST(sqlc.narg('min_confidence') AS REAL) IS NULL OR confidence >= sqlc.narg('min_confidence'))
-  AND (CAST(sqlc.narg('filter_states') AS INTEGER)  IS NULL OR state IN (sqlc.slice('states')))
+  AND (CAST(sqlc.narg('states') AS TEXT)         IS NULL
+       OR state IN (SELECT value FROM json_each(sqlc.narg('states'))))
   AND (
         CAST(sqlc.narg('cursor_ts') AS TEXT) IS NULL
         OR last_seen < sqlc.narg('cursor_ts')
         OR (last_seen = sqlc.narg('cursor_ts') AND track_id < sqlc.narg('cursor_id'))
       )
 ORDER BY last_seen DESC, track_id DESC
-LIMIT ?;
+LIMIT sqlc.arg('limit');
 
 -- name: InsertDetection :exec
 INSERT INTO detections (
@@ -54,22 +66,60 @@ ON CONFLICT(detection_id) DO NOTHING;
 
 -- name: CountDetections :one
 SELECT COUNT(*) FROM detections
-WHERE (CAST(sqlc.narg('since') AS TEXT)      IS NULL OR ts        >= sqlc.narg('since'))
-  AND (CAST(sqlc.narg('sensor_id') AS TEXT)  IS NULL OR sensor_id  = sqlc.narg('sensor_id'))
-  AND (CAST(sqlc.narg('filter_classes') AS INTEGER) IS NULL OR detection_class IN (sqlc.slice('classes')));
+WHERE (CAST(sqlc.narg('since') AS TEXT)     IS NULL OR ts        >= sqlc.narg('since'))
+  AND (CAST(sqlc.narg('sensor_id') AS TEXT) IS NULL OR sensor_id  = sqlc.narg('sensor_id'))
+  AND (CAST(sqlc.narg('classes') AS TEXT)   IS NULL
+       OR detection_class IN (SELECT value FROM json_each(sqlc.narg('classes'))));
 
 -- name: ListDetections :many
 SELECT doc, ts, detection_id FROM detections
-WHERE (CAST(sqlc.narg('since') AS TEXT)      IS NULL OR ts        >= sqlc.narg('since'))
-  AND (CAST(sqlc.narg('sensor_id') AS TEXT)  IS NULL OR sensor_id  = sqlc.narg('sensor_id'))
-  AND (CAST(sqlc.narg('filter_classes') AS INTEGER) IS NULL OR detection_class IN (sqlc.slice('classes')))
+WHERE (CAST(sqlc.narg('since') AS TEXT)     IS NULL OR ts        >= sqlc.narg('since'))
+  AND (CAST(sqlc.narg('sensor_id') AS TEXT) IS NULL OR sensor_id  = sqlc.narg('sensor_id'))
+  AND (CAST(sqlc.narg('classes') AS TEXT)   IS NULL
+       OR detection_class IN (SELECT value FROM json_each(sqlc.narg('classes'))))
   AND (
         CAST(sqlc.narg('cursor_ts') AS TEXT) IS NULL
         OR ts < sqlc.narg('cursor_ts')
         OR (ts = sqlc.narg('cursor_ts') AND detection_id < sqlc.narg('cursor_id'))
       )
 ORDER BY ts DESC, detection_id DESC
-LIMIT ?;
+LIMIT sqlc.arg('limit');
+
+-- Reconstructing one track's detections matches on serial OR MAC, because a
+-- track is keyed by MAC until Basic ID arrives and by serial afterwards, and
+-- the same flight has rows from both eras.
+--
+-- Note the shape: each side of the OR is guarded by its own NOT NULL check, so
+-- a track with only a MAC does not accidentally match every row whose serial is
+-- NULL -- which, early in a flight, is most of them. The caller returns early
+-- when a track has neither.
+
+-- name: CountTrackDetections :one
+SELECT COUNT(*) FROM detections
+WHERE (
+        (CAST(sqlc.narg('serial') AS TEXT) IS NOT NULL AND serial = sqlc.narg('serial'))
+     OR (CAST(sqlc.narg('macs') AS TEXT) IS NOT NULL
+         AND mac IN (SELECT value FROM json_each(sqlc.narg('macs'))))
+      )
+  AND (CAST(sqlc.narg('from_ts') AS TEXT) IS NULL OR ts >= sqlc.narg('from_ts'))
+  AND (CAST(sqlc.narg('to_ts')   AS TEXT) IS NULL OR ts <= sqlc.narg('to_ts'));
+
+-- name: ListTrackDetections :many
+SELECT doc, ts, detection_id FROM detections
+WHERE (
+        (CAST(sqlc.narg('serial') AS TEXT) IS NOT NULL AND serial = sqlc.narg('serial'))
+     OR (CAST(sqlc.narg('macs') AS TEXT) IS NOT NULL
+         AND mac IN (SELECT value FROM json_each(sqlc.narg('macs'))))
+      )
+  AND (CAST(sqlc.narg('from_ts') AS TEXT) IS NULL OR ts >= sqlc.narg('from_ts'))
+  AND (CAST(sqlc.narg('to_ts')   AS TEXT) IS NULL OR ts <= sqlc.narg('to_ts'))
+  AND (
+        CAST(sqlc.narg('cursor_ts') AS TEXT) IS NULL
+        OR ts < sqlc.narg('cursor_ts')
+        OR (ts = sqlc.narg('cursor_ts') AND detection_id < sqlc.narg('cursor_id'))
+      )
+ORDER BY ts DESC, detection_id DESC
+LIMIT sqlc.arg('limit');
 
 -- name: DetectionCountsSince :many
 -- Powers /health's detections_5m, which is how a quiet sky is told apart from
@@ -110,8 +160,12 @@ SELECT doc FROM captures WHERE capture_id = ?;
 -- name: ListCaptures :many
 SELECT doc FROM captures ORDER BY started_at DESC;
 
--- name: PutCaptureReport :exec
-UPDATE captures SET report = ? WHERE capture_id = ?;
+-- name: PutCaptureReport :execrows
+-- doc is rewritten alongside the report because the analysis summary lives in
+-- the capture document too; writing only one of the pair would leave a capture
+-- whose summary and report disagree. :execrows so a missing capture_id is
+-- reported as not-found rather than passing silently.
+UPDATE captures SET doc = ?, report = ? WHERE capture_id = ?;
 
 -- name: GetCaptureReport :one
 SELECT report FROM captures WHERE capture_id = ?;

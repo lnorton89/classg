@@ -8,38 +8,63 @@ package sqlcgen
 import (
 	"context"
 	"database/sql"
-	"strings"
 )
 
 const countDetections = `-- name: CountDetections :one
 SELECT COUNT(*) FROM detections
-WHERE (CAST(?1 AS TEXT)      IS NULL OR ts        >= ?1)
-  AND (CAST(?2 AS TEXT)  IS NULL OR sensor_id  = ?2)
-  AND (CAST(?3 AS INTEGER) IS NULL OR detection_class IN (/*SLICE:classes*/?))
+WHERE (CAST(?1 AS TEXT)     IS NULL OR ts        >= ?1)
+  AND (CAST(?2 AS TEXT) IS NULL OR sensor_id  = ?2)
+  AND (CAST(?3 AS TEXT)   IS NULL
+       OR detection_class IN (SELECT value FROM json_each(?3)))
 `
 
 type CountDetectionsParams struct {
-	Since         sql.NullString
-	SensorID      sql.NullString
-	FilterClasses sql.NullInt64
-	Classes       []string
+	Since    sql.NullString
+	SensorID sql.NullString
+	Classes  sql.NullString
 }
 
 func (q *Queries) CountDetections(ctx context.Context, arg CountDetectionsParams) (int64, error) {
-	query := countDetections
-	var queryParams []interface{}
-	queryParams = append(queryParams, arg.Since)
-	queryParams = append(queryParams, arg.SensorID)
-	queryParams = append(queryParams, arg.FilterClasses)
-	if len(arg.Classes) > 0 {
-		for _, v := range arg.Classes {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:classes*/?", strings.Repeat(",?", len(arg.Classes))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:classes*/?", "NULL", 1)
-	}
-	row := q.db.QueryRowContext(ctx, query, queryParams...)
+	row := q.db.QueryRowContext(ctx, countDetections, arg.Since, arg.SensorID, arg.Classes)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countTrackDetections = `-- name: CountTrackDetections :one
+
+SELECT COUNT(*) FROM detections
+WHERE (
+        (CAST(?1 AS TEXT) IS NOT NULL AND serial = ?1)
+     OR (CAST(?2 AS TEXT) IS NOT NULL
+         AND mac IN (SELECT value FROM json_each(?2)))
+      )
+  AND (CAST(?3 AS TEXT) IS NULL OR ts >= ?3)
+  AND (CAST(?4   AS TEXT) IS NULL OR ts <= ?4)
+`
+
+type CountTrackDetectionsParams struct {
+	Serial sql.NullString
+	Macs   sql.NullString
+	FromTs sql.NullString
+	ToTs   sql.NullString
+}
+
+// Reconstructing one track's detections matches on serial OR MAC, because a
+// track is keyed by MAC until Basic ID arrives and by serial afterwards, and
+// the same flight has rows from both eras.
+//
+// Note the shape: each side of the OR is guarded by its own NOT NULL check, so
+// a track with only a MAC does not accidentally match every row whose serial is
+// NULL -- which, early in a flight, is most of them. The caller returns early
+// when a track has neither.
+func (q *Queries) CountTrackDetections(ctx context.Context, arg CountTrackDetectionsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTrackDetections,
+		arg.Serial,
+		arg.Macs,
+		arg.FromTs,
+		arg.ToTs,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -49,31 +74,18 @@ const countTracks = `-- name: CountTracks :one
 SELECT COUNT(*) FROM tracks
 WHERE (CAST(?1 AS TEXT)          IS NULL OR last_seen  >= ?1)
   AND (CAST(?2 AS REAL) IS NULL OR confidence >= ?2)
-  AND (CAST(?3 AS INTEGER)  IS NULL OR state IN (/*SLICE:states*/?))
+  AND (CAST(?3 AS TEXT)         IS NULL
+       OR state IN (SELECT value FROM json_each(?3)))
 `
 
 type CountTracksParams struct {
 	Since         sql.NullString
 	MinConfidence sql.NullFloat64
-	FilterStates  sql.NullInt64
-	States        []string
+	States        sql.NullString
 }
 
 func (q *Queries) CountTracks(ctx context.Context, arg CountTracksParams) (int64, error) {
-	query := countTracks
-	var queryParams []interface{}
-	queryParams = append(queryParams, arg.Since)
-	queryParams = append(queryParams, arg.MinConfidence)
-	queryParams = append(queryParams, arg.FilterStates)
-	if len(arg.States) > 0 {
-		for _, v := range arg.States {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:states*/?", strings.Repeat(",?", len(arg.States))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:states*/?", "NULL", 1)
-	}
-	row := q.db.QueryRowContext(ctx, query, queryParams...)
+	row := q.db.QueryRowContext(ctx, countTracks, arg.Since, arg.MinConfidence, arg.States)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -220,26 +232,26 @@ func (q *Queries) ListCaptures(ctx context.Context) ([]string, error) {
 
 const listDetections = `-- name: ListDetections :many
 SELECT doc, ts, detection_id FROM detections
-WHERE (CAST(?2 AS TEXT)      IS NULL OR ts        >= ?2)
-  AND (CAST(?3 AS TEXT)  IS NULL OR sensor_id  = ?3)
-  AND (CAST(?4 AS INTEGER) IS NULL OR detection_class IN (/*SLICE:classes*/?))
+WHERE (CAST(?1 AS TEXT)     IS NULL OR ts        >= ?1)
+  AND (CAST(?2 AS TEXT) IS NULL OR sensor_id  = ?2)
+  AND (CAST(?3 AS TEXT)   IS NULL
+       OR detection_class IN (SELECT value FROM json_each(?3)))
   AND (
-        CAST(?6 AS TEXT) IS NULL
-        OR ts < ?6
-        OR (ts = ?6 AND detection_id < ?7)
+        CAST(?4 AS TEXT) IS NULL
+        OR ts < ?4
+        OR (ts = ?4 AND detection_id < ?5)
       )
 ORDER BY ts DESC, detection_id DESC
-LIMIT ?
+LIMIT ?6
 `
 
 type ListDetectionsParams struct {
-	Since         sql.NullString
-	SensorID      sql.NullString
-	FilterClasses sql.NullInt64
-	Classes       []string
-	CursorTs      sql.NullString
-	CursorID      sql.NullString
-	Limit         int64
+	Since    sql.NullString
+	SensorID sql.NullString
+	Classes  sql.NullString
+	CursorTs sql.NullString
+	CursorID sql.NullString
+	Limit    int64
 }
 
 type ListDetectionsRow struct {
@@ -249,23 +261,14 @@ type ListDetectionsRow struct {
 }
 
 func (q *Queries) ListDetections(ctx context.Context, arg ListDetectionsParams) ([]ListDetectionsRow, error) {
-	query := listDetections
-	var queryParams []interface{}
-	queryParams = append(queryParams, arg.Since)
-	queryParams = append(queryParams, arg.SensorID)
-	queryParams = append(queryParams, arg.FilterClasses)
-	if len(arg.Classes) > 0 {
-		for _, v := range arg.Classes {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:classes*/?", strings.Repeat(",?", len(arg.Classes))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:classes*/?", "NULL", 1)
-	}
-	queryParams = append(queryParams, arg.CursorTs)
-	queryParams = append(queryParams, arg.CursorID)
-	queryParams = append(queryParams, arg.Limit)
-	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	rows, err := q.db.QueryContext(ctx, listDetections,
+		arg.Since,
+		arg.SensorID,
+		arg.Classes,
+		arg.CursorTs,
+		arg.CursorID,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -322,25 +325,90 @@ func (q *Queries) ListSensors(ctx context.Context) ([]Sensor, error) {
 	return items, nil
 }
 
+const listTrackDetections = `-- name: ListTrackDetections :many
+SELECT doc, ts, detection_id FROM detections
+WHERE (
+        (CAST(?1 AS TEXT) IS NOT NULL AND serial = ?1)
+     OR (CAST(?2 AS TEXT) IS NOT NULL
+         AND mac IN (SELECT value FROM json_each(?2)))
+      )
+  AND (CAST(?3 AS TEXT) IS NULL OR ts >= ?3)
+  AND (CAST(?4   AS TEXT) IS NULL OR ts <= ?4)
+  AND (
+        CAST(?5 AS TEXT) IS NULL
+        OR ts < ?5
+        OR (ts = ?5 AND detection_id < ?6)
+      )
+ORDER BY ts DESC, detection_id DESC
+LIMIT ?7
+`
+
+type ListTrackDetectionsParams struct {
+	Serial   sql.NullString
+	Macs     sql.NullString
+	FromTs   sql.NullString
+	ToTs     sql.NullString
+	CursorTs sql.NullString
+	CursorID sql.NullString
+	Limit    int64
+}
+
+type ListTrackDetectionsRow struct {
+	Doc         string
+	Ts          string
+	DetectionID string
+}
+
+func (q *Queries) ListTrackDetections(ctx context.Context, arg ListTrackDetectionsParams) ([]ListTrackDetectionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTrackDetections,
+		arg.Serial,
+		arg.Macs,
+		arg.FromTs,
+		arg.ToTs,
+		arg.CursorTs,
+		arg.CursorID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTrackDetectionsRow{}
+	for rows.Next() {
+		var i ListTrackDetectionsRow
+		if err := rows.Scan(&i.Doc, &i.Ts, &i.DetectionID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTracks = `-- name: ListTracks :many
 SELECT doc, last_seen, track_id FROM tracks
-WHERE (CAST(?2 AS TEXT)          IS NULL OR last_seen  >= ?2)
-  AND (CAST(?3 AS REAL) IS NULL OR confidence >= ?3)
-  AND (CAST(?4 AS INTEGER)  IS NULL OR state IN (/*SLICE:states*/?))
+WHERE (CAST(?1 AS TEXT)          IS NULL OR last_seen  >= ?1)
+  AND (CAST(?2 AS REAL) IS NULL OR confidence >= ?2)
+  AND (CAST(?3 AS TEXT)         IS NULL
+       OR state IN (SELECT value FROM json_each(?3)))
   AND (
-        CAST(?6 AS TEXT) IS NULL
-        OR last_seen < ?6
-        OR (last_seen = ?6 AND track_id < ?7)
+        CAST(?4 AS TEXT) IS NULL
+        OR last_seen < ?4
+        OR (last_seen = ?4 AND track_id < ?5)
       )
 ORDER BY last_seen DESC, track_id DESC
-LIMIT ?
+LIMIT ?6
 `
 
 type ListTracksParams struct {
 	Since         sql.NullString
 	MinConfidence sql.NullFloat64
-	FilterStates  sql.NullInt64
-	States        []string
+	States        sql.NullString
 	CursorTs      sql.NullString
 	CursorID      sql.NullString
 	Limit         int64
@@ -355,23 +423,14 @@ type ListTracksRow struct {
 // Keyset paging on (last_seen DESC, track_id DESC), matching idx_tracks_page.
 // Offset paging would silently skip rows on a table being appended to.
 func (q *Queries) ListTracks(ctx context.Context, arg ListTracksParams) ([]ListTracksRow, error) {
-	query := listTracks
-	var queryParams []interface{}
-	queryParams = append(queryParams, arg.Since)
-	queryParams = append(queryParams, arg.MinConfidence)
-	queryParams = append(queryParams, arg.FilterStates)
-	if len(arg.States) > 0 {
-		for _, v := range arg.States {
-			queryParams = append(queryParams, v)
-		}
-		query = strings.Replace(query, "/*SLICE:states*/?", strings.Repeat(",?", len(arg.States))[1:], 1)
-	} else {
-		query = strings.Replace(query, "/*SLICE:states*/?", "NULL", 1)
-	}
-	queryParams = append(queryParams, arg.CursorTs)
-	queryParams = append(queryParams, arg.CursorID)
-	queryParams = append(queryParams, arg.Limit)
-	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	rows, err := q.db.QueryContext(ctx, listTracks,
+		arg.Since,
+		arg.MinConfidence,
+		arg.States,
+		arg.CursorTs,
+		arg.CursorID,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -435,18 +494,26 @@ func (q *Queries) PutCapture(ctx context.Context, arg PutCaptureParams) error {
 	return err
 }
 
-const putCaptureReport = `-- name: PutCaptureReport :exec
-UPDATE captures SET report = ? WHERE capture_id = ?
+const putCaptureReport = `-- name: PutCaptureReport :execrows
+UPDATE captures SET doc = ?, report = ? WHERE capture_id = ?
 `
 
 type PutCaptureReportParams struct {
+	Doc       string
 	Report    sql.NullString
 	CaptureID string
 }
 
-func (q *Queries) PutCaptureReport(ctx context.Context, arg PutCaptureReportParams) error {
-	_, err := q.db.ExecContext(ctx, putCaptureReport, arg.Report, arg.CaptureID)
-	return err
+// doc is rewritten alongside the report because the analysis summary lives in
+// the capture document too; writing only one of the pair would leave a capture
+// whose summary and report disagree. :execrows so a missing capture_id is
+// reported as not-found rather than passing silently.
+func (q *Queries) PutCaptureReport(ctx context.Context, arg PutCaptureReportParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, putCaptureReport, arg.Doc, arg.Report, arg.CaptureID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const putConfig = `-- name: PutConfig :exec
@@ -535,6 +602,16 @@ type UpsertTrackParams struct {
 // that can be verified at build time and have no string-building to get wrong.
 // At a Pi's data volumes -- weeks of detections, not billions -- the trade is
 // firmly worth it.
+//
+// Set filters ("state IN (...)") pass a JSON array as ONE parameter and expand
+// it with json_each, rather than using sqlc.slice(). That is not a style
+// preference. sqlc numbers parameters explicitly (?1, ?2, ...) as soon as a
+// query uses named parameters, but sqlc.slice() expands to bare `?`, which
+// SQLite numbers as "one past the highest so far". The two schemes only agree
+// when the slice happens to hold exactly one element; at zero or two the
+// parameters after it silently shift and a confidence float ends up compared
+// against a timestamp. A JSON array is a single parameter of fixed position, so
+// the numbering cannot drift, and NULL still means "no filter".
 func (q *Queries) UpsertTrack(ctx context.Context, arg UpsertTrackParams) error {
 	_, err := q.db.ExecContext(ctx, upsertTrack,
 		arg.TrackID,
