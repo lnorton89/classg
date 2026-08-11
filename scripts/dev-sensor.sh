@@ -45,9 +45,27 @@ if ! command -v ip >/dev/null 2>&1; then
     skip "no 'ip' command, so the interface cannot be checked"
 fi
 
+# The requested name is a preference, not a requirement. Interface numbering is
+# assigned by the kernel in probe order, so the same adapter comes up wlan0 on
+# one boot and wlan1 on the next -- and a stack that skips the sensor because it
+# looked for the wrong name is indistinguishable from having no adapter, which
+# is the exact confusion this script exists to end.
 if ! ip link show "$IFACE" >/dev/null 2>&1; then
-    skip "interface $IFACE does not exist" \
-         "attach the adapter first. Under WSL: usbipd attach --wsl --busid <id>, then 'make monitor'."
+    DETECTED=$(iw dev 2>/dev/null | awk '/Interface/ {print $2}')
+    COUNT=$(printf '%s\n' "$DETECTED" | grep -c . || true)
+
+    if [ "$COUNT" -eq 0 ]; then
+        skip "no wireless interface exists (looked for $IFACE)" \
+             "attach the adapter first. Under WSL: usbipd attach --busid <id>, then 'make monitor'."
+    elif [ "$COUNT" -gt 1 ]; then
+        # Guessing between two radios could put the sensor on the one that is
+        # carrying your network connection.
+        skip "$IFACE does not exist and there is more than one candidate: $(echo $DETECTED | tr '\n' ' ')" \
+             "pick one: make dev-sensor IFACE=<iface>"
+    fi
+
+    echo "  $IFACE does not exist; using the only wireless interface, $DETECTED"
+    IFACE="$DETECTED"
 fi
 
 # Monitor mode is not optional: in managed mode the adapter only ever hands up
