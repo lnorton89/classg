@@ -1,4 +1,4 @@
-.PHONY: help env migrate-env migrate-env-dry setup dev dev-logs dev-down dev-restart dev-native dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
+.PHONY: help env migrate-env migrate-env-dry setup sense dev dev-logs dev-down dev-restart dev-native dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
 
 DOCKER := bash ./scripts/docker.sh
 
@@ -14,6 +14,7 @@ help:
 	@echo "  make test       run all test suites"
 	@echo "  make lint       run all linters"
 	@echo "  make monitor    put the Wi-Fi adapter into passive monitor mode"
+	@echo "  make sense      run the live sensor (root, monitor mode)"
 	@echo "  make capture    record a beacon PCAP (Milestone 0 ground truth)"
 	@echo "  make compose-up build and start fusion, API, and UI via Windows Docker"
 	@echo ""
@@ -120,6 +121,12 @@ IFACE ?= wlan1
 
 monitor:
 	sudo ./scripts/setup-monitor.sh $(IFACE)
+
+# Live detection. Needs root for AF_PACKET, and monitor mode already set
+# (make monitor). Run from the repo root -- the recipe cds for you, because the
+# sensor's default config paths are relative to services/sensor-wifi.
+sense:
+	cd services/sensor-wifi && sudo .venv/bin/python -m classg_wifi.cli run 		--iface $(IFACE) $(SENSE_ARGS)
 
 capture:
 	@mkdir -p captures
