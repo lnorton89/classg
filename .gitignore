@@ -52,3 +52,7 @@ dist/
 
 # Temp Folder
 tmp/
+# air (hot reload) build output. tmp_dir in services/*/.air.toml -- these are
+# compiled binaries, tens of MB each.
+.air/
+build-errors.log
