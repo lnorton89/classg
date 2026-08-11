@@ -59,6 +59,7 @@ build-ui:
 # No image rebuild is needed to see a code change -- air rebuilds the Go
 # binaries in-container and Vite serves the UI with HMR.
 dev: env
+	@./scripts/dev-preflight.sh
 	$(DOCKER) compose --env-file .env -f docker/docker-compose.dev.yml up -d --build
 	@echo ""
 	@echo "  UI   http://localhost:5173"
