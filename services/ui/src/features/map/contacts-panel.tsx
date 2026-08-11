@@ -20,6 +20,13 @@ import { bearingDegrees, distanceMetres } from './geo'
 export interface ContactsPanelProps {
   tracks: Track[]
   closedTracks?: Track[]
+  /**
+   * Settings › Live map. Hides the whole closed section rather than passing an
+   * empty list: "Closed tracks (0) — no archived tracks" is a claim about the
+   * sky, and it would be a false one whenever the operator has simply chosen
+   * not to look at them.
+   */
+  showClosed?: boolean
   adsb: Detection[]
   selectedTrackId: string | null
   onSelectTrack: (trackId: string | null) => void
@@ -29,6 +36,7 @@ export interface ContactsPanelProps {
 export function ContactsPanel({
   tracks,
   closedTracks = [],
+  showClosed = true,
   adsb,
   selectedTrackId,
   onSelectTrack,
@@ -74,27 +82,29 @@ export function ContactsPanel({
         )}
       </section>
 
-      <section aria-labelledby="contacts-closed" className="border-border max-h-64 border-t">
-        <h2
-          id="contacts-closed"
-          className="text-muted-foreground px-3 py-2 text-xs font-semibold tracking-wide uppercase"
-        >
-          Closed tracks ({closedTracks.length})
-        </h2>
-        {closedTracks.length === 0 ? (
-          <p className="text-muted-foreground px-3 pb-3 text-xs">
-            No archived tracks. Closed tracks remain available here for review.
-          </p>
-        ) : (
-          <ul className="divide-border divide-y overflow-y-auto">
-            {closedTracks.map((track) => (
-              <li key={track.track_id}>
-                <ClosedTrackRow track={track} format={format} />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {showClosed ? (
+        <section aria-labelledby="contacts-closed" className="border-border max-h-64 border-t">
+          <h2
+            id="contacts-closed"
+            className="text-muted-foreground px-3 py-2 text-xs font-semibold tracking-wide uppercase"
+          >
+            Closed tracks ({closedTracks.length})
+          </h2>
+          {closedTracks.length === 0 ? (
+            <p className="text-muted-foreground px-3 pb-3 text-xs">
+              No archived tracks. Closed tracks remain available here for review.
+            </p>
+          ) : (
+            <ul className="divide-border divide-y overflow-y-auto">
+              {closedTracks.map((track) => (
+                <li key={track.track_id}>
+                  <ClosedTrackRow track={track} format={format} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       <section aria-labelledby="contacts-manned" className="border-border max-h-64 border-t">
         <h2

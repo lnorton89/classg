@@ -13,9 +13,11 @@ import { Dialog } from '@base-ui/react/dialog'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import {
+  BellIcon,
   BookOpenIcon,
   ClockIcon,
   CornerDownLeftIcon,
+  GaugeIcon,
   MapIcon,
   MoonIcon,
   RadarIcon,
@@ -145,21 +147,28 @@ function PaletteBody({
         group: 'Go to',
         run: go('/logs'),
       },
-      {
-        id: 'nav-config',
-        label: 'Config — channel plan and fusion weights',
-        icon: SettingsIcon,
-        group: 'Go to',
-        run: go('/config'),
-      },
+      { id: 'nav-docs', label: 'Docs', icon: BookOpenIcon, group: 'Go to', run: go('/docs') },
       {
         id: 'nav-settings',
         label: 'Settings — units, time, display',
-        icon: SlidersHorizontalIcon,
+        icon: SettingsIcon,
         group: 'Go to',
         run: go('/settings'),
       },
-      { id: 'nav-docs', label: 'Docs', icon: BookOpenIcon, group: 'Go to', run: go('/docs') },
+      {
+        id: 'nav-notifications',
+        label: 'Notification settings — what reaches the drawer',
+        icon: BellIcon,
+        group: 'Go to',
+        run: go('/settings/notifications'),
+      },
+      {
+        id: 'nav-calibration',
+        label: 'Calibration — channel plan and fusion weights',
+        icon: GaugeIcon,
+        group: 'Go to',
+        run: go('/settings/calibration'),
+      },
     ]
 
     const quick: Command[] = [

@@ -1,31 +1,25 @@
-import { Menu } from '@base-ui/react/menu'
 import { Link } from '@tanstack/react-router'
 import {
   BookOpenIcon,
-  EllipsisIcon,
   MapIcon,
-  MonitorIcon,
-  MoonIcon,
   RadarIcon,
   ScrollTextIcon,
   SearchIcon,
   SettingsIcon,
   SlidersHorizontalIcon,
-  SunIcon,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
-import { useTheme, type ThemePreference } from '@/app/theme-context'
 import { ClassGLogo } from '@/components/brand/classg-logo'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { isApplePlatform, Kbd } from '@/components/ui/kbd'
 import { Toaster } from '@/components/ui/toast'
 import { Tooltip } from '@/components/ui/tooltip'
 import { SystemStatusPill, StreamStatusPill } from '@/features/health/components'
-import { FlightsDrawer } from '@/features/monitoring/flights-drawer'
 import { RecordingIndicator } from '@/features/monitoring/recording-indicator'
 import { TrackAlerts } from '@/features/monitoring/track-alerts'
+import { NotificationsDrawer } from '@/features/notifications/notifications-drawer'
 import { cn } from '@/lib/cn'
 
 import { CommandPalette } from './command-palette'
@@ -39,20 +33,16 @@ interface NavItem {
 }
 
 /**
- * Primary navigation is the four things you look at while the system is
- * running. Config, Settings and Docs are things you visit deliberately, so they
- * live in the overflow menu rather than competing for width with the live view.
+ * Everything you read while the system is running, plus the reference you read
+ * when something on those pages needs explaining. Settings is deliberately not
+ * here: it is somewhere you go once to set the console up, so it sits in the
+ * status cluster as a gear rather than spending width next to the live view.
  */
 const PRIMARY_NAV: NavItem[] = [
   { to: '/', label: 'Live', icon: MapIcon, exact: true },
   { to: '/tracks', label: 'Tracks', icon: RadarIcon, exact: false },
   { to: '/sensors', label: 'Sensors', icon: SlidersHorizontalIcon, exact: false },
   { to: '/logs', label: 'Logs', icon: ScrollTextIcon, exact: false },
-]
-
-const SECONDARY_NAV: NavItem[] = [
-  { to: '/config', label: 'Config', icon: SettingsIcon, exact: false },
-  { to: '/settings', label: 'Settings', icon: SlidersHorizontalIcon, exact: false },
   { to: '/docs', label: 'Docs', icon: BookOpenIcon, exact: false },
 ]
 
@@ -114,9 +104,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             {PRIMARY_NAV.map((item) => (
               <NavLink key={item.to} item={item} />
             ))}
-            {/* On mobile the overflow menu is the fifth item in the bottom bar,
-                so every route stays reachable with one thumb. */}
-            <OverflowMenu className="md:hidden" variant="nav" />
           </nav>
 
           <div
@@ -127,11 +114,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             <MockScenarioSwitcher />
             <RecordingIndicator />
-            <FlightsDrawer />
+            <NotificationsDrawer />
             <StreamStatusPill />
             <SystemStatusPill />
             <PaletteButton onOpen={() => setPaletteOpen(true)} />
-            <OverflowMenu className="hidden md:inline-flex" variant="button" />
+            {/* Visible at every width, including mobile: the bottom bar is full
+                at five pages, and settings is the one destination that has to
+                stay reachable without one. */}
+            <SettingsButton />
           </div>
         </div>
       </header>
@@ -192,7 +182,7 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
         // Desktop only. It is a keyboard accelerator with no keyboard to
         // accelerate on a phone, and the width it costs in the mobile header
         // pushes recording state and sensor health onto a second row.
-        // Everything it reaches is in the bottom nav or the More menu.
+        // Everything it reaches is in the bottom nav or behind the gear.
         className="hidden gap-2 md:inline-flex"
       >
         <SearchIcon aria-hidden />
@@ -203,122 +193,30 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
   )
 }
 
-const THEME_ORDER: ThemePreference[] = ['dark', 'light', 'system']
-const THEME_ICON = { dark: MoonIcon, light: SunIcon, system: MonitorIcon }
-const THEME_LABEL = {
-  dark: 'Dark theme',
-  light: 'Light theme',
-  system: 'System theme',
-}
-
 /**
- * Everything that is not primary navigation: the deliberate routes, the theme
- * cycle, and the mock-scenario switcher in dev builds.
+ * One gear, one destination.
+ *
+ * This replaced a three-dot menu that held Config, Settings and Docs behind a
+ * click and a read. Two of those were settings pages that disagreed about which
+ * was which, and the third was reference material with no business hiding in an
+ * overflow — it is in the primary nav now. The theme cycle the menu also
+ * carried lives in Settings › Appearance, and the command palette still
+ * toggles it in one keystroke.
  */
-function OverflowMenu({
-  className,
-  variant,
-}: {
-  className?: string
-  variant: 'nav' | 'button'
-}) {
-  const { preference, setPreference } = useTheme()
-  const ThemeIcon = THEME_ICON[preference]
-  const nextTheme =
-    THEME_ORDER[(THEME_ORDER.indexOf(preference) + 1) % THEME_ORDER.length] ?? 'dark'
-
+function SettingsButton() {
   return (
-    <Menu.Root>
-      <Menu.Trigger
-        aria-label="More pages and display options"
+    <Tooltip content="Settings — units, notifications, calibration">
+      <Link
+        to="/settings"
+        aria-label="Settings"
         className={cn(
-          variant === 'nav'
-            ? cn(
-                'text-muted-foreground hover:text-foreground flex min-w-16 flex-col items-center',
-                'gap-0.5 rounded-md px-3 py-1.5 text-2xs font-medium',
-              )
-            : cn(
-                'text-muted-foreground hover:bg-accent hover:text-foreground inline-flex size-9',
-                'items-center justify-center rounded-md transition-colors',
-              ),
-          className,
+          buttonVariants({ variant: 'ghost', size: 'icon' }),
+          'text-muted-foreground hover:text-foreground',
         )}
+        activeProps={{ className: 'bg-accent text-foreground' }}
       >
-        <EllipsisIcon className={variant === 'nav' ? 'size-4.5' : 'size-4'} aria-hidden />
-        {variant === 'nav' ? 'More' : null}
-      </Menu.Trigger>
-      <Menu.Portal>
-        {/* z-index on the Positioner: it carries the transform that creates the
-            stacking context, so a z-index on the Popup would be trapped inside
-            it and lose to the z-40 header. */}
-        <Menu.Positioner
-          side={variant === 'nav' ? 'top' : 'bottom'}
-          align="end"
-          sideOffset={6}
-          className="z-50"
-        >
-          <Menu.Popup
-            className={cn(
-              'bg-popover text-popover-foreground border-border min-w-56 overflow-hidden',
-              'rounded-lg border p-1 shadow-lg',
-            )}
-          >
-            {/* Each label has to live inside its own Menu.Group: the label is
-                what names the group for a screen reader, so Base UI throws
-                rather than let one float free of the items it describes. */}
-            <Menu.Group>
-              <Menu.GroupLabel className="label-caps px-2 py-1.5">Pages</Menu.GroupLabel>
-              {SECONDARY_NAV.map((item) => (
-                <Menu.Item
-                  key={item.to}
-                  className="data-highlighted:bg-accent rounded-md"
-                  render={
-                    <Link
-                      to={item.to}
-                      className="flex items-center gap-2.5 px-2 py-2 text-sm"
-                      activeProps={{ 'aria-current': 'page' }}
-                    >
-                      <item.icon className="text-muted-foreground size-4" aria-hidden />
-                      {item.label}
-                    </Link>
-                  }
-                />
-              ))}
-            </Menu.Group>
-
-            <Menu.Separator className="bg-border my-1 h-px" />
-
-            <Menu.Group>
-              <Menu.GroupLabel className="label-caps px-2 py-1.5">Display</Menu.GroupLabel>
-              <Menu.Item
-                onClick={() => setPreference(nextTheme)}
-                className={cn(
-                  'flex cursor-default items-center gap-2.5 rounded-md px-2 py-2 text-sm',
-                  'data-highlighted:bg-accent',
-                )}
-              >
-                <ThemeIcon className="text-muted-foreground size-4" aria-hidden />
-                <span className="flex-1">{THEME_LABEL[preference]}</span>
-                <span className="text-muted-foreground text-2xs">
-                  → {THEME_LABEL[nextTheme].toLowerCase()}
-                </span>
-              </Menu.Item>
-              <Menu.Item
-                className="data-highlighted:bg-accent rounded-md"
-                render={
-                  <Link to="/settings" className="flex items-center gap-2.5 px-2 py-2 text-sm">
-                    <SlidersHorizontalIcon
-                      className="text-muted-foreground size-4"
-                      aria-hidden
-                    />
-                    Units, time and text size
-                  </Link>
-                }
-              />
-            </Menu.Group>
-          </Menu.Popup>
-        </Menu.Positioner>
-      </Menu.Portal>
-    </Menu.Root>
+        <SettingsIcon className="size-4" aria-hidden />
+      </Link>
+    </Tooltip>
   )
 }

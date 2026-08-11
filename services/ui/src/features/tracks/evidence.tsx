@@ -228,7 +228,8 @@ export function EvidenceBreakdown({
         {mismatch ? (
           <p className="text-warn mt-2 text-xs">
             The API reported {format.confidence(confidence)}, which does not match the weights
-            above. Fusion may be using a different weight table — check Config → Fusion weights.
+            above. Fusion may be using a different weight table — check Settings → Calibration →
+            Fusion weights.
           </p>
         ) : null}
       </div>

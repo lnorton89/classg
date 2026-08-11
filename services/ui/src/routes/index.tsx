@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
+import { usePreferences } from '@/app/preferences-context'
 import { Button } from '@/components/ui/button'
 import { StatTile } from '@/components/ui/stat'
 import { ContactsPanel } from '@/features/map/contacts-panel'
@@ -34,6 +35,7 @@ function LiveView() {
   const { data: tracksData } = useQuery(tracksQuery())
   const { data: health } = useQuery(healthQuery())
   const { data: adsbData } = useQuery(adsbDetectionsQuery())
+  const { preferences } = usePreferences()
 
   const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null)
   const [mobilePane, setMobilePane] = useState<'map' | 'list'>('map')
@@ -41,7 +43,11 @@ function LiveView() {
   const tracks = tracksData?.tracks ?? []
   const { active: activeTracks, closed: closedTracks } = partitionTracks(tracks)
   const adsb = adsbData?.detections ?? []
-  const contactCount = activeTracks.length + closedTracks.length + adsb.length
+  const showClosed = preferences.showClosedContacts
+  // Hiding the closed section has to remove it from the count as well. A
+  // "Contacts (12)" tab that opens onto nine rows reads as a rendering fault.
+  const contactCount =
+    activeTracks.length + (showClosed ? closedTracks.length : 0) + adsb.length
   const skyState = computeSkyState(health, activeTracks.length)
 
   const confirmed = activeTracks.filter((track) => track.state === 'CONFIRMED').length
@@ -74,7 +80,9 @@ function LiveView() {
           <SkyStateBanner state={skyState} className="max-w-2xl" />
         </div>
 
-        <MapLegend className="absolute bottom-3 left-3 z-20 hidden sm:block" />
+        {preferences.mapLegend ? (
+          <MapLegend className="absolute bottom-3 left-3 z-20 hidden sm:block" />
+        ) : null}
       </div>
 
       {/* Mobile: one pane at a time, switched by a toggle. */}
@@ -144,6 +152,7 @@ function LiveView() {
         <ContactsPanel
           tracks={activeTracks}
           closedTracks={closedTracks}
+          showClosed={showClosed}
           adsb={adsb}
           selectedTrackId={selectedTrackId}
           onSelectTrack={setSelectedTrackId}

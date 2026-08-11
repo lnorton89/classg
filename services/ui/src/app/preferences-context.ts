@@ -1,17 +1,21 @@
 /**
  * Operator preferences.
  *
- * Deliberately separate from `/config`. Config is the *instrument*: channel
- * dwell weights and fusion confidence live on the server, are shared by every
- * client, and changing one changes what the system detects. Preferences are the
- * *display*: they live in this browser, affect nobody else, and can never
- * change a measurement — only how it is written down.
+ * Deliberately separate from calibration. Calibration is the *instrument*:
+ * channel dwell weights and fusion confidence live on the server, are shared by
+ * every client, and changing one changes what the system detects. Preferences
+ * are the *display*: they live in this browser, affect nobody else, and can
+ * never change a measurement — only how it is written down.
  *
  * Keeping them apart is what makes it safe to give preferences an unguarded,
- * instant-apply UI while config keeps its explicit save-and-restart flow.
+ * instant-apply UI while calibration keeps its explicit save-and-restart flow.
+ * The two now share the `/settings` page, so that separation is carried by the
+ * scope grouping in `features/settings/categories.ts` rather than by the route.
  */
 import { createContext, use } from 'react'
 
+import type { LogLevel } from '@/features/logs/log-store'
+import type { NotifyCategory } from '@/features/notifications/feed'
 import type {
   ClockFormat,
   CoordFormat,
@@ -44,6 +48,18 @@ export interface Preferences {
   keepAwake: boolean
   /** Require a confirmation step before restarting a sensor. */
   confirmDestructive: boolean
+  /**
+   * Which categories reach the notifications drawer. Stored as a partial record
+   * on purpose: a category added by a later build is absent from an existing
+   * stored blob, and absent has to mean "on" rather than "silently filtered".
+   */
+  notifyCategories: Partial<Record<NotifyCategory, boolean>>
+  /** Severity floor for session events in the drawer. Drone detections bypass it. */
+  notifyMinLevel: LogLevel
+  /** Show the legend overlay on the live map. */
+  mapLegend: boolean
+  /** Show the closed-tracks section in the contacts panel. */
+  showClosedContacts: boolean
 }
 
 export const TEXT_SCALE_VALUES: Record<TextScale, number> = {
@@ -72,6 +88,14 @@ export const DEFAULT_PREFERENCES: Preferences = {
   alertLevel: 'off',
   keepAwake: false,
   confirmDestructive: true,
+  // Empty rather than every-key-true: "on" is the absence of an explicit no,
+  // so a new category needs no migration to reach existing operators.
+  notifyCategories: {},
+  // Info, not debug. Debug entries are rate-limited bursts of detection noise —
+  // useful in the log view, useless as notifications.
+  notifyMinLevel: 'info',
+  mapLegend: true,
+  showClosedContacts: true,
 }
 
 export interface PreferencesContextValue {

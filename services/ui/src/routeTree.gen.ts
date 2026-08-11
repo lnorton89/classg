@@ -19,6 +19,15 @@ import { Route as CapturesIndexRouteImport } from './routes/captures.index'
 import { Route as CapturesCaptureIdRouteImport } from './routes/captures.$captureId'
 import { Route as DocsIndexRouteImport } from './routes/docs.index'
 import { Route as DocsDocIdRouteImport } from './routes/docs.$docId'
+import { Route as SettingsIndexRouteImport } from './routes/settings.index'
+import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
+import { Route as SettingsCalibrationRouteImport } from './routes/settings.calibration'
+import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
+import { Route as SettingsLogsRouteImport } from './routes/settings.logs'
+import { Route as SettingsMapRouteImport } from './routes/settings.map'
+import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
+import { Route as SettingsSensorsRouteImport } from './routes/settings.sensors'
+import { Route as SettingsTracksRouteImport } from './routes/settings.tracks'
 import { Route as TracksIndexRouteImport } from './routes/tracks.index'
 import { Route as TracksTrackIdRouteImport } from './routes/tracks.$trackId'
 
@@ -72,6 +81,51 @@ const DocsDocIdRoute = DocsDocIdRouteImport.update({
   path: '/$docId',
   getParentRoute: () => DocsRoute,
 } as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
+  id: '/appearance',
+  path: '/appearance',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsCalibrationRoute = SettingsCalibrationRouteImport.update({
+  id: '/calibration',
+  path: '/calibration',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
+  id: '/general',
+  path: '/general',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsLogsRoute = SettingsLogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsMapRoute = SettingsMapRouteImport.update({
+  id: '/map',
+  path: '/map',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsNotificationsRoute = SettingsNotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsSensorsRoute = SettingsSensorsRouteImport.update({
+  id: '/sensors',
+  path: '/sensors',
+  getParentRoute: () => SettingsRoute,
+} as any)
+const SettingsTracksRoute = SettingsTracksRouteImport.update({
+  id: '/tracks',
+  path: '/tracks',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const TracksIndexRoute = TracksIndexRouteImport.update({
   id: '/tracks/',
   path: '/tracks/',
@@ -89,12 +143,21 @@ export interface FileRoutesByFullPath {
   '/docs': typeof DocsRouteWithChildren
   '/logs': typeof LogsRoute
   '/sensors': typeof SensorsRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/calibration': typeof SettingsCalibrationRoute
+  '/settings/general': typeof SettingsGeneralRoute
+  '/settings/logs': typeof SettingsLogsRoute
+  '/settings/map': typeof SettingsMapRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
+  '/settings/sensors': typeof SettingsSensorsRoute
+  '/settings/tracks': typeof SettingsTracksRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
   '/captures/': typeof CapturesIndexRoute
   '/docs/': typeof DocsIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/tracks/': typeof TracksIndexRoute
 }
 export interface FileRoutesByTo {
@@ -102,12 +165,20 @@ export interface FileRoutesByTo {
   '/config': typeof ConfigRoute
   '/logs': typeof LogsRoute
   '/sensors': typeof SensorsRoute
-  '/settings': typeof SettingsRoute
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/calibration': typeof SettingsCalibrationRoute
+  '/settings/general': typeof SettingsGeneralRoute
+  '/settings/logs': typeof SettingsLogsRoute
+  '/settings/map': typeof SettingsMapRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
+  '/settings/sensors': typeof SettingsSensorsRoute
+  '/settings/tracks': typeof SettingsTracksRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
   '/captures': typeof CapturesIndexRoute
   '/docs': typeof DocsIndexRoute
+  '/settings': typeof SettingsIndexRoute
   '/tracks': typeof TracksIndexRoute
 }
 export interface FileRoutesById {
@@ -117,12 +188,21 @@ export interface FileRoutesById {
   '/docs': typeof DocsRouteWithChildren
   '/logs': typeof LogsRoute
   '/sensors': typeof SensorsRoute
-  '/settings': typeof SettingsRoute
+  '/settings': typeof SettingsRouteWithChildren
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
+  '/settings/appearance': typeof SettingsAppearanceRoute
+  '/settings/calibration': typeof SettingsCalibrationRoute
+  '/settings/general': typeof SettingsGeneralRoute
+  '/settings/logs': typeof SettingsLogsRoute
+  '/settings/map': typeof SettingsMapRoute
+  '/settings/notifications': typeof SettingsNotificationsRoute
+  '/settings/sensors': typeof SettingsSensorsRoute
+  '/settings/tracks': typeof SettingsTracksRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
   '/captures/': typeof CapturesIndexRoute
   '/docs/': typeof DocsIndexRoute
+  '/settings/': typeof SettingsIndexRoute
   '/tracks/': typeof TracksIndexRoute
 }
 export interface FileRouteTypes {
@@ -136,9 +216,18 @@ export interface FileRouteTypes {
     | '/settings'
     | '/captures/$captureId'
     | '/docs/$docId'
+    | '/settings/appearance'
+    | '/settings/calibration'
+    | '/settings/general'
+    | '/settings/logs'
+    | '/settings/map'
+    | '/settings/notifications'
+    | '/settings/sensors'
+    | '/settings/tracks'
     | '/tracks/$trackId'
     | '/captures/'
     | '/docs/'
+    | '/settings/'
     | '/tracks/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -146,12 +235,20 @@ export interface FileRouteTypes {
     | '/config'
     | '/logs'
     | '/sensors'
-    | '/settings'
     | '/captures/$captureId'
     | '/docs/$docId'
+    | '/settings/appearance'
+    | '/settings/calibration'
+    | '/settings/general'
+    | '/settings/logs'
+    | '/settings/map'
+    | '/settings/notifications'
+    | '/settings/sensors'
+    | '/settings/tracks'
     | '/tracks/$trackId'
     | '/captures'
     | '/docs'
+    | '/settings'
     | '/tracks'
   id:
     | '__root__'
@@ -163,9 +260,18 @@ export interface FileRouteTypes {
     | '/settings'
     | '/captures/$captureId'
     | '/docs/$docId'
+    | '/settings/appearance'
+    | '/settings/calibration'
+    | '/settings/general'
+    | '/settings/logs'
+    | '/settings/map'
+    | '/settings/notifications'
+    | '/settings/sensors'
+    | '/settings/tracks'
     | '/tracks/$trackId'
     | '/captures/'
     | '/docs/'
+    | '/settings/'
     | '/tracks/'
   fileRoutesById: FileRoutesById
 }
@@ -175,7 +281,7 @@ export interface RootRouteChildren {
   DocsRoute: typeof DocsRouteWithChildren
   LogsRoute: typeof LogsRoute
   SensorsRoute: typeof SensorsRoute
-  SettingsRoute: typeof SettingsRoute
+  SettingsRoute: typeof SettingsRouteWithChildren
   CapturesCaptureIdRoute: typeof CapturesCaptureIdRoute
   TracksTrackIdRoute: typeof TracksTrackIdRoute
   CapturesIndexRoute: typeof CapturesIndexRoute
@@ -254,6 +360,69 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsDocIdRouteImport
       parentRoute: typeof DocsRoute
     }
+    '/settings/': {
+      id: '/settings/'
+      path: '/'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/appearance': {
+      id: '/settings/appearance'
+      path: '/appearance'
+      fullPath: '/settings/appearance'
+      preLoaderRoute: typeof SettingsAppearanceRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/calibration': {
+      id: '/settings/calibration'
+      path: '/calibration'
+      fullPath: '/settings/calibration'
+      preLoaderRoute: typeof SettingsCalibrationRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/general': {
+      id: '/settings/general'
+      path: '/general'
+      fullPath: '/settings/general'
+      preLoaderRoute: typeof SettingsGeneralRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/logs': {
+      id: '/settings/logs'
+      path: '/logs'
+      fullPath: '/settings/logs'
+      preLoaderRoute: typeof SettingsLogsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/map': {
+      id: '/settings/map'
+      path: '/map'
+      fullPath: '/settings/map'
+      preLoaderRoute: typeof SettingsMapRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/notifications': {
+      id: '/settings/notifications'
+      path: '/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof SettingsNotificationsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/sensors': {
+      id: '/settings/sensors'
+      path: '/sensors'
+      fullPath: '/settings/sensors'
+      preLoaderRoute: typeof SettingsSensorsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
+    '/settings/tracks': {
+      id: '/settings/tracks'
+      path: '/tracks'
+      fullPath: '/settings/tracks'
+      preLoaderRoute: typeof SettingsTracksRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/tracks/': {
       id: '/tracks/'
       path: '/tracks'
@@ -283,13 +452,41 @@ const DocsRouteChildren: DocsRouteChildren = {
 
 const DocsRouteWithChildren = DocsRoute._addFileChildren(DocsRouteChildren)
 
+interface SettingsRouteChildren {
+  SettingsAppearanceRoute: typeof SettingsAppearanceRoute
+  SettingsCalibrationRoute: typeof SettingsCalibrationRoute
+  SettingsGeneralRoute: typeof SettingsGeneralRoute
+  SettingsLogsRoute: typeof SettingsLogsRoute
+  SettingsMapRoute: typeof SettingsMapRoute
+  SettingsNotificationsRoute: typeof SettingsNotificationsRoute
+  SettingsSensorsRoute: typeof SettingsSensorsRoute
+  SettingsTracksRoute: typeof SettingsTracksRoute
+  SettingsIndexRoute: typeof SettingsIndexRoute
+}
+
+const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAppearanceRoute: SettingsAppearanceRoute,
+  SettingsCalibrationRoute: SettingsCalibrationRoute,
+  SettingsGeneralRoute: SettingsGeneralRoute,
+  SettingsLogsRoute: SettingsLogsRoute,
+  SettingsMapRoute: SettingsMapRoute,
+  SettingsNotificationsRoute: SettingsNotificationsRoute,
+  SettingsSensorsRoute: SettingsSensorsRoute,
+  SettingsTracksRoute: SettingsTracksRoute,
+  SettingsIndexRoute: SettingsIndexRoute,
+}
+
+const SettingsRouteWithChildren = SettingsRoute._addFileChildren(
+  SettingsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ConfigRoute: ConfigRoute,
   DocsRoute: DocsRouteWithChildren,
   LogsRoute: LogsRoute,
   SensorsRoute: SensorsRoute,
-  SettingsRoute: SettingsRoute,
+  SettingsRoute: SettingsRouteWithChildren,
   CapturesCaptureIdRoute: CapturesCaptureIdRoute,
   TracksTrackIdRoute: TracksTrackIdRoute,
   CapturesIndexRoute: CapturesIndexRoute,
