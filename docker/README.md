@@ -50,6 +50,20 @@ Preload zoom accepts up to 19, but budget for it — seeding the bbox above thro
 roughly 4⁴ ≈ 256× the z15 tile count. The on-demand cache fills the deep levels for wherever
 you actually fly, which is usually the better trade than baking them all in.
 
+> **Don't publish an image built with a preload bbox.** Fetching and caching tiles as you
+> fly is ordinary use of the imagery service. Baking them into an image and pushing that
+> image to a registry is **redistribution**, which Esri's terms don't permit. Building
+> privately and running it on your own Pi is fine; `docker push` to anywhere public is not.
+>
+> This constraint arrived with the Esri switch — USGS imagery is public domain, so baking
+> and shipping it was unrestricted. It is unrelated to ClassG's own MIT licence, which
+> covers this source tree and cannot grant rights to third-party imagery.
+>
+> Two ways out if you need a publishable image: leave `CLASSG_TILE_PRELOAD_BBOX` empty and
+> let the runtime cache fill (the default — `public/tiles/basemap` is build-generated and
+> untracked, so nothing leaks via git), or point `CLASSG_SATELLITE_TILE_URL` back at the
+> public-domain USGS endpoint for the baked layer and accept its z16 ceiling.
+
 #### Changing the imagery source
 
 The default has real pixels to **z19**. Zoom ceilings are per-source and per-location;
