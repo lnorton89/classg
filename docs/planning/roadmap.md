@@ -41,7 +41,7 @@ invoke the Kismet fallback in [ADR-0005](../architecture/adr/0005-own-sniffer-vs
 - [x] DJI parser: subcommand `0x10` and `0x11`
 - [x] **Calibrate DJI units** — N/A for this aircraft: the Mini 5 Pro emits no proprietary DJI Wi-Fi IE, so there are no raw DJI fields to calibrate ([04-calibration.md](../ops/04-calibration.md))
 - [x] OUI/SSID fingerprint matcher, YAML-driven
-- [ ] Detection schema validation in CI
+- [x] Detection schema validation in CI
 - [x] ZMQ publisher with HWM and drop counters
 - [x] `fusion`: track lifecycle, serial/MAC correlation, noisy-OR confidence
 - [x] `api`: REST `/tracks`, `/health`, WebSocket `/ws`
