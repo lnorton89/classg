@@ -18,6 +18,7 @@ import {
   tracksQuery,
 } from '@/lib/api/queries'
 import { formatDuration } from '@/lib/format'
+import { PageContainer } from '@/components/layout/page-container'
 
 export const Route = createFileRoute('/sensors')({
   component: SensorsView,
@@ -54,7 +55,7 @@ function SensorsView() {
   const restartError = restart.error instanceof ApiError ? restart.error : null
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-3 sm:p-4">
+    <PageContainer>
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Sensors and captures</h1>
         <p className="text-muted-foreground text-xs">
@@ -152,6 +153,6 @@ function SensorsView() {
           </p>
         </CardContent>
       </Card>
-    </div>
+    </PageContainer>
   )
 }

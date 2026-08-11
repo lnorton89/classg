@@ -7,6 +7,7 @@ import { TrackStateKey } from '@/features/tracks/evidence'
 import { partitionTracks } from '@/features/tracks/partition'
 import { TracksTable } from '@/features/tracks/tracks-table'
 import { healthQuery, tracksQuery } from '@/lib/api/queries'
+import { PageContainer } from '@/components/layout/page-container'
 
 export const Route = createFileRoute('/tracks/')({
   component: TracksView,
@@ -21,7 +22,7 @@ function TracksView() {
   const skyState = computeSkyState(health, activeTracks.length)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 sm:p-4">
+    <PageContainer>
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Tracks</h1>
         <p className="text-muted-foreground text-xs">
@@ -72,6 +73,6 @@ function TracksView() {
           showStateFilter={false}
         />
       </section>
-    </div>
+    </PageContainer>
   )
 }

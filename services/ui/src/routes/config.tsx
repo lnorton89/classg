@@ -13,6 +13,7 @@ import { ApiError, api } from '@/lib/api/client'
 import { channelPlanQuery, queryKeys, weightsQuery } from '@/lib/api/queries'
 import type { ChannelPlan, DetectionClass, FusionWeights } from '@/lib/api/types'
 import { DETECTION_CLASS_ORDER, detectionClassInfo, noisyOr } from '@/lib/detection-classes'
+import { PageContainer } from '@/components/layout/page-container'
 
 export const Route = createFileRoute('/config')({
   component: ConfigView,
@@ -52,7 +53,7 @@ const weightsSchema = z.object({
 
 function ConfigView() {
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-3 sm:p-4">
+    <PageContainer>
       <div>
         <h1 className="text-lg font-semibold tracking-tight">Config</h1>
         <p className="text-muted-foreground text-xs">
@@ -62,7 +63,7 @@ function ConfigView() {
       </div>
       <ChannelPlanEditor />
       <FusionWeightsEditor />
-    </div>
+    </PageContainer>
   )
 }
 

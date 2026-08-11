@@ -29,6 +29,7 @@ import {
   formatTimestamp,
   splitSerial,
 } from '@/lib/format'
+import { PageContainer } from '@/components/layout/page-container'
 
 export const Route = createFileRoute('/tracks/$trackId')({
   component: TrackDetail,
@@ -243,7 +244,7 @@ function TrackDetail() {
   ]
 
   return (
-    <div className="mx-auto flex w-full max-w-[96rem] flex-col gap-4 p-3 sm:p-5 lg:p-6">
+    <PageContainer>
       <header className="min-w-0">
         <Link
           to="/tracks"
@@ -271,7 +272,7 @@ function TrackDetail() {
       </header>
 
       <SortableTrackDetailGrid cards={cards} />
-    </div>
+    </PageContainer>
   )
 }
 
