@@ -8,7 +8,8 @@ tmp_dir = ".air"
 
 [build]
   cmd = "go build -o ./.air/classg-api ./cmd/classg-api"
-  bin = "./.air/classg-api"
+  # `entrypoint` replaces the deprecated `bin` (air >= 1.62).
+  entrypoint = "./.air/classg-api"
   include_ext = ["go"]
   exclude_dir = [".air", "testdata"]
   exclude_regex = ["_test\\.go"]
