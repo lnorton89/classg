@@ -18,6 +18,7 @@ import (
 	"github.com/classg/api/internal/config"
 	"github.com/classg/api/internal/health"
 	"github.com/classg/api/internal/hub"
+	"github.com/classg/api/internal/monitoring"
 	"github.com/classg/api/internal/settings"
 	"github.com/classg/api/internal/store"
 )
@@ -32,39 +33,42 @@ type Sensors interface {
 }
 
 type Server struct {
-	cfg      *config.Config
-	store    store.Store
-	registry *health.Registry
-	hub      *hub.Hub
-	captures *capture.Manager
-	sensors  Sensors
-	started  time.Time
-	settings *settings.Settings
+	cfg        *config.Config
+	store      store.Store
+	registry   *health.Registry
+	hub        *hub.Hub
+	captures   *capture.Manager
+	sensors    Sensors
+	started    time.Time
+	settings   *settings.Settings
+	monitoring *monitoring.Switch
 
 	mux http.Handler
 }
 
 type Options struct {
-	Config   *config.Config
-	Settings *settings.Settings
-	Store    store.Store
-	Registry *health.Registry
-	Hub      *hub.Hub
-	Captures *capture.Manager
-	Sensors  Sensors
-	Started  time.Time
+	Config     *config.Config
+	Settings   *settings.Settings
+	Monitoring *monitoring.Switch
+	Store      store.Store
+	Registry   *health.Registry
+	Hub        *hub.Hub
+	Captures   *capture.Manager
+	Sensors    Sensors
+	Started    time.Time
 }
 
 func New(opts Options) *Server {
 	s := &Server{
-		cfg:      opts.Config,
-		settings: opts.Settings,
-		store:    opts.Store,
-		registry: opts.Registry,
-		hub:      opts.Hub,
-		captures: opts.Captures,
-		sensors:  opts.Sensors,
-		started:  opts.Started,
+		cfg:        opts.Config,
+		settings:   opts.Settings,
+		monitoring: opts.Monitoring,
+		store:      opts.Store,
+		registry:   opts.Registry,
+		hub:        opts.Hub,
+		captures:   opts.Captures,
+		sensors:    opts.Sensors,
+		started:    opts.Started,
 	}
 	if s.started.IsZero() {
 		s.started = time.Now()
@@ -103,6 +107,8 @@ func (s *Server) routes() http.Handler {
 
 	h("GET "+BasePath+"/config/channels", s.handleGetChannels)
 	h("PUT "+BasePath+"/config/channels", s.handlePutChannels)
+	h("GET "+BasePath+"/monitoring", s.handleGetMonitoring)
+	h("PUT "+BasePath+"/monitoring", s.handlePutMonitoring)
 	h("GET "+BasePath+"/config/settings", s.handleGetSettings)
 	h("PUT "+BasePath+"/config/settings", s.handlePutSettings)
 	h("GET "+BasePath+"/config/weights", s.handleGetWeights)
