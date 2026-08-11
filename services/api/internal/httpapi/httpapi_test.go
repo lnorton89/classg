@@ -104,7 +104,7 @@ func sampleDetection(id string) []byte {
 		"sensor_id": "wifi-0",
 		"sensor_kind": "wifi",
 		"detection_class": "A",
-		"identity": {"serial": "1581F9DEC259E0296040"}
+		"identity": {"serial": "1581F0000000FAKE0001"}
 	}`)
 }
 

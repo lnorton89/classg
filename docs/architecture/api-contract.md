@@ -191,6 +191,26 @@ this exists. Note that a capture contains every network in range, not only drone
 
 ---
 
+## Monitoring
+
+### `GET /monitoring`
+
+Live state of the recording pause switch.
+
+### `PUT /monitoring`
+
+```jsonc
+{ "enabled": false, "reason": "field maintenance" }
+```
+
+Pauses or resumes ingestion — the API stops accepting detections while paused. This does
+**not** stop the sensor radios; they are separate processes the API cannot reliably signal,
+so gating ingestion is the mechanism that works everywhere. The pause is in-memory only and
+does not survive a restart: if the stack is up, it records, so a pause from a week ago can
+never silently persist. `reason` is optional, max 200 characters.
+
+---
+
 ## Config
 
 ### `GET /config/settings`

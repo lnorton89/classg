@@ -1,10 +1,11 @@
 """Regression tests against REAL bytes from a DJI Mini 5 Pro.
 
 Vectors captured 2026-08-10 (`captures/20260810-141223-dji-first-flight.pcap`,
-gitignored) and extracted by `tests/extract_vectors.py`. The vectors themselves
-ARE committed: they are small, they contain only the drone's own broadcast, and
-they are the regression net that catches a parser change quietly altering decode
-results on known-good data.
+gitignored) and extracted by `tests/extract_vectors.py`. The vector file itself
+is gitignored too, not committed: decoded, it carries the aircraft's real
+serial and the operator's real GPS position. Generate your own locally from
+your own capture; this suite skips cleanly when the file isn't present. See
+`test_vectors_sample.py` for the always-committed synthetic equivalent.
 
 Synthetic frames prove the parser handles what we thought of. These prove it
 handles what the aircraft actually sends.
@@ -52,8 +53,11 @@ class TestRealOdidVectors:
         assert payload.system is not None
 
     def test_serial_and_manufacturer(self):
+        """Checks structure, not the literal serial -- that value identifies a
+        real aircraft and must not be hardcoded into a committed file."""
         payload = odid.parse_vendor_ie(_ies("odid")[0])
-        assert payload.basic_id.uas_id == "1581F9DEC259E0296040"
+        assert payload.basic_id.uas_id is not None
+        assert len(payload.basic_id.uas_id) == 20
         assert payload.basic_id.id_type == "serial_ansi_cta_2063"
         assert payload.basic_id.ua_type == "multirotor"
         assert payload.basic_id.manufacturer_code == "1581"
@@ -114,9 +118,12 @@ class TestRealSsidPattern:
     def test_ssid_embeds_the_serial(self):
         """Observed: SSID is literally 'RID-<serial>'.
 
-        A vendor fingerprint that needs no OUI and no payload parsing.
+        A vendor fingerprint that needs no OUI and no payload parsing. Compares
+        against the serial decoded from the same vector rather than a hardcoded
+        literal -- that value identifies a real aircraft.
         """
         vectors = _vectors()
         ssid = vectors[0]["ssid"]
+        serial = odid.parse_vendor_ie(base64.b64decode(vectors[0]["ie_b64"])).basic_id.uas_id
         assert ssid.startswith("RID-")
-        assert ssid[4:] == "1581F9DEC259E0296040"
+        assert ssid[4:] == serial

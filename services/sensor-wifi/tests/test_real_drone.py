@@ -50,7 +50,7 @@ def _location_as_observed() -> bytes:
     p[1] = 200                            # direction: invalid (>179)
     p[2] = 0                              # horizontal speed 0.00 m/s
     p[3] = 0                              # vertical speed 0.00 m/s
-    struct.pack_into("<ii", p, 4, int(46.0399513 * 1e7), int(-122.7673339 * 1e7))
+    struct.pack_into("<ii", p, 4, int(47.6062 * 1e7), int(-122.3321 * 1e7))
     # pressure altitude = 0 -> the "not available" sentinel, as the app showed
     struct.pack_into("<H", p, 12, 0)
     struct.pack_into("<H", p, 14, 2026)   # geodetic 13.0 m -> (13+1000)/0.5
@@ -149,7 +149,7 @@ class TestObservedMessageSet:
         system = bytearray(24)
         system[0] = (1 << 3)  # operator location type: dynamic
         struct.pack_into("<ii", system, 1,
-                         int(46.0400589 * 1e7), int(-122.7669513 * 1e7))
+                         int(47.6063 * 1e7), int(-122.3317 * 1e7))
         struct.pack_into("<H", system, 9, 1)      # area count
         struct.pack_into("<H", system, 17, 2087)  # operator altitude 43.5 m
 
@@ -167,5 +167,5 @@ class TestObservedMessageSet:
 
         # Operator location is the sensitive field; confirm it survives decoding
         # so retention handling actually has something to protect.
-        assert payload.system.operator_lat == pytest.approx(46.0400589, abs=1e-6)
+        assert payload.system.operator_lat == pytest.approx(47.6063, abs=1e-6)
         assert payload.system.operator_alt_m == pytest.approx(43.5)

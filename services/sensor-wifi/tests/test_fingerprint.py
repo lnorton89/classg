@@ -27,7 +27,7 @@ class TestRemoteIdSsid:
         Both patterns match; the DJI rule is listed first so it takes priority.
         If the file is ever reordered this test is what catches it.
         """
-        assert matcher.match("8c:1e:d9:fc:bb:cc", "RID-1581F9DEC259E0296040") == ("dji", "ssid")
+        assert matcher.match("8c:1e:d9:00:00:01", "RID-1581F0000000FAKE0001") == ("dji", "ssid")
 
     def test_unrecognised_manufacturer_is_not_guessed_as_dji(self, matcher):
         """A different vendor's Remote ID SSID must NOT be attributed to DJI."""

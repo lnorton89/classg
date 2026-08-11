@@ -109,7 +109,7 @@ def make_hopper() -> ChannelHopper:
 def drone_frame() -> bytes:
     return beacon_frame(
         transmitter="60:60:1f:aa:bb:cc",
-        ssid="RID-1581F9DEC259E0296040",
+        ssid="RID-1581F0000000FAKE0001",
         vendor_ies=[_odid_ie(), _dji_ie()],
     )
 

@@ -37,8 +37,9 @@ vendors:
       - "8c:1e:d9"
     ssid_patterns:
       # Observed on a DJI Mini 5 Pro 2026-08-10: the SSID is literally
-      # "RID-<CTA-2063-A serial>", e.g. RID-1581F9DEC259E0296040. That embeds
-      # the manufacturer code in the SSID, so it identifies the vendor with no
+      # "RID-<CTA-2063-A serial>", e.g. RID-1581Fxxxxxxxxxxxxxxx (serial
+      # redacted; the mfr code 1581 is what matters here). That embeds the
+      # manufacturer code in the SSID, so it identifies the vendor with no
       # OUI lookup and no payload parsing at all.
       - "rid-1581*"
       - "mavic-*"

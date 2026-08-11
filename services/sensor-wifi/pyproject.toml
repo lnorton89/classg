@@ -2,6 +2,7 @@
 name = "classg-sensor-wifi"
 version = "0.1.0"
 description = "ClassG Wi-Fi sensor: monitor-mode capture and Remote ID / DJI DroneID decoding"
+license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
     "python-dotenv>=1.0",

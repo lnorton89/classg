@@ -34,7 +34,7 @@ Secondary reasons:
 ## Consequences
 
 **We take on monitor-mode handling ourselves**, including mt7921u's documented quirks. Mitigated
-by keeping that logic in one small module (`capture/monitor.py`) with the driver landmines
+by keeping that logic in one small module (`classg_wifi/capture.py`) with the driver landmines
 documented in [02-wifi-adapter.md](../../ops/02-wifi-adapter.md).
 
 **We reimplement DJI IE parsing.** Acceptable — it is a few hundred lines, must be validated

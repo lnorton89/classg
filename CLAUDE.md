@@ -59,7 +59,7 @@ Full reasoning, recovery recipes, and the amend/force-push rules:
 |---|---|
 | `make dev` | Whole stack in Docker, hot reload. UI on :5173, API on :8081 |
 | `make test` | All five suites (wifi, fusion, api, ui, sdr) |
-| `make lint` | Mirrors `.github/workflows/ci.yml` — if this passes, CI should |
+| `make lint` | Mirrors the lint jobs in `.github/workflows/ci.yml`. It does not run the test suites, `sqlc diff`, schema validation, or the security job (`govulncheck`/`pip-audit`/`cargo audit`/`npm audit`) — passing it is necessary but not sufficient for CI |
 | `make sense` | Live Wi-Fi sensor. Needs root + `make monitor` first |
 | `make compose-up` | Production-shaped web tier |
 
@@ -74,7 +74,7 @@ what you actually ran. A green result you didn't produce isn't evidence.
 | `services/api`, `services/fusion` | `go test -count=1 ./...` and `gofmt -l . && go vet ./...` |
 | `services/sensor-wifi` | `python -m pytest` and `ruff check . && mypy classg_wifi` |
 | `services/sensor-sdr` | `cargo test` and `cargo fmt --check && cargo clippy --all-targets -- -D warnings` |
-| anything, before done | `make lint` — mirrors CI |
+| anything, before done | `make lint` — lint parity with CI, not the full gate (see above) |
 
 ### Checks that lie
 

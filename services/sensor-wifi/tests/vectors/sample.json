@@ -1,0 +1,14 @@
+{
+  "source": "synthetic, hand-built -- not derived from any real capture",
+  "unique_ies": 1,
+  "vectors": [
+    {
+      "kind": "odid",
+      "frame_index": 0,
+      "ssid": "RID-SAMPLE0001",
+      "mac": "02:00:00:00:00:01",
+      "freq_mhz": 2437,
+      "ie_b64": "+gu8DQDyGQMCElNBTVBMRTAwMDEAAAAAAAAAAAAAAAAAEiBaKAAMzVsHT5chxQAAAAAAAAAAZAAAAEIAAA4nBwBjlsUAAAAAAAAAAAAAAAAAAAA="
+    }
+  ]
+}

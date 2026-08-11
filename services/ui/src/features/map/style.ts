@@ -20,7 +20,7 @@ export const TILE_PATH = 'tiles/basemap/{z}/{x}/{y}.jpg'
  * This is a property of whichever source `/tiles/basemap` proxies to, so it must
  * be changed together with the upstream in `nginx.conf`, `vite.config.ts`, and
  * `scripts/preload-satellite-tiles.mjs`. Measured at the receiver's location
- * (46.0400, -122.7673):
+ * (47.6062, -122.3321):
  *
  *   USGSImageryOnly   z16 -> 200, z17+ -> 404          (1.66 m/px ceiling)
  *   Esri World Imagery z19 -> 200, z20+ -> "Map data
