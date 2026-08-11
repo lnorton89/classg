@@ -20,9 +20,17 @@ func (s *Server) staticHandler() http.Handler {
 	index := filepath.Join(dir, "index.html")
 
 	if fi, err := os.Stat(index); err != nil || fi.IsDir() {
+		// "off" is not a broken install, it is the dev configuration: Vite owns
+		// the UI and this process serves only the API. Saying so, with the port,
+		// saves the obvious wrong guess of loading the API port in a browser.
+		msg := "no web app is installed (looked for " + index + "); the API is at " + BasePath
+		if strings.EqualFold(strings.TrimSpace(dir), "off") {
+			msg = "static UI serving is disabled (CLASSG_UI_DIR=off). " +
+				"In development the web app is served by Vite on http://localhost:5173 — " +
+				"this port serves only the API, at " + BasePath
+		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			apierr.Write(w, apierr.NotFound(
-				"no web app is installed (looked for "+index+"); the API is at "+BasePath))
+			apierr.Write(w, apierr.NotFound(msg))
 		})
 	}
 

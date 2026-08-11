@@ -92,9 +92,35 @@ assuming that container loopback and WSL loopback are the same network.
 ## Development loop
 
 ```bash
-make dev            # fusion + api + vite, native, hot reload, no rebuilds
+make dev          # whole stack in Docker, hot reload, no image rebuilds
+make dev-logs     # follow all three services
+make dev-down     # stop
+```
+
+| | URL |
+|---|---|
+| **Web app** | **http://localhost:5173** (Vite) |
+| API | http://localhost:8081/api/v1 |
+
+**The web app is not on 8081.** In development the API runs with
+`CLASSG_UI_DIR=off` and serves only `/api/v1`; Vite serves the app. Loading 8081 in a browser
+returns a message saying exactly that. If the Go binary also served a built `dist/` you would
+edit a component, reload, and see yesterday's build.
+
+Verified working end to end: a saved `.go` file triggers an in-container rebuild in about four
+seconds, and the UI hot-reloads through Vite.
+
+### Alternatives
+
+```bash
+make dev-native     # host processes instead of containers (for a Pi)
 make dev-ui-only    # vite alone against MSW mocks, no Go at all
 ```
+
+**Do not run both at once.** WSL forwards `localhost` to a native process in preference to a
+container publishing the same port, so a native loop silently shadows the containers — the API
+answers, but from the wrong process, with configuration you did not set. `make dev` refuses to
+start when it detects one.
 
 `make dev` runs the three processes directly rather than in containers. Containers are the
 deployment story; for editing they cost either an image rebuild or a bind mount whose inotify
