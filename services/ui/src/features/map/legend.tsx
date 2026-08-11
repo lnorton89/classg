@@ -11,11 +11,11 @@ export function MapLegend({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'bg-card/90 border-border rounded-lg border p-2.5 text-[11px] shadow-sm backdrop-blur',
+        'bg-card/90 border-border rounded-lg border p-2.5 text-2xs shadow-sm backdrop-blur',
         className,
       )}
     >
-      <h2 className="text-muted-foreground mb-1.5 text-[10px] font-semibold tracking-wide uppercase">
+      <h2 className="text-muted-foreground mb-1.5 text-2xs font-semibold tracking-wide uppercase">
         Legend
       </h2>
       <ul className="space-y-1.5">
@@ -63,7 +63,7 @@ export function MapLegend({ className }: { className?: string }) {
           </span>
         </li>
       </ul>
-      <p className="text-muted-foreground mt-2 max-w-56 border-t pt-1.5 text-[10px]">
+      <p className="text-muted-foreground mt-2 max-w-56 border-t pt-1.5 text-2xs">
         Brightness and trail width follow <em>confidence that this is a drone</em>. Nothing here
         indicates threat or priority.
       </p>

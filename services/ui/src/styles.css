@@ -294,6 +294,21 @@
   }
 }
 
+/*
+ * Layer order. Kept written down because the failure mode is silent — a popup
+ * renders *behind* the header and reads as "the menu does not open".
+ *
+ *   10–20  map overlays (legend, sky-state banner)
+ *   30     the live view's mobile map/list toggle
+ *   40     app header, and the fixed mobile bottom nav
+ *   50     everything portalled: tooltip, menu, select, dialog, toast
+ *
+ * The rule for Base UI: put the z-index on the **Positioner**, never on the
+ * Popup inside it. The Positioner carries a transform, a transform creates a
+ * stacking context, and a z-index inside that context is scoped to it — so a
+ * Popup at z-50 inside a Positioner at z-auto still loses to the header at 40.
+ */
+
 @utility sr-only-focusable {
   @apply sr-only;
 

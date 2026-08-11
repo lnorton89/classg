@@ -5,9 +5,40 @@
  * be demonstrated and tested: an empty map with a broken sensor must not look
  * like an empty map with healthy sensors and a quiet sky.
  */
-import type { Health, SensorHealth } from '@/lib/api/types'
+import type { Health, SensorHealth, SensorRuntimeConfig } from '@/lib/api/types'
 
 import { isoAt } from './site'
+
+/**
+ * `config` is what `GET /sensors` adds on top of `/health`, and the capture and
+ * restart controls read it directly. The fixtures had drifted to an older shape
+ * (`iface`, `plan`, `device`) that the contract no longer has — which meant the
+ * mock backend was exercising a UI path that could not occur against a real API.
+ */
+const wifiConfig: SensorRuntimeConfig = {
+  unit: 'classg-sensor-wifi.service',
+  stale_after_s: 120,
+  expected: true,
+  restart_command: 'systemctl restart classg-sensor-wifi.service',
+  restart_available: true,
+  capture: {
+    supported: true,
+    interface: 'wlan1',
+    channel: 6,
+    duration_s: 120,
+    label: 'wifi-0',
+  },
+}
+
+const sdrConfig: SensorRuntimeConfig = {
+  unit: 'classg-sensor-sdr.service',
+  stale_after_s: 120,
+  expected: true,
+  restart_command: 'systemctl restart classg-sensor-sdr.service',
+  restart_available: true,
+  // The SDR path has no packet capture: it is an IQ receiver, not a Wi-Fi NIC.
+  capture: { supported: false },
+}
 
 const wifiHealthy: SensorHealth = {
   sensor_id: 'wifi-0',
@@ -17,7 +48,7 @@ const wifiHealthy: SensorHealth = {
   seconds_since_heartbeat: 3,
   detections_5m: 402,
   detail: { channel: 6, listening_fraction: 0.71, hop_dwell_ms: 400 },
-  config: { iface: 'wlan1', plan: 'config/channels.yaml', adaptive_hold_s: 30 },
+  config: wifiConfig,
 }
 
 const sdrHealthy: SensorHealth = {
@@ -28,7 +59,7 @@ const sdrHealthy: SensorHealth = {
   seconds_since_heartbeat: 2,
   detections_5m: 37,
   detail: { band: 'adsb-1090', sample_rate_sps: 2_400_000, gain_db: 34.6 },
-  config: { device: 'rtlsdr-v4', bias_tee: false },
+  config: sdrConfig,
 }
 
 const sdrDown: SensorHealth = {
@@ -38,7 +69,7 @@ const sdrDown: SensorHealth = {
   last_heartbeat: isoAt(-1098),
   seconds_since_heartbeat: 1098,
   reason: 'device not found',
-  config: { device: 'rtlsdr-v4', bias_tee: false },
+  config: sdrConfig,
 }
 
 const wifiDown: SensorHealth = {
@@ -48,7 +79,7 @@ const wifiDown: SensorHealth = {
   last_heartbeat: isoAt(-412),
   seconds_since_heartbeat: 412,
   reason: 'mt7921u: no frames for 120 s while interface is up; interface reset failed',
-  config: { iface: 'wlan1', plan: 'config/channels.yaml' },
+  config: wifiConfig,
 }
 
 /** Everything working, drones in the air. */

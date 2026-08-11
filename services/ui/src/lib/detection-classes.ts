@@ -20,7 +20,15 @@ export interface DetectionClassInfo {
   defaultWeight: number | null
   /** Why the weight is what it is — shown as help text next to the evidence row. */
   justification: string
-  /** Tailwind classes for the class chip. Hue is identity, not severity. */
+  /**
+   * Tailwind classes for the class chip. Hue is identity, not severity — these
+   * are the only place in the interface that reaches past the token set, and
+   * that is deliberate: eight classes need eight distinguishable labels, and
+   * the semantic tokens only carry three states.
+   *
+   * Each ships a light and a dark text weight. A single mid-tone reads on one
+   * background and disappears on the other.
+   */
   chipClass: string
 }
 
@@ -33,7 +41,7 @@ export const DETECTION_CLASSES: Record<DetectionClass, DetectionClassInfo> = {
     sensor: 'Wi-Fi',
     defaultWeight: 0.6,
     justification: 'Standards-compliant, self-identifying, structured.',
-    chipClass: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+    chipClass: 'border-sky-500/30 bg-sky-500/15 text-sky-700 dark:text-sky-300',
   },
   B: {
     code: 'B',
@@ -43,7 +51,7 @@ export const DETECTION_CLASSES: Record<DetectionClass, DetectionClassInfo> = {
     sensor: 'Wi-Fi',
     defaultWeight: 0.5,
     justification: 'Vendor-specific but unambiguous.',
-    chipClass: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
+    chipClass: 'border-violet-500/30 bg-violet-500/15 text-violet-700 dark:text-violet-300',
   },
   C: {
     code: 'C',
@@ -54,7 +62,7 @@ export const DETECTION_CLASSES: Record<DetectionClass, DetectionClassInfo> = {
     defaultWeight: 0.1,
     justification:
       'Weakest evidence. MAC randomisation and OUI reuse cause errors; an OUI alone is a hint, not a detection.',
-    chipClass: 'bg-zinc-500/15 text-zinc-300 border-zinc-500/30',
+    chipClass: 'border-zinc-500/30 bg-zinc-500/15 text-zinc-700 dark:text-zinc-300',
   },
   D: {
     code: 'D',
@@ -65,7 +73,7 @@ export const DETECTION_CLASSES: Record<DetectionClass, DetectionClassInfo> = {
     defaultWeight: null,
     justification:
       'Never contributes to confidence. Used for airspace context and to suppress energy-only false positives.',
-    chipClass: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+    chipClass: 'border-amber-500/30 bg-amber-500/15 text-amber-700 dark:text-amber-300',
   },
   E: {
     code: 'E',
@@ -75,7 +83,7 @@ export const DETECTION_CLASSES: Record<DetectionClass, DetectionClassInfo> = {
     sensor: 'SDR',
     defaultWeight: 0.3,
     justification: 'Strong but inferential; ISM clutter is real.',
-    chipClass: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
+    chipClass: 'border-teal-500/30 bg-teal-500/15 text-teal-700 dark:text-teal-300',
   },
   F: {
     code: 'F',
@@ -85,7 +93,7 @@ export const DETECTION_CLASSES: Record<DetectionClass, DetectionClassInfo> = {
     sensor: 'SDR',
     defaultWeight: 0.25,
     justification: 'Distinctive, but shares bands with other services.',
-    chipClass: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+    chipClass: 'border-rose-500/30 bg-rose-500/15 text-rose-700 dark:text-rose-300',
   },
   G: {
     code: 'G',
@@ -95,7 +103,7 @@ export const DETECTION_CLASSES: Record<DetectionClass, DetectionClassInfo> = {
     sensor: 'BLE',
     defaultWeight: 0.6,
     justification: 'Same payload semantics as Class A.',
-    chipClass: 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30',
+    chipClass: 'border-indigo-500/30 bg-indigo-500/15 text-indigo-700 dark:text-indigo-300',
   },
   H: {
     code: 'H',
@@ -105,7 +113,7 @@ export const DETECTION_CLASSES: Record<DetectionClass, DetectionClassInfo> = {
     sensor: 'SDR',
     defaultWeight: null,
     justification: 'Environmental indicator; backlog.',
-    chipClass: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
+    chipClass: 'border-orange-500/30 bg-orange-500/15 text-orange-700 dark:text-orange-300',
   },
 }
 

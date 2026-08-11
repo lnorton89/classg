@@ -13,7 +13,7 @@ import { useId } from 'react'
 
 import type { Detection } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
-import { formatClock, formatRssi } from '@/lib/format'
+import { useFormat } from '@/app/use-format'
 
 export interface RssiSample {
   ts: string
@@ -39,6 +39,7 @@ export function RssiChart({
   height?: number
 }) {
   const gradientId = useId()
+  const format = useFormat()
 
   if (samples.length < 2) {
     return (
@@ -88,7 +89,7 @@ export function RssiChart({
         viewBox={`0 0 ${width} ${height}`}
         className="h-auto w-full"
         role="img"
-        aria-label={`RSSI over time: ${samples.length} samples between ${formatRssi(rawMin)} and ${formatRssi(rawMax)}`}
+        aria-label={`RSSI over time: ${samples.length} samples between ${format.rssi(rawMin)} and ${format.rssi(rawMax)}`}
         preserveAspectRatio="none"
       >
         <defs>
@@ -134,7 +135,7 @@ export function RssiChart({
           y={height - 5}
           className="fill-[var(--muted-foreground)] text-[9px]"
         >
-          {formatClock(samples[0]?.ts)}
+          {format.clock(samples[0]?.ts)}
         </text>
         <text
           x={width - padding.right}
@@ -142,25 +143,25 @@ export function RssiChart({
           textAnchor="end"
           className="fill-[var(--muted-foreground)] text-[9px]"
         >
-          {formatClock(samples[samples.length - 1]?.ts)}
+          {format.clock(samples[samples.length - 1]?.ts)}
         </text>
       </svg>
 
-      <figcaption className="text-muted-foreground mt-1 text-[11px]">
+      <figcaption className="text-muted-foreground mt-1 text-2xs">
         RSSI in dBm, {samples.length} samples. Signal strength indicates relative distance only.
       </figcaption>
 
       {/* The accessible equivalent of the plot: same data, as a table. */}
       <details className="mt-1">
-        <summary className="text-muted-foreground cursor-pointer text-[11px]">
+        <summary className="text-muted-foreground cursor-pointer text-2xs">
           Show RSSI samples as a table
         </summary>
         <div className="mt-1 max-h-48 overflow-auto [scrollbar-gutter:stable_both-edges]">
-          <table className="mb-2 w-full pr-3 text-left text-[11px]">
+          <table className="mb-2 w-full pr-3 text-left text-2xs">
             <thead className="text-muted-foreground">
               <tr>
                 <th scope="col" className="py-1 pr-3 font-medium">
-                  Time
+                  Time ({format.zoneLabel})
                 </th>
                 <th scope="col" className="py-1 font-medium">
                   RSSI
@@ -170,8 +171,8 @@ export function RssiChart({
             <tbody className="font-mono">
               {samples.map((sample) => (
                 <tr key={`${sample.ts}-${sample.rssi}`}>
-                  <td className="py-0.5 pr-3">{formatClock(sample.ts)}</td>
-                  <td className="py-0.5">{formatRssi(sample.rssi)}</td>
+                  <td className="py-0.5 pr-3">{format.clock(sample.ts)}</td>
+                  <td className="py-0.5">{format.rssi(sample.rssi)}</td>
                 </tr>
               ))}
             </tbody>

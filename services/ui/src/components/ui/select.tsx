@@ -33,6 +33,10 @@ export function Select<T extends string>({
       value={value}
       onValueChange={(next) => onValueChange(next as T)}
       disabled={disabled}
+      // Without `items`, `<Select.Value />` has no way to map the selected
+      // value back to its label and renders the raw value — so a select showed
+      // "decimal" where the list said "Decimal degrees".
+      items={options}
     >
       <BaseSelect.Trigger
         id={id}

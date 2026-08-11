@@ -30,7 +30,7 @@ export function TrackMap({ track }: { track: Track }) {
         fitMaxZoom={19}
       />
 
-      <div className="bg-card/90 border-border pointer-events-none absolute top-3 left-3 z-20 rounded-md border px-2.5 py-2 text-[11px] shadow-sm backdrop-blur">
+      <div className="bg-card/90 border-border pointer-events-none absolute top-3 left-3 z-20 rounded-md border px-2.5 py-2 text-2xs shadow-sm backdrop-blur">
         <div className="flex items-center gap-2">
           <span className="bg-track block h-0.5 w-6 rounded" aria-hidden />
           <span>Drone path ({historyCount} points)</span>

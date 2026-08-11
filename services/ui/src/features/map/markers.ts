@@ -14,8 +14,8 @@
  * one hue, because `confidence` answers "is this really a drone" and rendering it
  * as a red/amber/green scale would restate it as a threat level.
  */
+import type { Formatters } from '@/app/use-format'
 import type { Track } from '@/lib/api/types'
-import { formatConfidence, formatHeading, formatMetres } from '@/lib/format'
 
 export type ContactKind = 'drone' | 'operator' | 'manned'
 
@@ -49,6 +49,13 @@ export interface DroneMarkerOptions {
   track: Track
   selected: boolean
   onSelect?: (trackId: string) => void
+  /**
+   * Passed in rather than imported because a marker's accessible name is the
+   * ONLY form these numbers take for a screen-reader user — a canvas has no
+   * text — so it has to honour the operator's unit choice like every other
+   * reading does.
+   */
+  format: Formatters
 }
 
 /** Aircraft: filled arrow, rotated to its reported track, trailing a history line. */
@@ -74,7 +81,7 @@ export function createDroneMarker(options: DroneMarkerOptions): HTMLElement {
   const label = el(
     'span',
     'pointer-events-none absolute top-full left-1/2 -translate-x-1/2 whitespace-nowrap ' +
-      'rounded bg-background/85 px-1 py-px font-mono text-[10px] leading-tight text-foreground ' +
+      'rounded bg-background/85 px-1 py-px font-mono text-2xs leading-tight text-foreground ' +
       'ring-1 ring-border',
   )
   wrapper.append(label)
@@ -118,14 +125,15 @@ export function updateDroneMarker(node: HTMLElement, options: DroneMarkerOptions
   const name = track.identity?.serial ?? track.identity?.macs?.[0] ?? track.track_id.slice(-6)
   label.textContent = name.length > 14 ? `…${name.slice(-11)}` : name
 
+  const { format } = options
   const parts = [
     'Drone track',
     name,
     `state ${track.state.toLowerCase()}`,
-    `confidence ${formatConfidence(track.confidence)}`,
-    heading === null ? 'heading unknown' : `heading ${formatHeading(heading)}`,
+    `confidence ${format.confidence(track.confidence)}`,
+    heading === null ? 'heading unknown' : `heading ${format.heading(heading)}`,
     track.current?.height_agl_m != null
-      ? `height ${formatMetres(track.current.height_agl_m)}`
+      ? `height ${format.length(track.current.height_agl_m)}`
       : 'height unknown',
     track.operator ? 'operator position known' : 'operator position not broadcast',
   ]
@@ -141,6 +149,7 @@ export interface MannedMarkerOptions {
   callsign: string | null
   headingDeg: number | null
   altFt: number | null
+  format: Formatters
 }
 
 /**
@@ -160,7 +169,7 @@ export function createMannedMarker(options: MannedMarkerOptions): HTMLElement {
 
   const label = el(
     'span',
-    'whitespace-nowrap rounded bg-background/85 px-1 py-px font-mono text-[10px] ' +
+    'whitespace-nowrap rounded bg-background/85 px-1 py-px font-mono text-2xs ' +
       'leading-tight text-manned ring-1 ring-manned/40',
   )
   inner.append(label)
@@ -181,7 +190,9 @@ export function updateMannedMarker(node: HTMLElement, options: MannedMarkerOptio
   const description = [
     'Manned aircraft, ADS-B',
     name,
-    options.altFt === null ? 'altitude unknown' : `${options.altFt} feet`,
+    options.altFt === null
+      ? 'altitude unknown'
+      : `altitude ${options.format.altitudeFeet(options.altFt)}`,
     'not a drone',
   ].join(', ')
   node.setAttribute('role', 'img')
@@ -215,7 +226,7 @@ export function createOperatorMarker(options: OperatorMarkerOptions): HTMLElemen
 
   const label = el(
     'span',
-    'mt-0.5 whitespace-nowrap rounded bg-background/85 px-1 py-px text-[10px] ' +
+    'mt-0.5 whitespace-nowrap rounded bg-background/85 px-1 py-px text-2xs ' +
       'leading-tight font-medium text-operator ring-1 ring-operator/40',
   )
   label.textContent = 'OPERATOR'

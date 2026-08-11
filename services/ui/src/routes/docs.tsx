@@ -100,7 +100,7 @@ function DocsLayout() {
           <FolderTreeIcon className="text-primary size-4" aria-hidden />
           <div>
             <p className="text-sm font-semibold">Repository</p>
-            <p className="text-muted-foreground text-[11px]">Documentation explorer</p>
+            <p className="text-muted-foreground text-2xs">Documentation explorer</p>
           </div>
         </div>
         <div className="max-h-64 overflow-y-auto pr-1 lg:max-h-[calc(100vh-10rem)]">

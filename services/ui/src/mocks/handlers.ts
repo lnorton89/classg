@@ -110,34 +110,40 @@ export const handlers = [
   }),
 
   // --- Tracks -------------------------------------------------------------
-  http.get(`${base}/tracks`, ({ request }) => {
-    const url = new URL(request.url)
-    const states = csv(url.searchParams.get('state'))
-    const minConfidence = Number(url.searchParams.get('min_confidence') ?? '0')
-    const since = url.searchParams.get('since')
-    const limitParam = url.searchParams.get('limit')
-    const limit = limitParam === null ? 100 : Number(limitParam)
+  // The response type is stated explicitly because this resolver can return
+  // either a page of tracks or the error envelope, and MSW otherwise infers the
+  // body type from whichever branch it sees first.
+  http.get<PathParams, never, TracksResponse | ApiErrorBody>(
+    `${base}/tracks`,
+    ({ request }) => {
+      const url = new URL(request.url)
+      const states = csv(url.searchParams.get('state'))
+      const minConfidence = Number(url.searchParams.get('min_confidence') ?? '0')
+      const since = url.searchParams.get('since')
+      const limitParam = url.searchParams.get('limit')
+      const limit = limitParam === null ? 100 : Number(limitParam)
 
-    if (Number.isNaN(limit) || limit > 1000) {
-      return apiError(400, 'invalid_parameter', 'limit must be <= 1000', 'limit')
-    }
-
-    let tracks: Track[] = getScenario().tracks
-    if (states.length > 0) tracks = tracks.filter((t) => states.includes(t.state))
-    if (minConfidence > 0) tracks = tracks.filter((t) => t.confidence >= minConfidence)
-    if (since) {
-      const cutoff = Date.parse(since)
-      if (!Number.isNaN(cutoff)) {
-        tracks = tracks.filter((t) => Date.parse(t.last_seen) >= cutoff)
+      if (Number.isNaN(limit) || limit > 1000) {
+        return apiError(400, 'invalid_parameter', 'limit must be <= 1000', 'limit')
       }
-    }
 
-    return HttpResponse.json<TracksResponse>({
-      tracks: tracks.slice(0, limit),
-      next_cursor: null,
-      total: tracks.length,
-    })
-  }),
+      let tracks: Track[] = getScenario().tracks
+      if (states.length > 0) tracks = tracks.filter((t) => states.includes(t.state))
+      if (minConfidence > 0) tracks = tracks.filter((t) => t.confidence >= minConfidence)
+      if (since) {
+        const cutoff = Date.parse(since)
+        if (!Number.isNaN(cutoff)) {
+          tracks = tracks.filter((t) => Date.parse(t.last_seen) >= cutoff)
+        }
+      }
+
+      return HttpResponse.json<TracksResponse>({
+        tracks: tracks.slice(0, limit),
+        next_cursor: null,
+        total: tracks.length,
+      })
+    },
+  ),
 
   http.get<PathParams<'trackId'>>(`${base}/tracks/:trackId`, ({ params }) => {
     const track = getScenario().tracks.find((t) => t.track_id === params.trackId)

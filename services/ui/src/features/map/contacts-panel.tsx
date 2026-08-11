@@ -8,11 +8,11 @@
 import { Link } from '@tanstack/react-router'
 import { ArchiveIcon, PlaneIcon, SatelliteDishIcon, UserIcon } from 'lucide-react'
 
+import { useFormat, useTicker, type Formatters } from '@/app/use-format'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/misc'
 import type { Detection, Track } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
-import { formatConfidence, formatHeading, formatMetres, formatRelative } from '@/lib/format'
 
 import { ConfidenceBar, EvidenceChips } from '../tracks/evidence'
 import { bearingDegrees, distanceMetres } from './geo'
@@ -34,6 +34,12 @@ export function ContactsPanel({
   onSelectTrack,
   className,
 }: ContactsPanelProps) {
+  const format = useFormat()
+  // Relative ages are only honest if they advance. On a quiet sky no frame
+  // arrives to re-render this panel, so it drives its own clock — slowly, since
+  // it redraws every contact row and the ages it shows are coarse anyway.
+  useTicker(5000)
+
   const plotted = tracks.filter((t) => t.current)
   const unplotted = tracks.filter((t) => !t.current)
 
@@ -58,6 +64,7 @@ export function ContactsPanel({
               <li key={track.track_id}>
                 <TrackRow
                   track={track}
+                  format={format}
                   selected={track.track_id === selectedTrackId}
                   onSelect={onSelectTrack}
                 />
@@ -82,7 +89,7 @@ export function ContactsPanel({
           <ul className="divide-border divide-y overflow-y-auto">
             {closedTracks.map((track) => (
               <li key={track.track_id}>
-                <ClosedTrackRow track={track} />
+                <ClosedTrackRow track={track} format={format} />
               </li>
             ))}
           </ul>
@@ -112,8 +119,8 @@ export function ContactsPanel({
                 <Badge variant="outline" className="border-manned/40 text-manned">
                   manned
                 </Badge>
-                <span className="text-muted-foreground ml-auto text-xs">
-                  {detection.adsb?.alt_ft != null ? `${detection.adsb.alt_ft} ft` : '—'}
+                <span className="text-muted-foreground ml-auto font-mono text-xs">
+                  {format.altitudeFeet(detection.adsb?.alt_ft)}
                 </span>
               </li>
             ))}
@@ -124,7 +131,7 @@ export function ContactsPanel({
   )
 }
 
-function ClosedTrackRow({ track }: { track: Track }) {
+function ClosedTrackRow({ track, format }: { track: Track; format: Formatters }) {
   const name = track.identity?.serial ?? track.identity?.macs?.[0] ?? track.track_id
 
   return (
@@ -132,14 +139,14 @@ function ClosedTrackRow({ track }: { track: Track }) {
       <ArchiveIcon className="text-muted-foreground mt-0.5 size-3.5 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
         <span className="block truncate font-mono text-xs font-medium">{name}</span>
-        <span className="text-muted-foreground mt-0.5 block text-[11px]">
-          closed {formatRelative(track.last_seen)} · {track.detection_count} detections
+        <span className="text-muted-foreground mt-0.5 block text-2xs">
+          closed {format.relative(track.last_seen)} · {track.detection_count} detections
         </span>
       </div>
       <Link
         to="/tracks/$trackId"
         params={{ trackId: track.track_id }}
-        className="text-primary shrink-0 rounded text-[11px] underline-offset-2 hover:underline"
+        className="text-primary shrink-0 rounded text-2xs underline-offset-2 hover:underline"
       >
         Review
       </Link>
@@ -149,10 +156,12 @@ function ClosedTrackRow({ track }: { track: Track }) {
 
 function TrackRow({
   track,
+  format,
   selected,
   onSelect,
 }: {
   track: Track
+  format: Formatters
   selected: boolean
   onSelect: (trackId: string | null) => void
 }) {
@@ -175,16 +184,16 @@ function TrackRow({
           className="min-w-0 flex-1 text-left"
         >
           <span className="block truncate font-mono text-xs font-medium">{name}</span>
-          <span className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+          <span className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs">
             <span>{track.state.toLowerCase()}</span>
             <span aria-hidden>·</span>
-            <span>{formatRelative(track.last_seen)}</span>
+            <span>{format.when(track.last_seen)}</span>
             {current ? (
               <>
                 <span aria-hidden>·</span>
-                <span>hdg {formatHeading(current.track_deg)}</span>
+                <span>hdg {format.heading(current.track_deg)}</span>
                 <span aria-hidden>·</span>
-                <span>{formatMetres(current.height_agl_m)} AGL</span>
+                <span>{format.length(current.height_agl_m)} AGL</span>
               </>
             ) : (
               <>
@@ -197,7 +206,7 @@ function TrackRow({
         <Link
           to="/tracks/$trackId"
           params={{ trackId: track.track_id }}
-          className="text-primary shrink-0 rounded text-[11px] underline-offset-2 hover:underline"
+          className="text-primary shrink-0 rounded text-2xs underline-offset-2 hover:underline"
         >
           Detail
         </Link>
@@ -205,17 +214,17 @@ function TrackRow({
 
       <div className="mt-2 flex items-center gap-2">
         <ConfidenceBar confidence={track.confidence} className="w-20" />
-        <span className="text-muted-foreground font-mono text-[11px]">
-          {formatConfidence(track.confidence)}
+        <span className="text-muted-foreground font-mono text-2xs">
+          {format.confidence(track.confidence)}
         </span>
         <EvidenceChips evidence={track.evidence ?? []} className="ml-auto" />
       </div>
 
       {operator && current ? (
-        <p className="text-operator mt-1.5 flex items-center gap-1 text-[11px]">
+        <p className="text-operator mt-1.5 flex items-center gap-1 text-2xs">
           <UserIcon className="size-3" aria-hidden />
-          Operator {Math.round(distanceMetres(current, operator))} m away, bearing{' '}
-          {Math.round(bearingDegrees(current, operator))}°
+          Operator {format.range(distanceMetres(current, operator))} away, bearing{' '}
+          {format.heading(bearingDegrees(current, operator))}
         </p>
       ) : null}
     </div>

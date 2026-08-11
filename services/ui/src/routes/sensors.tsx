@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { RotateCwIcon } from 'lucide-react'
+import { CpuIcon, RotateCwIcon, SlidersHorizontalIcon } from 'lucide-react'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -17,8 +17,12 @@ import {
   sensorsQuery,
   tracksQuery,
 } from '@/lib/api/queries'
-import { formatDuration } from '@/lib/format'
+import { usePreferences } from '@/app/preferences-context'
+import { useFormat } from '@/app/use-format'
+import { useToast } from '@/components/ui/toast'
+import { log } from '@/features/logs/log-store'
 import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader, SectionHeader } from '@/components/layout/page-header'
 
 export const Route = createFileRoute('/sensors')({
   component: SensorsView,
@@ -36,16 +40,33 @@ function SensorsView() {
   const { data: health } = useQuery(healthQuery())
   const { data: sensorsData } = useQuery(sensorsQuery())
   const { data: tracksData } = useQuery(tracksQuery())
+  const format = useFormat()
+  const toast = useToast()
+  const { preferences } = usePreferences()
   const [restartSuccess, setRestartSuccess] = useState<string | null>(null)
+  // Which sensor is awaiting a second click. A restart drops coverage for
+  // several seconds, and on a phone the button sits directly under a thumb.
+  const [confirmingId, setConfirmingId] = useState<string | null>(null)
 
   const restart = useMutation({
     mutationFn: (sensorId: string) => api.restartSensor(sensorId),
-    onMutate: () => setRestartSuccess(null),
+    onMutate: (sensorId) => {
+      setRestartSuccess(null)
+      log.action(`Restart requested for ${sensorId}`)
+    },
     onSuccess: (result) => {
       setRestartSuccess(`Restart accepted for ${result.sensor_id}.`)
+      setConfirmingId(null)
+      toast.add({
+        title: `Restart accepted for ${result.sensor_id}`,
+        description: `${result.unit} is restarting. Coverage resumes when it heartbeats again.`,
+        type: 'success',
+      })
+      log.info('sensor', `Restart accepted for ${result.sensor_id}`, { unit: result.unit })
       void queryClient.invalidateQueries({ queryKey: queryKeys.health })
       void queryClient.invalidateQueries({ queryKey: queryKeys.sensors })
     },
+    onError: () => setConfirmingId(null),
   })
 
   const activeTracks =
@@ -56,12 +77,11 @@ function SensorsView() {
 
   return (
     <PageContainer>
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight">Sensors and captures</h1>
-        <p className="text-muted-foreground text-xs">
-          Verify coverage, manage each sensor, and review passive recordings from one place.
-        </p>
-      </div>
+      <PageHeader
+        icon={SlidersHorizontalIcon}
+        title="Sensors and captures"
+        description="Verify coverage, manage each sensor, and review passive recordings from one place."
+      />
 
       <SkyStateBanner state={skyState} />
 
@@ -78,21 +98,24 @@ function SensorsView() {
       ) : null}
 
       <section aria-labelledby="sensor-list-heading" className="space-y-3">
-        <div>
-          <h2 id="sensor-list-heading" className="text-base font-semibold">
-            Sensor controls
-          </h2>
-          <p className="text-muted-foreground text-xs">
-            Capture interface and defaults are loaded from the root <code>.env</code> through
-            the API. Runtime limitations are shown on the affected sensor.
-          </p>
-        </div>
+        <SectionHeader
+          id="sensor-list-heading"
+          icon={CpuIcon}
+          title="Sensor controls"
+          description={
+            <>
+              Capture interface and defaults are loaded from the root <code>.env</code> through
+              the API. Runtime limitations are shown on the affected sensor.
+            </>
+          }
+        />
 
         <div className="grid items-start gap-3 lg:grid-cols-2">
           {sensors.map((sensor) => {
             const config = sensor.config
             const restartAvailable = config?.restart_available ?? true
             const isRestarting = restart.isPending && restart.variables === sensor.sensor_id
+            const isConfirming = confirmingId === sensor.sensor_id
 
             return (
               <SensorHealthCard
@@ -106,20 +129,42 @@ function SensorsView() {
                           'No restart command is available in the API runtime.'}
                       </Alert>
                     ) : null}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2 w-full"
-                      disabled={restart.isPending || !restartAvailable}
-                      onClick={() => restart.mutate(sensor.sensor_id)}
-                    >
-                      <RotateCwIcon aria-hidden />
-                      {isRestarting
-                        ? `Restarting ${sensor.sensor_id}...`
-                        : restartAvailable
-                          ? `Restart ${sensor.sensor_id}`
-                          : 'Restart unavailable'}
-                    </Button>
+                    {isConfirming ? (
+                      <div className="mt-2 flex gap-2">
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          className="flex-1"
+                          disabled={restart.isPending}
+                          onClick={() => restart.mutate(sensor.sensor_id)}
+                        >
+                          <RotateCwIcon aria-hidden />
+                          Confirm restart — drops coverage
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setConfirmingId(null)}>
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2 w-full"
+                        disabled={restart.isPending || !restartAvailable}
+                        onClick={() =>
+                          preferences.confirmDestructive
+                            ? setConfirmingId(sensor.sensor_id)
+                            : restart.mutate(sensor.sensor_id)
+                        }
+                      >
+                        <RotateCwIcon aria-hidden />
+                        {isRestarting
+                          ? `Restarting ${sensor.sensor_id}...`
+                          : restartAvailable
+                            ? `Restart ${sensor.sensor_id}`
+                            : 'Restart unavailable'}
+                      </Button>
+                    )}
                     <SensorCaptureControl sensor={sensor} />
                   </div>
                 }
@@ -140,7 +185,7 @@ function SensorsView() {
             <DataRow label="Status" value={health?.status ?? '-'} mono />
             <DataRow
               label="Uptime"
-              value={health ? formatDuration(health.uptime_s) : '-'}
+              value={health ? format.duration(health.uptime_s) : '-'}
               mono
             />
             <DataRow label="Version" value={health?.version ?? '-'} mono />

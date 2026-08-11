@@ -16,6 +16,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { createContext, use, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
+import { createFrameLogger, logConnection, logSessionStart } from '@/features/logs/log-bridge'
 import { API_BASE, normalizeTrack } from '@/lib/api/client'
 import { LiveStream, streamUrl, type ConnectionState } from '@/lib/api/live'
 import { queryKeys } from '@/lib/api/queries'
@@ -63,9 +64,15 @@ export function LiveProvider({ children, createStream, enabled = true }: LivePro
       ? factoryRef.current()
       : new LiveStream({ url: streamUrl(API_BASE) })
 
+    // Its own closure state (last-known track and sensor shapes) is what lets
+    // the event log record transitions rather than the 1 Hz frame stream.
+    const logFrame = createFrameLogger()
+    logSessionStart()
+
     const offState = stream.onStateChange((state) => {
       setConnection(state)
       setReconnectAttempt(stream.getAttempt())
+      logConnection(state, stream.getAttempt())
     })
 
     const offConnect = stream.onConnect(() => {
@@ -80,6 +87,7 @@ export function LiveProvider({ children, createStream, enabled = true }: LivePro
     const offFrame = stream.onFrame((frame) => {
       setLastFrameAt(Date.now())
       applyFrame(queryClient, frame)
+      logFrame(frame)
     })
 
     stream.connect()

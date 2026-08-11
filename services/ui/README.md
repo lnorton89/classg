@@ -49,6 +49,34 @@ honest in a way that a bare "94% confident" is not.
 **Sensor health** — per-sensor heartbeat status, prominent. The operator must be able to tell
 at a glance whether an empty map means empty sky or broken sensor.
 
+**Event log** — a client-side record of what this console observed while it was open: stream
+connects and drops, track lifecycle, sensor health transitions, captures, API failures and
+operator actions. Transitions only, never the 1 Hz frame stream, or the one line that matters
+is buried. It is bounded, in-memory, exportable as NDJSON or CSV, and explicitly _not_ the
+system's log — the sensors and API keep their own on the Pi and those are the forensic record.
+
+**Settings** — display preferences, stored in this browser: unit system (metric / aviation /
+imperial), coordinate format, time zone and clock, text size, density, audible new-track
+alert, screen wake lock. Distinct from **Config**, which changes the instrument itself
+(channel dwell, fusion weights) on the server for every client.
+
+## Type
+
+Three families, each with a job. `Inter` for reading — body text, tables, forms. `Manrope`,
+the approved brand face, for the wordmark, page titles and large numerals. `JetBrains Mono`
+for identifiers, where a slashed zero and a disambiguated `1/l/I` matter because the string
+_is_ the evidence. All bundled locally: a Pi in the field has no route to a font CDN.
+
+Inter and JetBrains Mono keep their full subset coverage because they render data we do not
+control — an SSID can be Cyrillic. Manrope only sets our own English strings, so it ships
+latin-only.
+
+## Units
+
+Everything is stored and transmitted in SI, and converted only at render time by
+`useFormat()` (`src/app/use-format.ts`). No component formats a measurement itself, so
+switching unit system cannot change what was recorded — only how it is written down.
+
 ## Two things not to build
 
 - **No threat scoring.** The data model deliberately has no threat field. Rendering confidence

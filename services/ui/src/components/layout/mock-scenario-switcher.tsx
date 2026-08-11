@@ -31,7 +31,7 @@ export function MockScenarioSwitcher() {
       aria-label="Mock backend scenario"
       value={scenario}
       options={[...OPTIONS]}
-      className="hidden h-7 text-xs lg:flex"
+      className="hidden h-7 text-xs 2xl:flex"
       onValueChange={(value) => {
         setScenario(value)
         void fetch('/__mock/scenario', {

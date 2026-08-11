@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { RotateCcwIcon, SaveIcon } from 'lucide-react'
+import { RotateCcwIcon, SaveIcon, SettingsIcon } from 'lucide-react'
 import { useState } from 'react'
 import { z } from 'zod'
 
@@ -14,6 +14,7 @@ import { channelPlanQuery, queryKeys, weightsQuery } from '@/lib/api/queries'
 import type { ChannelPlan, DetectionClass, FusionWeights } from '@/lib/api/types'
 import { DETECTION_CLASS_ORDER, detectionClassInfo, noisyOr } from '@/lib/detection-classes'
 import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 
 export const Route = createFileRoute('/config')({
   component: ConfigView,
@@ -54,13 +55,11 @@ const weightsSchema = z.object({
 function ConfigView() {
   return (
     <PageContainer>
-      <div>
-        <h1 className="text-lg font-semibold tracking-tight">Config</h1>
-        <p className="text-muted-foreground text-xs">
-          These are calibrated hypotheses, not physical constants. Revise them against measured
-          results rather than intuition.
-        </p>
-      </div>
+      <PageHeader
+        icon={SettingsIcon}
+        title="Config"
+        description="The instrument itself: channel dwell and fusion weights, shared by every client and stored on the Pi. These are calibrated hypotheses, not physical constants — revise them against measured results rather than intuition. For units, time and text size, see Settings."
+      />
       <ChannelPlanEditor />
       <FusionWeightsEditor />
     </PageContainer>
@@ -189,7 +188,7 @@ function ChannelPlanEditor() {
                         }}
                       />
                       {errors[index] ? (
-                        <span role="alert" className="text-destructive block text-[11px]">
+                        <span role="alert" className="text-destructive block text-2xs">
                           {errors[index]}
                         </span>
                       ) : null}
@@ -224,7 +223,7 @@ function ChannelPlanEditor() {
           </div>
         </form>
 
-        <p className="text-muted-foreground mt-3 text-[11px]">
+        <p className="text-muted-foreground mt-3 text-2xs">
           6 GHz is deliberately absent: the US regdb sets NO-IR, which disables passive
           listening, and no drone broadcasts Remote ID there.
         </p>
@@ -313,7 +312,7 @@ function FusionWeightsEditor() {
               <div key={code} className="flex flex-wrap items-center gap-3">
                 <Label htmlFor={inputId} className="w-52 shrink-0">
                   <span
-                    className={`rounded border px-1 py-px font-mono text-[10px] ${info.chipClass}`}
+                    className={`rounded border px-1 py-px font-mono text-2xs ${info.chipClass}`}
                   >
                     {code}
                   </span>{' '}
@@ -339,14 +338,14 @@ function FusionWeightsEditor() {
                 <Tooltip content={info.justification}>
                   <span
                     id={`${inputId}-hint`}
-                    className="text-muted-foreground max-w-sm text-[11px] underline decoration-dotted"
+                    className="text-muted-foreground max-w-sm text-2xs underline decoration-dotted"
                   >
                     {info.justification.slice(0, 64)}
                     {info.justification.length > 64 ? '…' : ''}
                   </span>
                 </Tooltip>
                 {errors[code] ? (
-                  <span role="alert" className="text-destructive w-full text-[11px]">
+                  <span role="alert" className="text-destructive w-full text-2xs">
                     {errors[code]}
                   </span>
                 ) : null}
@@ -387,7 +386,7 @@ function FusionWeightsEditor() {
           </div>
         </form>
 
-        <p className="text-muted-foreground mt-3 text-[11px]">
+        <p className="text-muted-foreground mt-3 text-2xs">
           Class D (ADS-B) has no weight by design: it never contributes to confidence and is
           used only for airspace context and false-positive suppression.
         </p>

@@ -10,7 +10,8 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { ApiError, api } from '@/lib/api/client'
 import { captureQuery, captureReportQuery, queryKeys } from '@/lib/api/queries'
 import type { CaptureReport } from '@/lib/api/types'
-import { EMPTY, formatBytes, formatRssi, formatTimestamp } from '@/lib/format'
+import { useFormat } from '@/app/use-format'
+import { EMPTY } from '@/lib/format'
 import { PageContainer } from '@/components/layout/page-container'
 
 export const Route = createFileRoute('/captures/$captureId')({
@@ -20,6 +21,7 @@ export const Route = createFileRoute('/captures/$captureId')({
 })
 
 function CaptureDetail() {
+  const format = useFormat()
   const { captureId } = Route.useParams()
   const queryClient = useQueryClient()
   const { data: capture } = useQuery(captureQuery(captureId))
@@ -85,10 +87,18 @@ function CaptureDetail() {
               <DataRow label="Interface" value={capture.iface} mono />
               <DataRow label="Channel" value={capture.channel} mono />
               <DataRow label="Duration" value={`${capture.duration_s} s`} mono />
-              <DataRow label="Size" value={formatBytes(capture.size_bytes)} mono />
+              <DataRow label="Size" value={format.bytes(capture.size_bytes)} mono />
               <DataRow label="Frames" value={capture.frame_count} mono />
-              <DataRow label="Started" value={formatTimestamp(capture.started_at)} mono />
-              <DataRow label="Ended" value={formatTimestamp(capture.ended_at)} mono />
+              <DataRow
+                label={`Started (${format.zoneLabel})`}
+                value={format.timestamp(capture.started_at)}
+                mono
+              />
+              <DataRow
+                label={`Ended (${format.zoneLabel})`}
+                value={format.timestamp(capture.ended_at)}
+                mono
+              />
               <DataRow label="Capture ID" value={capture.capture_id} mono />
             </dl>
           </CardContent>
@@ -108,6 +118,7 @@ function CaptureDetail() {
 }
 
 function ReportView({ report }: { report: CaptureReport }) {
+  const format = useFormat()
   const totalBeacons = report.channel_usage.reduce((sum, c) => sum + c.beacons, 0)
 
   return (
@@ -260,9 +271,9 @@ function ReportView({ report }: { report: CaptureReport }) {
                     />
                     <DataRow
                       label="RSSI"
-                      value={`${formatRssi(identity.rssi_min_dbm)} – ${formatRssi(
+                      value={`${format.rssi(identity.rssi_min_dbm)} – ${format.rssi(
                         identity.rssi_max_dbm,
-                      )} (median ${formatRssi(identity.rssi_median_dbm)})`}
+                      )} (median ${format.rssi(identity.rssi_median_dbm)})`}
                       mono
                     />
                     <DataRow

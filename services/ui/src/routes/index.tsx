@@ -1,9 +1,17 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { ListIcon, MapIcon } from 'lucide-react'
+import {
+  ListIcon,
+  MapIcon,
+  MapPinOffIcon,
+  PlaneIcon,
+  RadarIcon,
+  SatelliteDishIcon,
+} from 'lucide-react'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
+import { StatTile } from '@/components/ui/stat'
 import { ContactsPanel } from '@/features/map/contacts-panel'
 import { LiveMap } from '@/features/map/live-map'
 import { MapLegend } from '@/features/map/legend'
@@ -35,6 +43,11 @@ function LiveView() {
   const adsb = adsbData?.detections ?? []
   const contactCount = activeTracks.length + closedTracks.length + adsb.length
   const skyState = computeSkyState(health, activeTracks.length)
+
+  const confirmed = activeTracks.filter((track) => track.state === 'CONFIRMED').length
+  // A track with no position is real but unplottable. Surfacing the count is
+  // the only thing that stops the map and the list disagreeing silently.
+  const unplotted = activeTracks.filter((track) => !track.current).length
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -93,6 +106,41 @@ function LiveView() {
           mobilePane === 'map' && 'hidden lg:flex',
         )}
       >
+        {/*
+          The counts the map cannot show. "How many are up" is legible from the
+          markers; "how many are corroborated" and "how many are missing from
+          the map entirely" are not, and those are the two that change what the
+          picture means.
+        */}
+        <div className="border-border grid grid-cols-2 gap-2 border-b p-2 sm:grid-cols-4 lg:grid-cols-2">
+          <StatTile
+            label="Active"
+            value={activeTracks.length}
+            icon={PlaneIcon}
+            hint="tracks fusion is watching"
+          />
+          <StatTile
+            label="Confirmed"
+            value={confirmed}
+            icon={RadarIcon}
+            tone={confirmed > 0 ? 'ok' : 'default'}
+            hint="corroborated by evidence"
+          />
+          <StatTile
+            label="Manned"
+            value={adsb.length}
+            icon={SatelliteDishIcon}
+            hint="ADS-B, context only"
+          />
+          <StatTile
+            label="No position"
+            value={unplotted}
+            icon={MapPinOffIcon}
+            tone={unplotted > 0 ? 'warn' : 'muted'}
+            hint={unplotted > 0 ? 'in the list, not on the map' : 'all tracks plotted'}
+          />
+        </div>
+
         <ContactsPanel
           tracks={activeTracks}
           closedTracks={closedTracks}
