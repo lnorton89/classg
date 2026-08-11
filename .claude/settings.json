@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Bash(git add -A)",
+      "Bash(git add -A *)",
+      "Bash(git add --all*)",
+      "Bash(git add .)",
+      "Bash(git add -u)",
+      "Bash(git add -u *)",
+      "Bash(git commit -a*)",
+      "Bash(git commit --all*)",
+      "Bash(git stash*)",
+      "Bash(git reset --hard*)",
+      "Bash(git checkout -- .)",
+      "Bash(git checkout .)",
+      "Bash(git restore .)",
+      "Bash(git restore --staged .)",
+      "Bash(git clean*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push --delete*)",
+      "Bash(git rebase*)",
+      "Bash(git filter-branch*)"
+    ]
+  }
+}

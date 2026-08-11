@@ -8,11 +8,11 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "npm run gen:types:check && tsc --noEmit && vite build",
+    "build": "npm run gen:types:check && npm run typecheck && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
