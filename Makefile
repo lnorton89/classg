@@ -1,4 +1,4 @@
-.PHONY: help env setup dev dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
+.PHONY: help env migrate-env migrate-env-dry setup dev dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
 
 DOCKER := bash ./scripts/docker.sh
 
@@ -8,6 +8,7 @@ help:
 	@echo "  make dev        native dev loop: fusion + api + vite, hot reload"
 	@echo "  make setup      install dependencies for all services"
 	@echo "  make env        create ignored .env from .env.example"
+	@echo "  make migrate-env  update an existing .env to the ADR-0007 tiers"
 	@echo "  make test       run all test suites"
 	@echo "  make lint       run all linters"
 	@echo "  make monitor    put the Wi-Fi adapter into passive monitor mode"
@@ -18,6 +19,14 @@ help:
 
 env:
 	@test -f .env || cp .env.example .env
+
+# Migrate an existing .env to the ADR-0007 tier split. Backs up first, reports
+# what moved, and leaves customised-but-immutable values in place.
+migrate-env:
+	./scripts/migrate-env.sh
+
+migrate-env-dry:
+	./scripts/migrate-env.sh --dry-run
 
 setup: env
 	cd services/sensor-wifi && python3 -m venv .venv
