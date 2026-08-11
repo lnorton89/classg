@@ -62,7 +62,13 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
 
     const request = async () => {
       try {
+        // lib.dom declares navigator.wakeLock as always present. It is not:
+        // Firefox and older Safari have no Wake Lock API at all, so this
+        // optional chain is what stops a TypeError, and the `?? null` is what
+        // the short-circuit resolves to.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         sentinel = (await navigator.wakeLock?.request('screen')) ?? null
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (released) void sentinel?.release()
       } catch {
         sentinel = null

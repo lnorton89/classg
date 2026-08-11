@@ -135,9 +135,10 @@ export function applyFrame(queryClient: QueryClientLike, frame: ServerFrame): vo
       queryClient.setQueriesData<TracksResponse>({ queryKey: ['tracks', 'list'] }, (old) => {
         if (!old) return old
         const index = old.tracks.findIndex((t) => t.track_id === frame.track_id)
-        if (index === -1 || old.tracks[index]?.state === 'CLOSED') return old
+        const existing = index === -1 ? undefined : old.tracks[index]
+        if (!existing || existing.state === 'CLOSED') return old
         const tracks = old.tracks.slice()
-        tracks[index] = { ...tracks[index]!, state: 'CLOSED' }
+        tracks[index] = { ...existing, state: 'CLOSED' }
         return { ...old, tracks }
       })
       break

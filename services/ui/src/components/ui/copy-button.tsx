@@ -39,7 +39,11 @@ export function CopyButton({ value, label, className }: CopyButtonProps) {
         className,
       )}
       onClick={() => {
+        // navigator.clipboard is undefined on insecure origins -- which is how
+        // this is served on a Pi reached over plain http on a LAN address. The
+        // types say it is always there; on the deployment that matters it is not.
         void navigator.clipboard
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
           ?.writeText(value)
           .then(() => setCopied(true))
           .catch(() => setCopied(false))

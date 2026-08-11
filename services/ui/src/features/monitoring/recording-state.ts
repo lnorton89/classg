@@ -32,7 +32,9 @@ export function recordingState(
   // the health banner speak for itself.
   if (!health) return 'recording'
 
-  const sensors = health.sensors ?? []
+  // Not `?? []`: the API builds this with []Sensor{} and make([]…, 0), so it
+  // is always an array and never null.
+  const sensors = health.sensors
   if (sensors.length === 0) return 'no-coverage'
   const healthy = sensors.filter((s) => s.healthy).length
   if (healthy === 0) return 'no-coverage'
