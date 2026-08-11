@@ -148,6 +148,37 @@ def interface_mode(iface: str) -> str | None:
     return None
 
 
+# ARPHRD_IEEE80211_RADIOTAP. A monitor-mode interface reports this as its
+# hardware type, and scapy warns "Unable to guess type ... family=803" when it
+# cannot map it to a dissector.
+ARPHRD_IEEE80211_RADIOTAP = 803
+
+
+def _register_radiotap(conf: Any) -> None:
+    """Tell scapy that hardware type 803 is radiotap.
+
+    Without this every start prints:
+
+        WARNING: Unable to guess type (interface=wlan0 protocol=0x3 family=803)
+
+    It is harmless -- we dissect radiotap ourselves in parsers/dot11.py and only
+    ever wanted the bytes -- but an unexplained warning on a detector's startup
+    is the kind of thing that gets ignored, and then the next one gets ignored
+    too. Registering the mapping is better than teaching people to skip it.
+
+    Best-effort: scapy's registry API has moved between versions, and a failure
+    here costs nothing but the warning.
+    """
+    try:
+        from scapy.layers.dot11 import RadioTap
+    except ImportError:  # pragma: no cover - depends on scapy layout
+        return
+    try:
+        conf.l2types.register(ARPHRD_IEEE80211_RADIOTAP, RadioTap)
+    except Exception as exc:
+        log.debug("could not register radiotap link type: %s", exc)
+
+
 def open_socket(iface: str, bpf: str = BEACON_FILTER) -> Any:
     """Open a filtered layer-2 listening socket.
 
@@ -172,6 +203,8 @@ def open_socket(iface: str, bpf: str = BEACON_FILTER) -> Any:
             "scapy has no layer-2 listening socket for this platform; "
             "live capture needs Linux with AF_PACKET"
         )
+
+    _register_radiotap(conf)
 
     try:
         return conf.L2listen(iface=iface, filter=bpf, monitor=True)

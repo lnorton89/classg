@@ -39,7 +39,7 @@ invoke the Kismet fallback in [ADR-0005](../architecture/adr/0005-own-sniffer-vs
 - [x] Weighted channel hopper, config-driven
 - [x] ODID parser: Message Pack, Basic ID, Location, System, Operator ID
 - [x] DJI parser: subcommand `0x10` and `0x11`
-- [ ] **Calibrate DJI units** (altitude, height, velocity) against the real drone → write up in `docs/ops/04-calibration.md`
+- [x] **Calibrate DJI units** — N/A for this aircraft: the Mini 5 Pro emits no proprietary DJI Wi-Fi IE, so there are no raw DJI fields to calibrate ([04-calibration.md](../ops/04-calibration.md))
 - [x] OUI/SSID fingerprint matcher, YAML-driven
 - [ ] Detection schema validation in CI
 - [x] ZMQ publisher with HWM and drop counters
@@ -50,6 +50,11 @@ invoke the Kismet fallback in [ADR-0005](../architecture/adr/0005-own-sniffer-vs
 
 **Exit criterion:** fly the DJI, watch it appear and move on the map in real time, with the
 correct serial number.
+
+**MET — 2026-08-10 20:07.** Live flight detected end to end: 473 beacons captured, 222
+detections, one track with the correct serial and a 222-point flight path. Dwell escalation
+locked to channel 6 ten seconds in. See
+[04-calibration.md](../ops/04-calibration.md#confirmed-by-live-detection--2026-08-10-2007).
 
 ---
 
