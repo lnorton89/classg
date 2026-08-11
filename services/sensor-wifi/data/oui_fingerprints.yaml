@@ -42,10 +42,20 @@ vendors:
       - "48:1c:b9"
       - "e4:7a:2c"
       # Observed 2026-08-10 transmitting Remote ID from a DJI Mini 5 Pro.
-      # The CTA-2063-A serial confirmed DJI (mfr code 1581); the OUI itself
-      # could NOT be confirmed against the IEEE registry, so this entry rests
-      # on a single observation. Verify at https://standards-oui.ieee.org/
-      # before relying on it - a wrong OUI produces false positives.
+      # The CTA-2063-A serial confirmed DJI (mfr code 1581).
+      #
+      # VERIFIED 2026-08-11 against the IEEE registry, as the note here used to
+      # ask for: 8C:1E:D9 is registered to *Beijing Unigroup Tsingteng
+      # Microsystem Co., LTD*, not to DJI. That is consistent with the
+      # observation rather than contradicting it -- an OUI identifies whoever
+      # made the radio, and DJI buys wireless silicon like everyone else -- but
+      # it means this entry attributes every Unigroup-chipset device to DJI,
+      # which is a false-positive source and not only a drone one.
+      #
+      # Left in place because it is a real observation of a real aircraft, and
+      # Class C is capped at 0.10 and never confirms alone. Remove it if the
+      # T7 negative control ever shows it firing on something that is not a
+      # drone.
       - "8c:1e:d9"
     # IEEE lists DJI as "SZ DJI TECHNOLOGY CO.,LTD". No other registrant has
     # "dji" in its name, so the loose pattern is safe here.
@@ -81,9 +91,12 @@ vendors:
 
   - vendor: autel
     ouis: []
-    # Deliberately NOT "*autel*" -- see the note at the top of this file. Autel
-    # Robotics makes the drones; Autel Intelligent Technology makes OBD-II
-    # scan tools, and matching both would put a Class C hit on every car.
+    # Checked against the real registry 2026-08-11: Autel Robotics holds NO
+    # MA-L block, so this expands to nothing today and is here for when they
+    # register one. It is still deliberately not "*autel*" -- the registry does
+    # contain "Beijing Autelan Technology", an unrelated networking company,
+    # and the loose pattern would hand every one of their devices to a drone
+    # detector.
     oui_owner_patterns:
       - "autel robotics*"
     ssid_patterns:
@@ -99,6 +112,9 @@ vendors:
 
   - vendor: yuneec
     ouis: []
+    # Also absent from the registry as of 2026-08-11, like Autel. Both vendors
+    # are caught by SSID today and by nothing else; that is the honest state of
+    # Class C for them, not an oversight.
     oui_owner_patterns:
       - "yuneec*"
     ssid_patterns:

@@ -15,6 +15,7 @@
  */
 import {
   BellIcon,
+  CloudDownloadIcon,
   EyeIcon,
   GaugeIcon,
   MapIcon,
@@ -91,6 +92,16 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     label: 'Calibration',
     icon: GaugeIcon,
     hint: 'Channel plan, fusion weights',
+    scope: 'receiver',
+  },
+  // Separate from Calibration on purpose: calibration tunes what this receiver
+  // already does with what it hears, while these decide what it reaches for.
+  // One of them is the only outbound request the system makes.
+  {
+    to: '/settings/data',
+    label: 'External data',
+    icon: CloudDownloadIcon,
+    hint: 'ADS-B, terrain, registries',
     scope: 'receiver',
   },
 ]

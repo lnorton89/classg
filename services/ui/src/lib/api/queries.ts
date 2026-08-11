@@ -21,6 +21,7 @@ export const queryKeys = {
   captureReport: (id: string) => ['captures', 'report', id] as const,
   channelPlan: ['config', 'channels'] as const,
   weights: ['config', 'weights'] as const,
+  settings: ['config', 'settings'] as const,
 }
 
 /**
@@ -127,5 +128,12 @@ export const weightsQuery = () =>
   queryOptions({
     queryKey: queryKeys.weights,
     queryFn: () => api.weights(),
+    staleTime: 60_000,
+  })
+
+export const settingsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.settings,
+    queryFn: () => api.settings(),
     staleTime: 60_000,
   })

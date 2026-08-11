@@ -24,6 +24,7 @@ import type {
   Health,
   RestartSensorResponse,
   SensorHealth,
+  SettingsResponse,
   StartCaptureRequest,
   Track,
   TracksQuery,
@@ -280,6 +281,18 @@ export const api = {
     return request<ConfigResponse<FusionWeights> | FusionWeights>('/config/weights').then(
       unwrapConfigValue,
     )
+  },
+
+  settings(): Promise<SettingsResponse> {
+    return request<SettingsResponse>('/config/settings')
+  },
+
+  /** Values are strings regardless of the setting's declared type — see ADR-0007. */
+  putSettings(updates: Record<string, string>): Promise<ConfigPutResponse> {
+    return request<ConfigPutResponse>('/config/settings', {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    })
   },
 
   putWeights(body: FusionWeights): Promise<ConfigPutResponse> {

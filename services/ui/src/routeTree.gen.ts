@@ -22,6 +22,7 @@ import { Route as DocsDocIdRouteImport } from './routes/docs.$docId'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as SettingsCalibrationRouteImport } from './routes/settings.calibration'
+import { Route as SettingsDataRouteImport } from './routes/settings.data'
 import { Route as SettingsGeneralRouteImport } from './routes/settings.general'
 import { Route as SettingsLogsRouteImport } from './routes/settings.logs'
 import { Route as SettingsMapRouteImport } from './routes/settings.map'
@@ -96,6 +97,11 @@ const SettingsCalibrationRoute = SettingsCalibrationRouteImport.update({
   path: '/calibration',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsDataRoute = SettingsDataRouteImport.update({
+  id: '/data',
+  path: '/data',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
   id: '/general',
   path: '/general',
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/docs/$docId': typeof DocsDocIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/calibration': typeof SettingsCalibrationRoute
+  '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/logs': typeof SettingsLogsRoute
   '/settings/map': typeof SettingsMapRoute
@@ -169,6 +176,7 @@ export interface FileRoutesByTo {
   '/docs/$docId': typeof DocsDocIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/calibration': typeof SettingsCalibrationRoute
+  '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/logs': typeof SettingsLogsRoute
   '/settings/map': typeof SettingsMapRoute
@@ -193,6 +201,7 @@ export interface FileRoutesById {
   '/docs/$docId': typeof DocsDocIdRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/calibration': typeof SettingsCalibrationRoute
+  '/settings/data': typeof SettingsDataRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/logs': typeof SettingsLogsRoute
   '/settings/map': typeof SettingsMapRoute
@@ -218,6 +227,7 @@ export interface FileRouteTypes {
     | '/docs/$docId'
     | '/settings/appearance'
     | '/settings/calibration'
+    | '/settings/data'
     | '/settings/general'
     | '/settings/logs'
     | '/settings/map'
@@ -239,6 +249,7 @@ export interface FileRouteTypes {
     | '/docs/$docId'
     | '/settings/appearance'
     | '/settings/calibration'
+    | '/settings/data'
     | '/settings/general'
     | '/settings/logs'
     | '/settings/map'
@@ -262,6 +273,7 @@ export interface FileRouteTypes {
     | '/docs/$docId'
     | '/settings/appearance'
     | '/settings/calibration'
+    | '/settings/data'
     | '/settings/general'
     | '/settings/logs'
     | '/settings/map'
@@ -381,6 +393,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsCalibrationRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/data': {
+      id: '/settings/data'
+      path: '/data'
+      fullPath: '/settings/data'
+      preLoaderRoute: typeof SettingsDataRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/general': {
       id: '/settings/general'
       path: '/general'
@@ -455,6 +474,7 @@ const DocsRouteWithChildren = DocsRoute._addFileChildren(DocsRouteChildren)
 interface SettingsRouteChildren {
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsCalibrationRoute: typeof SettingsCalibrationRoute
+  SettingsDataRoute: typeof SettingsDataRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsLogsRoute: typeof SettingsLogsRoute
   SettingsMapRoute: typeof SettingsMapRoute
@@ -467,6 +487,7 @@ interface SettingsRouteChildren {
 const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsCalibrationRoute: SettingsCalibrationRoute,
+  SettingsDataRoute: SettingsDataRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsLogsRoute: SettingsLogsRoute,
   SettingsMapRoute: SettingsMapRoute,

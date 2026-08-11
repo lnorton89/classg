@@ -259,6 +259,19 @@ nothing. For an archive the probe reads the first seven bytes and checks the
 `PMTiles` magic, which an HTML fallback cannot fake. Check the attribution in
 the bottom-right corner to confirm which source you actually got.
 
+### Outside the bbox, an archive looks exactly like no archive
+
+An extract contains only the area you cut. Pan outside it and the map goes to
+the background colour with the range rings still drawn — visually identical to
+having no basemap at all, except that the attribution still says Protomaps and
+the probe still passed. There is no "you have left the coverage" state, because
+nothing distinguishes empty tiles from absent ones.
+
+Seen during bring-up: a Seattle extract with the stored flight tracks at
+Longview, 170 km south, renders a black map at every zoom. If the map is blank,
+check the bbox you cut against where the aircraft actually are before suspecting
+the archive.
+
 ### Three things that bit during bring-up
 
 **The dev container will not have a newly added npm package.** `node_modules`

@@ -1,4 +1,6 @@
+import { useQuery } from '@tanstack/react-query'
 import {
+  addProtocol,
   AttributionControl,
   GeoJSONSource,
   Map as MapLibreMap,
@@ -13,7 +15,8 @@ import { useEffect, useRef, useState } from 'react'
 
 import { useTheme } from '@/app/theme-context'
 import { useFormat } from '@/app/use-format'
-import type { Detection, Track } from '@/lib/api/types'
+import { settingsQuery } from '@/lib/api/queries'
+import type { Detection, ReceiverPosition, Track } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
 import { boundsOf, operatorLinksGeoJson, plottablePoints, trailsGeoJson } from './geo'
@@ -25,11 +28,15 @@ import {
   updateMannedMarker,
 } from './markers'
 import {
+  BASEMAP_VECTOR_URL,
+  isPMTilesArchive,
   noTilesStyle,
   rangeRings,
   ringRadiiFor,
   tiledStyle,
   tilesReachable,
+  vectorReachable,
+  vectorStyle,
   type BasemapMode,
 } from './style'
 
@@ -38,6 +45,34 @@ import {
 setWorkerUrl(workerUrl)
 
 const BASE_URL = import.meta.env.BASE_URL
+
+/**
+ * Centre of the contiguous US at a zoom that keeps it on screen on a normal
+ * desktop window. The fallback when nothing — not a configured receiver
+ * position, not the operator's own ODID position, not browser geolocation —
+ * has told the map where "here" is. A flat [0, 0] world view reads as broken
+ * rather than merely uninformative, and this deployment's operators are
+ * overwhelmingly in the US.
+ */
+const FALLBACK_CENTER: [number, number] = [-98.5, 39.5]
+const FALLBACK_ZOOM = 3.3
+
+/**
+ * Register the `pmtiles://` protocol, once, and only if an archive is actually
+ * configured.
+ *
+ * Dynamically imported so the decoder stays out of the main chunk on the many
+ * deployments that use raster tiles or none at all — the same reason
+ * maplibre-gl itself is split out in vite.config.ts. The shell has to stay
+ * interactive on a phone over the Pi's own access point.
+ */
+let pmtilesProtocol: Promise<void> | null = null
+function ensurePMTilesProtocol(): Promise<void> {
+  pmtilesProtocol ??= import('pmtiles').then(({ Protocol }) => {
+    addProtocol('pmtiles', new Protocol().tile)
+  })
+  return pmtilesProtocol
+}
 
 export interface LiveMapProps {
   tracks: Track[]
@@ -70,6 +105,7 @@ export function LiveMap({
   const mannedMarkers = useRef(new Map<string, { marker: Marker; node: HTMLElement }>())
   const onSelectRef = useRef(onSelectTrack)
   const fittedBoundsRef = useRef<string | null>(null)
+  const initialCenterAppliedRef = useRef(false)
   // Marker accessible names are the text equivalent of the canvas, so they
   // follow the operator's unit preference like every other reading.
   const format = useFormat()
@@ -82,12 +118,64 @@ export function LiveMap({
   const [basemap, setBasemap] = useState<BasemapMode | null>(null)
   const [ready, setReady] = useState(false)
 
-  // --- probe for tiles once ------------------------------------------------
+  // --- where to centre before any track exists to derive a position from --
+  // Configured receiver position beats browser geolocation: a fixed
+  // installation should never see a permission prompt for a position it
+  // already knows, and the receiver position is shared by every client while
+  // geolocation is per-device.
+  const { data: settingsData } = useQuery(settingsQuery())
+  const receiverPositionSetting = settingsData?.settings['map.receiver_position']
+  const receiverPosition = (receiverPositionSetting?.value ?? null) as ReceiverPosition | null
+  const settingsResolved = settingsData !== undefined
+
+  const [browserLocation, setBrowserLocation] = useState<ReceiverPosition | null>(null)
+
+  useEffect(() => {
+    if (!settingsResolved || receiverPosition) return
+    // navigator.geolocation is undefined on insecure origins — the same trap
+    // as navigator.clipboard in copy-button.tsx: a Pi reached over plain http
+    // on a LAN address won't have it, so this degrades to the world view
+    // rather than throwing.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (!window.isSecureContext || !navigator.geolocation) return
+    let cancelled = false
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        if (cancelled) return
+        setBrowserLocation({ lat: position.coords.latitude, lon: position.coords.longitude })
+      },
+      () => {
+        // Denied, unavailable, or timed out — the world view is the fallback
+        // for exactly this case, not an error to surface.
+      },
+      { maximumAge: 300_000, timeout: 10_000 },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [settingsResolved, receiverPosition])
+
+  // --- probe for a basemap once --------------------------------------------
+  // Vector first when configured: it is the only source that works with the
+  // uplink down. Raster is the fallback, and rings are the fallback to that —
+  // never an error, because a detector with no map still detects.
   useEffect(() => {
     const controller = new AbortController()
-    void tilesReachable(BASE_URL, controller.signal).then((ok) =>
-      setBasemap(ok ? 'tiles' : 'no-tiles'),
-    )
+    const choose = async () => {
+      if (
+        BASEMAP_VECTOR_URL &&
+        (await vectorReachable(BASEMAP_VECTOR_URL, controller.signal))
+      ) {
+        if (isPMTilesArchive(BASEMAP_VECTOR_URL)) await ensurePMTilesProtocol()
+        if (!controller.signal.aborted) setBasemap('vector')
+        return
+      }
+      const raster = await tilesReachable(BASE_URL, controller.signal)
+      if (!controller.signal.aborted) setBasemap(raster ? 'tiles' : 'no-tiles')
+    }
+    void choose().catch(() => {
+      if (!controller.signal.aborted) setBasemap('no-tiles')
+    })
     return () => controller.abort()
   }, [])
 
@@ -95,23 +183,53 @@ export function LiveMap({
   useEffect(() => {
     if (!containerRef.current || basemap === null) return
 
-    const style = basemap === 'tiles' ? tiledStyle(theme, BASE_URL) : noTilesStyle(theme)
+    // A vector URL that is not an archive is somebody else's style document —
+    // OpenFreeMap and friends — so it is handed to MapLibre as a URL rather
+    // than rebuilt here.
+    const style =
+      basemap === 'vector'
+        ? isPMTilesArchive(BASEMAP_VECTOR_URL)
+          ? vectorStyle(theme, BASEMAP_VECTOR_URL)
+          : BASEMAP_VECTOR_URL
+        : basemap === 'tiles'
+          ? tiledStyle(theme, BASE_URL)
+          : noTilesStyle(theme)
     const map = new MapLibreMap({
       container: containerRef.current,
       style,
-      center: [0, 0],
-      zoom: 1.5,
-      attributionControl: basemap === 'tiles' ? undefined : false,
+      center: FALLBACK_CENTER,
+      zoom: FALLBACK_ZOOM,
+      attributionControl: basemap === 'no-tiles' ? false : undefined,
       // Two-finger pan on touch so the page can still be scrolled past the map
       // on a phone.
       cooperativeGestures: true,
     })
     mapRef.current = map
     fittedBoundsRef.current = null
+    initialCenterAppliedRef.current = false
+
+    // MapLibre sizes its canvas from the container's dimensions at the moment
+    // it is constructed. This container is flex-laid-out next to a sidebar
+    // and switches panes on mobile, so that size is not always settled yet —
+    // without either of the two lines below, the canvas can freeze at a stale
+    // (often much narrower) size and render tiles into only part of its own
+    // element, leaving the rest black. The previous code only called
+    // resize() from the fit-to-contacts effect, which an empty sky never
+    // runs, so this had no cure until the first track arrived.
+    //
+    // The observer catches every *later* size change (a sidebar toggling, the
+    // mobile map/list pane switching, the window itself resizing). It does not
+    // cover the construction race above, because nothing has changed size yet
+    // for it to observe — a second layout pass (fonts, flex) can still commit
+    // after `new MapLibreMap()` reads the container's current box. The rAF
+    // catches exactly that one-shot case.
+    const resizeObserver = new ResizeObserver(() => map.resize())
+    resizeObserver.observe(containerRef.current)
+    const initialResizeFrame = requestAnimationFrame(() => map.resize())
 
     map.addControl(new NavigationControl({ visualizePitch: false }), 'top-right')
     map.addControl(new ScaleControl({ maxWidth: 90, unit: 'metric' }), 'bottom-left')
-    if (basemap === 'tiles') {
+    if (basemap !== 'no-tiles') {
       map.addControl(new AttributionControl({ compact: true }), 'bottom-right')
     }
 
@@ -197,6 +315,8 @@ export function LiveMap({
 
     return () => {
       setReady(false)
+      cancelAnimationFrame(initialResizeFrame)
+      resizeObserver.disconnect()
       for (const { marker } of drones.values()) marker.remove()
       for (const marker of operators.values()) marker.remove()
       for (const { marker } of manned.values()) marker.remove()
@@ -217,6 +337,23 @@ export function LiveMap({
     const links = map.getSource('operator-links')
     if (links instanceof GeoJSONSource) void links.setData(operatorLinksGeoJson(tracks))
   }, [tracks, ready])
+
+  // --- initial centre -------------------------------------------------------
+  // The map is created at [0, 0] because neither source below is available
+  // synchronously — the setting is a fetch and geolocation needs a permission
+  // round trip. This applies once, and only before anything else has claimed
+  // the view: a fit-to-contacts pass (below) or the operator panning it
+  // themself. Once real tracks exist, where they are matters more than where
+  // the receiver is.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready || initialCenterAppliedRef.current) return
+    if (fittedBoundsRef.current !== null) return
+    const source = receiverPosition ?? browserLocation
+    if (!source) return
+    initialCenterAppliedRef.current = true
+    map.jumpTo({ center: [source.lon, source.lat], zoom: 12 })
+  }, [ready, receiverPosition, browserLocation])
 
   // --- drone + operator markers -------------------------------------------
   useEffect(() => {

@@ -83,6 +83,51 @@ func TestAircraftDBReadsColumnsByName(t *testing.T) {
 	}
 }
 
+// The header and rows below are copied verbatim from the published export
+// (opensky-network.org/datasets/metadata/aircraftDatabase.csv), not written
+// from memory. The first version of this loader bound one column per field and
+// chose `operator` -- which is blank on essentially every general-aviation row,
+// while `owner` carries the name. It would have shown nothing for most
+// aircraft and looked like it was working.
+const realOpenSkyExport = `"icao24","registration","manufacturericao","manufacturername","model","typecode","serialnumber","linenumber","icaoaircrafttype","operator","operatorcallsign","operatoricao","operatoriata","owner","testreg","registered","reguntil","status","built","firstflightdate","seatconfiguration","engines","modes","adsb","acars","notes","categoryDescription"
+"","","","","","","","","","","","","","","","","","","","","","","false","false","false","",""
+"aa3487","N757F","RAYTHEON","Raytheon Aircraft Company","A36","BE36","E-3121","","L1P","","","","","Vintage Aircraft Llc","","","2027-01-31","","","","","","false","false","false","",""
+"391927","F-GGJH","ROBIN","Robin","DR.400 160 Chevalier","DR40","1795","","L1P","","","","","Private","","","","","","","","","false","false","false","",""
+"4ca1b2","EI-DYX","BOEING","Boeing","737-8AS","B738","33333","","L2J","Ryanair","RYANAIR","RYR","FR","Ryanair DAC","","","","","","","","","false","false","false","",""
+`
+
+func TestAircraftDBAgainstTheRealExport(t *testing.T) {
+	db, err := ReadAircraftDB(strings.NewReader(realOpenSkyExport))
+	if err != nil {
+		t.Fatalf("the published export must load: %v", err)
+	}
+	// The blank row carries no address and is skipped.
+	if db.Len() != 3 {
+		t.Fatalf("loaded %d, want 3", db.Len())
+	}
+
+	// operator is empty here and owner is not, which is the common case.
+	ga, ok := db.Lookup("aa3487")
+	if !ok {
+		t.Fatal("lookup missed")
+	}
+	if ga.Operator != "Vintage Aircraft Llc" {
+		t.Errorf("operator %q: should fall through an empty column to owner", ga.Operator)
+	}
+	if ga.Registration != "N757F" || ga.TypeCode != "BE36" || ga.Model != "A36" {
+		t.Errorf("got %+v", ga)
+	}
+
+	// And where operator IS populated it must win over owner, not the reverse.
+	airliner, ok := db.Lookup("4CA1B2")
+	if !ok {
+		t.Fatal("lookup missed")
+	}
+	if airliner.Operator != "Ryanair" {
+		t.Errorf("operator %q, want Ryanair (owner is 'Ryanair DAC')", airliner.Operator)
+	}
+}
+
 func TestAircraftDBRejectsWrongFile(t *testing.T) {
 	_, err := ReadAircraftDB(strings.NewReader("alpha,beta\n1,2\n"))
 	if err == nil {

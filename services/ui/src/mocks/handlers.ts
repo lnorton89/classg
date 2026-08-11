@@ -13,12 +13,16 @@ import type {
   Capture,
   CapturesResponse,
   ChannelPlan,
+  ConfigPutResponse,
   ConfigResponse,
   Detection,
   DetectionsResponse,
   FusionWeights,
   Health,
+  ReceiverPosition,
   SensorHealth,
+  SettingsResponse,
+  SettingValue,
   StartCaptureRequest,
   Track,
   TracksResponse,
@@ -35,6 +39,45 @@ const base = API_BASE
 let captures: Capture[] = [...CAPTURES]
 let channels: ChannelPlan = structuredClone(channelPlan)
 let weights: FusionWeights = structuredClone(fusionWeights)
+/** Unconfigured by default, matching config/defaults.yaml. */
+let receiverPosition: ReceiverPosition | null = null
+
+/**
+ * The external-data settings, so Settings › External data is usable with no
+ * backend. Values and docs mirror the Go registry's built-in defaults; the
+ * point is that every one of them is off, because "all off by default" is a
+ * claim the offline UI should demonstrate rather than assert.
+ */
+const EXTERNAL_DATA_DEFAULTS: Record<string, string> = {
+  'fusion.net_adsb': 'false',
+  'fusion.net_adsb_url': 'https://api.adsb.lol',
+  'fusion.net_adsb_radius_nm': '25',
+  'fusion.net_adsb_interval': '10s',
+  'fusion.net_adsb_sensor_id': 'net-adsb-0',
+  'fusion.terrain': 'false',
+  'fusion.terrain_url': 'https://api.opentopodata.org',
+  'fusion.terrain_dataset': 'srtm30m',
+  'fusion.terrain_min_interval': '1s',
+  'fusion.terrain_geoid_offset_m': '0',
+  'fusion.aircraft_db': '',
+  'sensors.oui_registry': 'data/ieee-oui.csv',
+}
+
+let externalData: Record<string, string> = { ...EXTERNAL_DATA_DEFAULTS }
+
+/** Booleans and numbers arrive typed from the real API, so type them here too. */
+function externalDataSettings(): Record<string, SettingValue> {
+  const out: Record<string, SettingValue> = {}
+  for (const [key, raw] of Object.entries(externalData)) {
+    let value: unknown = raw
+    if (raw === 'true' || raw === 'false') value = raw === 'true'
+    else if (raw !== '' && !Number.isNaN(Number(raw)) && !key.endsWith('_interval')) {
+      value = Number(raw)
+    }
+    out[key] = { value, source: 'db', mutable: true }
+  }
+  return out
+}
 /** Set by tests to force `POST /captures` down the privileges_required path. */
 let capturePrivileges = true
 
@@ -42,6 +85,8 @@ export function resetMockState(): void {
   captures = [...CAPTURES]
   channels = structuredClone(channelPlan)
   weights = structuredClone(fusionWeights)
+  receiverPosition = null
+  externalData = { ...EXTERNAL_DATA_DEFAULTS }
   capturePrivileges = true
 }
 
@@ -377,6 +422,58 @@ export const handlers = [
       restart_required: false,
     })
   }),
+
+  /**
+   * Generic Tier 2 settings (ADR-0007). Only the keys the UI actually reads
+   * are represented — a mock does not need to mirror the full Go registry.
+   */
+  http.get(`${base}/config/settings`, () =>
+    HttpResponse.json<SettingsResponse>({
+      settings: {
+        'map.receiver_position': {
+          value: receiverPosition,
+          source: 'db',
+          mutable: true,
+          doc: 'lat,lon of the receiver; centres the map before any track exists',
+        },
+        ...externalDataSettings(),
+      },
+      env_overridden: [],
+    }),
+  ),
+
+  http.put<PathParams, Record<string, string>>(
+    `${base}/config/settings`,
+    async ({ request }) => {
+      const body = await request.json()
+      const raw = body['map.receiver_position']
+      if (raw !== undefined) {
+        if (raw.trim() === '') {
+          receiverPosition = null
+        } else {
+          const [lat, lon] = raw.split(',').map(Number)
+          if (
+            lat === undefined ||
+            lon === undefined ||
+            Number.isNaN(lat) ||
+            Number.isNaN(lon)
+          ) {
+            return apiError(
+              400,
+              'invalid_parameter',
+              `${raw} is not lat,lon`,
+              'map.receiver_position',
+            )
+          }
+          receiverPosition = { lat, lon }
+        }
+      }
+      for (const [key, value] of Object.entries(body)) {
+        if (key in externalData) externalData[key] = value
+      }
+      return HttpResponse.json<ConfigPutResponse>({ restart_required: false })
+    },
+  ),
 
   // --- Mock control (dev only, never part of the real API) -----------------
   http.post<PathParams, { scenario: ScenarioName }>('/__mock/scenario', async ({ request }) => {

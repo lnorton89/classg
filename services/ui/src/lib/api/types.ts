@@ -233,6 +233,28 @@ export interface ConfigPutResponse {
   restart_required: boolean
 }
 
+/** Where a Tier 2 setting's effective value came from — see ADR-0007. */
+export type SettingSource = 'env' | 'db' | 'seed' | 'default'
+
+export interface SettingValue {
+  value: unknown
+  source: SettingSource
+  mutable: boolean
+  doc?: string
+}
+
+/** `GET /config/settings` — the whole Tier 2 registry, each value with its provenance. */
+export interface SettingsResponse {
+  settings: Record<string, SettingValue>
+  env_overridden: string[]
+}
+
+/** Fixed ground position of the receiver, `map.receiver_position` in settings. */
+export interface ReceiverPosition {
+  lat: number
+  lon: number
+}
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------

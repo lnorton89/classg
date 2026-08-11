@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "classg-ui-mock",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "services/ui", "run", "dev", "--", "--port", "5185", "--strictPort"],
+      "port": 5185
+    }
+  ]
+}

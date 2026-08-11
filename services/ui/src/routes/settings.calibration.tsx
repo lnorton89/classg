@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { RotateCcwIcon, SaveIcon } from 'lucide-react'
+import { LocateFixedIcon, RotateCcwIcon, SaveIcon } from 'lucide-react'
 import { useState } from 'react'
 import { z } from 'zod'
 
@@ -10,8 +10,13 @@ import { Input, Label } from '@/components/ui/field'
 import { Alert } from '@/components/ui/misc'
 import { Tooltip } from '@/components/ui/tooltip'
 import { ApiError, api } from '@/lib/api/client'
-import { channelPlanQuery, queryKeys, weightsQuery } from '@/lib/api/queries'
-import type { ChannelPlan, DetectionClass, FusionWeights } from '@/lib/api/types'
+import { channelPlanQuery, queryKeys, settingsQuery, weightsQuery } from '@/lib/api/queries'
+import type {
+  ChannelPlan,
+  DetectionClass,
+  FusionWeights,
+  ReceiverPosition,
+} from '@/lib/api/types'
 import { DETECTION_CLASS_ORDER, detectionClassInfo, noisyOr } from '@/lib/detection-classes'
 
 export const Route = createFileRoute('/settings/calibration')({
@@ -20,6 +25,7 @@ export const Route = createFileRoute('/settings/calibration')({
     Promise.all([
       context.queryClient.ensureQueryData(channelPlanQuery()),
       context.queryClient.ensureQueryData(weightsQuery()),
+      context.queryClient.ensureQueryData(settingsQuery()),
     ]),
 })
 
@@ -66,9 +72,145 @@ function CalibrationSettings() {
         Stored on the Pi and shared by every client. They are calibrated hypotheses, not
         physical constants — revise them against measured results rather than intuition.
       </Alert>
+      <ReceiverPositionEditor />
       <ChannelPlanEditor />
       <FusionWeightsEditor />
     </>
+  )
+}
+
+/**
+ * Where the map centres before any track exists to derive a position from.
+ * Unlike the browser preferences on Settings › Live map, this is stored on
+ * the Pi and shared by every client — the same reason it lives on this page
+ * rather than that one.
+ */
+function ReceiverPositionEditor() {
+  const queryClient = useQueryClient()
+  const { data } = useQuery(settingsQuery())
+  const setting = data?.settings['map.receiver_position']
+  const current = (setting?.value ?? null) as ReceiverPosition | null
+  const locked = setting?.source === 'env'
+
+  const [draft, setDraft] = useState<{ lat: string; lon: string } | null>(null)
+  const lat = draft?.lat ?? (current ? String(current.lat) : '')
+  const lon = draft?.lon ?? (current ? String(current.lon) : '')
+  const dirty = draft !== null
+
+  const save = useMutation({
+    mutationFn: (raw: string) => api.putSettings({ 'map.receiver_position': raw }),
+    onSuccess: () => {
+      setDraft(null)
+      return queryClient.invalidateQueries({ queryKey: queryKeys.settings })
+    },
+  })
+
+  const apiError = save.error instanceof ApiError ? save.error : null
+
+  const onSubmit = (event: React.SyntheticEvent) => {
+    event.preventDefault()
+    if (lat.trim() === '' && lon.trim() === '') {
+      save.mutate('')
+      return
+    }
+    const latNum = Number(lat)
+    const lonNum = Number(lon)
+    if (!Number.isFinite(latNum) || !Number.isFinite(lonNum)) return
+    save.mutate(`${latNum},${lonNum}`)
+  }
+
+  const useBrowserLocation = () => {
+    // navigator.geolocation is undefined on insecure origins — the same trap
+    // as navigator.clipboard in copy-button.tsx: a Pi reached over plain http
+    // on a LAN address won't have it.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (!window.isSecureContext || !navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setDraft({
+          lat: String(position.coords.latitude),
+          lon: String(position.coords.longitude),
+        })
+      },
+      () => {
+        /* denied or unavailable — the fields simply stay as they were */
+      },
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Receiver position</CardTitle>
+        <p className="text-muted-foreground text-xs">
+          Where the map centres before any track gives it a position to derive one from. Leave
+          both fields blank to fall back to the browser's own location where the connection is
+          secure enough to ask for it, or a world view otherwise.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {locked ? (
+          <Alert tone="info" title="Set by the environment">
+            CLASSG_RECEIVER_POSITION takes precedence over this field. Unset it to manage this
+            value here.
+          </Alert>
+        ) : null}
+        {apiError ? (
+          <Alert tone="error" title={`Save failed (${apiError.code})`}>
+            {apiError.message}
+          </Alert>
+        ) : null}
+        {save.isSuccess && !dirty ? (
+          <Alert tone="ok" title="Saved">
+            Applied immediately — no restart needed.
+          </Alert>
+        ) : null}
+
+        <form onSubmit={onSubmit} className="flex flex-wrap items-end gap-3">
+          <div>
+            <Label htmlFor="receiver-lat">Latitude</Label>
+            <Input
+              id="receiver-lat"
+              type="number"
+              step="any"
+              min="-90"
+              max="90"
+              placeholder="51.4775"
+              value={lat}
+              disabled={locked}
+              className="mt-1 h-8 w-36"
+              onChange={(event) => setDraft({ lat: event.target.value, lon })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="receiver-lon">Longitude</Label>
+            <Input
+              id="receiver-lon"
+              type="number"
+              step="any"
+              min="-180"
+              max="180"
+              placeholder="-0.0014"
+              value={lon}
+              disabled={locked}
+              className="mt-1 h-8 w-36"
+              onChange={(event) => setDraft({ lat, lon: event.target.value })}
+            />
+          </div>
+          <Button type="button" variant="outline" size="sm" disabled={locked} onClick={useBrowserLocation}>
+            <LocateFixedIcon aria-hidden /> Use this browser's location
+          </Button>
+          <Button type="submit" size="sm" disabled={locked || save.isPending || !dirty}>
+            <SaveIcon aria-hidden /> {save.isPending ? 'Saving…' : 'Save'}
+          </Button>
+          {dirty ? (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setDraft(null)}>
+              <RotateCcwIcon aria-hidden /> Reset
+            </Button>
+          ) : null}
+        </form>
+      </CardContent>
+    </Card>
   )
 }
 

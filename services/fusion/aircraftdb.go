@@ -47,14 +47,20 @@ type AircraftDB struct {
 	byICAO map[uint32]AircraftInfo
 }
 
-// Column names as OpenSky publishes them. Looked up by name rather than by
-// position because the export has gained and reordered columns between
-// releases, and a positional reader would silently index the wrong field
-// rather than fail.
+// Column names as OpenSky publishes them, most preferred first. Looked up by
+// name rather than by position because the export has gained and reordered
+// columns between releases, and a positional reader would silently index the
+// wrong field rather than fail.
+//
+// Several columns per field, and the first NON-EMPTY one wins per row -- not
+// the first one that exists. Checked against the published export: `operator`
+// is blank for the overwhelming majority of rows while `owner` carries the
+// name, so binding a single column would have shown nothing for almost every
+// general-aviation aircraft while looking like it worked.
 var aircraftColumns = map[string][]string{
 	"registration": {"registration", "reg"},
 	"typecode":     {"typecode", "icaoaircrafttype"},
-	"model":        {"model"},
+	"model":        {"model", "manufacturername"},
 	"operator":     {"operator", "operatorcallsign", "owner"},
 }
 
@@ -83,7 +89,7 @@ func ReadAircraftDB(r io.Reader) (*AircraftDB, error) {
 		return nil, fmt.Errorf("read header: %w", err)
 	}
 
-	index := map[string]int{}
+	byName := map[string]int{}
 	icaoAt := -1
 	for i, raw := range header {
 		name := strings.ToLower(strings.Trim(strings.TrimSpace(raw), `'"`))
@@ -91,20 +97,25 @@ func ReadAircraftDB(r io.Reader) (*AircraftDB, error) {
 			icaoAt = i
 			continue
 		}
-		for field, aliases := range aircraftColumns {
-			if _, taken := index[field]; taken {
-				continue
-			}
-			for _, alias := range aliases {
-				if name == alias {
-					index[field] = i
-					break
-				}
-			}
+		// First occurrence wins if a name somehow repeats; a duplicated column
+		// is malformed either way and the leftmost is the likelier real one.
+		if _, seen := byName[name]; !seen {
+			byName[name] = i
 		}
 	}
 	if icaoAt < 0 {
 		return nil, errNoICAOColumn
+	}
+
+	// Resolved in alias preference order, not header order, so `operator`
+	// really is tried before `owner` regardless of how the export is laid out.
+	index := map[string][]int{}
+	for field, aliases := range aircraftColumns {
+		for _, alias := range aliases {
+			if i, ok := byName[alias]; ok {
+				index[field] = append(index[field], i)
+			}
+		}
 	}
 
 	db := &AircraftDB{byICAO: make(map[uint32]AircraftInfo)}
@@ -120,11 +131,15 @@ func ReadAircraftDB(r io.Reader) (*AircraftDB, error) {
 		return s
 	}
 	at := func(row []string, field string) string {
-		i, ok := index[field]
-		if !ok || i >= len(row) {
-			return ""
+		for _, i := range index[field] {
+			if i >= len(row) {
+				continue
+			}
+			if value := strings.Trim(strings.TrimSpace(row[i]), `'"`); value != "" {
+				return value
+			}
 		}
-		return strings.Trim(strings.TrimSpace(row[i]), `'"`)
+		return ""
 	}
 
 	for {
