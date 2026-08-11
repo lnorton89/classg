@@ -54,6 +54,23 @@ class _Raw:
         return self.data
 
 
+class RawRadio(FakeRadio):
+    """Speaks recv_raw(), as scapy's real socket does.
+
+    The preferred path: we dissect radiotap ourselves, so scapy parsing every
+    frame first is wasted work and emits a spurious "unable to guess type"
+    warning for radiotap link layers.
+    """
+
+    def recv_raw(self, x: int = 0xFFFF) -> tuple[Any, bytes | None, float | None]:
+        self.reads += 1
+        if self.fail_after is not None and self.reads > self.fail_after:
+            raise OSError("adapter went away")
+        if not self.frames:
+            return (None, None, None)
+        return (None, self.frames.pop(0), 0.0)
+
+
 class RecordingPublisher(DetectionPublisher):
     """Captures what would go on the bus instead of opening a socket."""
 
@@ -293,3 +310,22 @@ class TestPreflight:
         monkeypatch.setattr(capture.os, "geteuid", lambda: 0, raising=False)
         monkeypatch.setattr(capture, "interface_mode", lambda iface: "monitor")
         capture.preflight("wlan0")  # must not raise
+
+
+class TestRawReadPath:
+    """recv_raw() is what the real socket provides; recv() is the fallback."""
+
+    def test_recv_raw_is_preferred_and_yields_detections(self):
+        radio = RawRadio([drone_frame()])
+        stats, pub, pipeline, _ = run_once(radio)
+        assert stats.frames >= 1
+        assert pipeline.stats.class_a >= 1
+        assert any(d["detection_class"] == "A" for d in pub.published)
+
+    def test_recv_fallback_still_works(self):
+        """A socket without recv_raw must still be usable."""
+        radio = FakeRadio([drone_frame()])
+        assert not hasattr(radio, "recv_raw")
+        _, pub, pipeline, _ = run_once(radio)
+        assert pipeline.stats.class_a >= 1
+        assert any(d["detection_class"] == "A" for d in pub.published)
