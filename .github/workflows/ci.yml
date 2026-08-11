@@ -194,6 +194,37 @@ jobs:
       - name: Test
         run: cargo test
 
+      # sensor-wifi's output is checked against the detection schema; this sensor's
+      # was not, which left the cross-language contract verified in three languages
+      # out of four. The unit tests assert the field names from the Rust side, but
+      # only the schema itself can say whether the emitted document is valid.
+      - name: Detection schema conformance
+        run: |
+          python -m pip install --quiet jsonschema
+          cargo run --quiet -- --emit-sample-detection > /tmp/sdr-sample.json
+          python - <<'PY'
+          import json, pathlib, sys
+          from jsonschema import Draft202012Validator
+
+          schema = json.loads(pathlib.Path("../../schemas/detection.schema.json").read_text())
+          sample = json.loads(pathlib.Path("/tmp/sdr-sample.json").read_text())
+          v = Draft202012Validator(schema)
+
+          errs = sorted(v.iter_errors(sample), key=lambda e: list(e.path))
+          if errs:
+              for e in errs:
+                  print(f"::error::sensor-sdr emits an invalid detection at "
+                        f"{'/'.join(str(p) for p in e.path) or '(root)'}: {e.message}")
+              sys.exit(1)
+
+          # A validator that accepts anything would make the check above
+          # meaningless, so prove it still rejects what it should.
+          if not list(v.iter_errors({**sample, "invented_field": True})):
+              print("::error::additionalProperties:false is not being enforced")
+              sys.exit(1)
+          print("sensor-sdr output conforms to detection.schema.json")
+          PY
+
   # ---------------------------------------------------------------------------
   # Schemas are the cross-language contract (ADR-0001). A typo here breaks all
   # four services silently, so validate the schema itself is well-formed and
