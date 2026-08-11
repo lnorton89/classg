@@ -331,3 +331,55 @@ func TestCorruptStoredSettingsRefuseToStart(t *testing.T) {
 		t.Fatal("expected an error for corrupt stored settings")
 	}
 }
+
+func TestParseSensorDecls(t *testing.T) {
+	tests := []struct {
+		name     string
+		raw      string
+		want     []SensorDecl
+		wantErrs int
+	}{
+		{
+			// The pre-existing two-field form must keep meaning exactly what it
+			// did, or an upgrade silently makes every declared sensor optional.
+			name: "two fields default to required",
+			raw:  "wifi-0:wifi,ble-0:ble",
+			want: []SensorDecl{
+				{SensorID: "wifi-0", SensorKind: "wifi"},
+				{SensorID: "ble-0", SensorKind: "ble"},
+			},
+		},
+		{
+			name: "optional and required are both explicit",
+			raw:  "wifi-0:wifi:required, sdr-0:sdr:optional",
+			want: []SensorDecl{
+				{SensorID: "wifi-0", SensorKind: "wifi"},
+				{SensorID: "sdr-0", SensorKind: "sdr", Optional: true},
+			},
+		},
+		{name: "unknown third field", raw: "sdr-0:sdr:maybe", wantErrs: 1},
+		{name: "too many fields", raw: "sdr-0:sdr:optional:extra", wantErrs: 1},
+		{name: "bad kind", raw: "x-0:radar", wantErrs: 1},
+		{name: "duplicate id", raw: "sdr-0:sdr,sdr-0:sdr:optional", wantErrs: 1},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, errs := ParseSensorDecls(tc.raw)
+			if len(errs) != tc.wantErrs {
+				t.Fatalf("errors: got %v want %d", errs, tc.wantErrs)
+			}
+			if tc.wantErrs > 0 {
+				return
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %+v want %+v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("[%d]: got %+v want %+v", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}

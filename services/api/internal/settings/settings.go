@@ -78,7 +78,7 @@ var Defs = []Def{
 	// --- Sensors
 	{Key: "sensors.expected", Env: "CLASSG_EXPECTED_SENSORS", Kind: KindSensorList,
 		Default: "", Mutable: true,
-		Doc: "sensors that must exist; declaring them lets /health report one that never started"},
+		Doc: "sensors that must exist, as id:kind[:optional]; declaring them lets /health report one that never started"},
 	{Key: "sensors.stale_after", Env: "CLASSG_SENSOR_STALE_AFTER", Kind: KindDuration,
 		Default: "30s", Mutable: true, Doc: "heartbeat age after which a sensor is unhealthy"},
 	{Key: "sensors.restart_command", Env: "CLASSG_SENSOR_RESTART_COMMAND", Kind: KindString,
@@ -208,6 +208,13 @@ func (s *Settings) Duration(key string) time.Duration {
 type SensorDecl struct {
 	SensorID   string `json:"sensor_id"`
 	SensorKind string `json:"sensor_kind"`
+	// Optional marks a sensor whose absence is a supported build rather than a
+	// fault -- an SDR or BLE dongle that this unit may simply not have fitted.
+	// It changes only what "never reported at all" means. Once an optional
+	// sensor has heartbeated it is held to the same standard as any other,
+	// because a radio that worked and then stopped is precisely the failure
+	// ADR-0003 exists to surface.
+	Optional bool `json:"optional,omitempty"`
 }
 
 func (s *Settings) SensorDecls(key string) []SensorDecl {
@@ -330,7 +337,10 @@ func parse(d Def, raw string) (any, error) {
 	}
 }
 
-// ParseSensorDecls reads "wifi-0:wifi,sdr-0:sdr".
+// ParseSensorDecls reads "wifi-0:wifi,sdr-0:sdr:optional".
+//
+// The third field is how a unit declares hardware it may not have fitted. It
+// defaults to required, so an existing declaration keeps its current meaning.
 func ParseSensorDecls(raw string) ([]SensorDecl, []string) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
@@ -345,24 +355,42 @@ func ParseSensorDecls(raw string) ([]SensorDecl, []string) {
 		if part == "" {
 			continue
 		}
-		id, kind, ok := strings.Cut(part, ":")
-		id, kind = strings.TrimSpace(id), strings.TrimSpace(kind)
-		if !ok || id == "" || kind == "" {
-			errs = append(errs, fmt.Sprintf("%q is not sensor_id:sensor_kind", part))
+		fields := strings.Split(part, ":")
+		for i := range fields {
+			fields[i] = strings.TrimSpace(fields[i])
+		}
+		if len(fields) < 2 || len(fields) > 3 || fields[0] == "" || fields[1] == "" {
+			errs = append(errs, fmt.Sprintf("%q is not sensor_id:sensor_kind[:optional]", part))
 			continue
 		}
+		id, kind := fields[0], fields[1]
 		switch kind {
 		case "wifi", "sdr", "ble":
 		default:
 			errs = append(errs, fmt.Sprintf("%q: sensor_kind must be wifi, sdr or ble", part))
 			continue
 		}
+		var optional bool
+		if len(fields) == 3 {
+			switch fields[2] {
+			case "optional":
+				optional = true
+			case "required":
+				optional = false
+			default:
+				// Rejected rather than assumed: silently treating a typo as
+				// required would leave a Pi with no SDR permanently degraded,
+				// and treating it as optional would hide a dead radio.
+				errs = append(errs, fmt.Sprintf("%q: third field must be optional or required", part))
+				continue
+			}
+		}
 		if seen[id] {
 			errs = append(errs, fmt.Sprintf("%q: duplicate sensor_id", id))
 			continue
 		}
 		seen[id] = true
-		out = append(out, SensorDecl{SensorID: id, SensorKind: kind})
+		out = append(out, SensorDecl{SensorID: id, SensorKind: kind, Optional: optional})
 	}
 	return out, errs
 }

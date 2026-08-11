@@ -109,7 +109,7 @@ func run() error {
 
 	registry := health.NewRegistry(cfg.SensorStaleAfter)
 	for _, d := range cfg.ExpectedSensors {
-		registry.Expect(d.SensorID, d.SensorKind)
+		registry.Expect(d.SensorID, d.SensorKind, d.Optional)
 	}
 	// Sensors seen before this process started are still real sensors. Seeding
 	// from storage means an api restart does not make a dead radio disappear

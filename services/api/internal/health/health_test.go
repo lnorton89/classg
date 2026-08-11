@@ -131,7 +131,7 @@ func TestStatusTransitions(t *testing.T) {
 			r := NewRegistry(staleAfter)
 			for _, s := range tc.sensors {
 				if s.declared {
-					r.Expect(s.id, s.kind)
+					r.Expect(s.id, s.kind, false)
 					continue
 				}
 				r.Heartbeat(Heartbeat{
@@ -174,7 +174,7 @@ func TestUnhealthySensorAlwaysCarriesAReason(t *testing.T) {
 		name  string
 		setup func(*Registry)
 	}{
-		{"never started", func(r *Registry) { r.Expect("sdr-0", "sdr") }},
+		{"never started", func(r *Registry) { r.Expect("sdr-0", "sdr", false) }},
 		{"stale heartbeat", func(r *Registry) {
 			r.Heartbeat(Heartbeat{SensorID: "sdr-0", SensorKind: "sdr", Healthy: true, TS: now.Add(-time.Hour)})
 		}},
@@ -251,5 +251,83 @@ func TestRestoreKeepsDeadSensorsVisible(t *testing.T) {
 	}
 	if len(rep.Sensors) != 1 || rep.Sensors[0].Healthy {
 		t.Fatalf("restored sensor should be present and unhealthy: %+v", rep.Sensors)
+	}
+}
+
+// A unit built without an SDR must not report degraded forever. An operator who
+// learns to ignore a standing warning ignores a real one too.
+func TestUnfittedOptionalSensorDoesNotDegrade(t *testing.T) {
+	r := NewRegistry(staleAfter)
+	r.Expect("wifi-0", "wifi", false)
+	r.Expect("sdr-0", "sdr", true)
+	r.Heartbeat(Heartbeat{SensorID: "wifi-0", SensorKind: "wifi", Healthy: true, TS: now})
+
+	rep := r.Snapshot(now, time.Minute, "0.1.0", nil)
+	if rep.Status != StatusOK {
+		t.Fatalf("status: got %q want ok", rep.Status)
+	}
+
+	// Listed, not hidden: an operator must still be able to see the unit has no
+	// SDR rather than having to infer it from an absence.
+	var sdr *Sensor
+	for i := range rep.Sensors {
+		if rep.Sensors[i].SensorID == "sdr-0" {
+			sdr = &rep.Sensors[i]
+		}
+	}
+	if sdr == nil {
+		t.Fatal("optional sensor should still appear in the report")
+	}
+	if !sdr.Optional {
+		t.Error("optional flag not reported")
+	}
+	if sdr.Reason != "not fitted" {
+		t.Errorf("reason: got %q want %q", sdr.Reason, "not fitted")
+	}
+}
+
+// The other half of the contract, and the one that makes it safe: optional
+// means "may be absent", never "may fail quietly". A radio that reported and
+// then stopped is exactly the failure ADR-0003 exists to surface.
+func TestOptionalSensorThatDiesStillDegrades(t *testing.T) {
+	r := NewRegistry(staleAfter)
+	r.Expect("wifi-0", "wifi", false)
+	r.Expect("sdr-0", "sdr", true)
+	r.Heartbeat(Heartbeat{SensorID: "wifi-0", SensorKind: "wifi", Healthy: true, TS: now})
+	// The SDR was fitted and working, then went quiet.
+	r.Heartbeat(Heartbeat{SensorID: "sdr-0", SensorKind: "sdr", Healthy: true, TS: now.Add(-time.Hour)})
+
+	rep := r.Snapshot(now, time.Minute, "0.1.0", nil)
+	if rep.Status != StatusDegraded {
+		t.Fatalf("status: got %q want degraded", rep.Status)
+	}
+}
+
+// Restore counts as having been seen: a sensor known from storage was fitted at
+// some point, so an api restart must not downgrade it to "not fitted".
+func TestRestoredOptionalSensorIsNotTreatedAsUnfitted(t *testing.T) {
+	r := NewRegistry(staleAfter)
+	r.Expect("sdr-0", "sdr", true)
+	r.Restore("sdr-0", "sdr", now.Add(-2*time.Hour), "device not found")
+
+	rep := r.Snapshot(now, time.Minute, "0.1.0", nil)
+	if rep.Status != StatusDown {
+		t.Fatalf("status: got %q want down", rep.Status)
+	}
+	if rep.Sensors[0].Reason == "not fitted" {
+		t.Error("a sensor that has reported before must not read as never fitted")
+	}
+}
+
+// An optional sensor is the only declared one and is absent: nothing is known
+// about the sky, which is `down` rather than `ok`. Guards against the exclusion
+// accidentally manufacturing an all-clear from an empty tally.
+func TestOnlyUnfittedOptionalSensorIsDown(t *testing.T) {
+	r := NewRegistry(staleAfter)
+	r.Expect("sdr-0", "sdr", true)
+
+	rep := r.Snapshot(now, time.Minute, "0.1.0", nil)
+	if rep.Status != StatusDown {
+		t.Fatalf("status: got %q want down", rep.Status)
 	}
 }

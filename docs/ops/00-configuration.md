@@ -167,5 +167,10 @@ instead of reporting a false success.
   ([ADR-0006](../architecture/adr/0006-storage-turso-libsql.md)). Set it `false` if you
   redeploy somewhere the pilot's ground position should not be shown.
 - Declare every expected sensor in `CLASSG_EXPECTED_SENSORS` so a sensor that
-  never starts appears as unhealthy rather than disappearing.
+  never starts appears as unhealthy rather than disappearing. The form is
+  `id:kind[:optional]`, e.g. `wifi-0:wifi,sdr-0:sdr:optional`. Mark hardware
+  this unit may not have fitted as `optional` — it stops `/health` sitting at
+  `degraded` forever on a build with no SDR, without hiding the failure of one
+  that is fitted: once a sensor has heartbeated, going quiet degrades health
+  whether it was declared optional or not.
 - Keep the ZMQ endpoints bound to loopback or a trusted private network.

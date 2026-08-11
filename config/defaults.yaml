@@ -35,9 +35,20 @@ sensors:
   # started. Without it, a sensor that dies before its first heartbeat is simply
   # absent from the list, and absent reads as "quiet sky" -- the false
   # confidence ADR-0003 exists to prevent.
+  #
+  # `optional: true` is for hardware this unit may not have fitted -- an SDR or
+  # a BLE dongle on a build that ships without one. It suppresses exactly one
+  # case: never having reported at all. Once the sensor has heartbeated it is
+  # held to the same standard as any other, so a radio that worked and then
+  # stopped still degrades /health. Without it the only choices are a permanent
+  # `degraded` on a unit with no SDR, or omitting the sensor entirely and
+  # losing the ability to notice when it dies.
   expected:
     - id: wifi-0
       kind: wifi
+    # - id: sdr-0
+    #   kind: sdr
+    #   optional: true
 
   # Three missed heartbeats at the sensor default of 10s. Two would make one
   # scheduling hiccup on a loaded Pi look like a dead radio.
