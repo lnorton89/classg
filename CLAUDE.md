@@ -30,7 +30,7 @@ personally edited this session. If it lists files you never touched, that is
 another session working — leave them completely alone and do not mention them
 in your commit message.
 
-This is not hypothetical. Commit `23c5f04 "Add the always-on recording switch
+This is not hypothetical. Commit `91dff15 "Add the always-on recording switch
 (API side)"` contains an unrelated satellite-basemap rewrite across five UI
 files, because a catch-all `git add` ran while another session was mid-edit. It
 was already pushed by the time anyone noticed, so it can't be cleanly split.

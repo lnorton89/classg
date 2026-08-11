@@ -8,7 +8,7 @@ This document is the long form of rule zero in [CLAUDE.md](../../CLAUDE.md).
 
 ## What went wrong, concretely
 
-Commit [`23c5f04`](https://github.com/lnorton89/classg/commit/23c5f04) is titled
+Commit [`91dff15`](https://github.com/lnorton89/classg/commit/91dff15) is titled
 *"Add the always-on recording switch (API side)"*. It contains that, and also a
 complete rewrite of the satellite basemap across five UI files — a different
 feature, by a different session, that happened to be uncommitted at that moment.
