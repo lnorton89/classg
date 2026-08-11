@@ -22,7 +22,8 @@ export default tseslint.config(
     files: ['src/**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
-      tseslint.configs.recommendedTypeChecked,
+      tseslint.configs.strictTypeChecked,
+      tseslint.configs.stylisticTypeChecked,
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
       jsxA11y.flatConfigs.recommended,
@@ -37,6 +38,30 @@ export default tseslint.config(
       },
     },
     rules: {
+      // `onClick={() => mutate()}` is the idiom this codebase is written in, and
+      // the handler's return value is discarded by React either way. Configured
+      // rather than switched off: returning a void expression anywhere OTHER
+      // than an arrow shorthand is still a genuine mistake.
+      '@typescript-eslint/no-confusing-void-expression': [
+        'error',
+        { ignoreArrowShorthand: true },
+      ],
+      // Interpolating a number is safe and everywhere -- `${count} detections`.
+      // Objects and nullables still error, which is the case that actually
+      // produces "[object Object]" in the UI.
+      '@typescript-eslint/restrict-template-expressions': [
+        'error',
+        { allowNumber: true, allowBoolean: true },
+      ],
+      // Warn, not error, and deliberately so. Both rules fire where TypeScript
+      // believes a guard is dead -- but the API types are GENERATED from the
+      // schema and describe the contract, not the wire. A sensor that omits an
+      // optional field still parses, so a check TypeScript calls unnecessary can
+      // be the one keeping a panel from throwing. Each of these needs reading
+      // against the real payload before it is removed; silencing them wholesale
+      // in one pass is how a green lint run becomes a runtime crash.
+      '@typescript-eslint/no-unnecessary-condition': 'warn',
+      '@typescript-eslint/no-non-null-assertion': 'warn',
       // The whole point of a typed contract is that `any` never appears.
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': [

@@ -31,7 +31,7 @@ export function Select<T extends string>({
   return (
     <BaseSelect.Root
       value={value}
-      onValueChange={(next) => onValueChange(next as T)}
+      onValueChange={(next) => onValueChange(next!)}
       disabled={disabled}
       // Without `items`, `<Select.Value />` has no way to map the selected
       // value back to its label and renders the raw value — so a select showed

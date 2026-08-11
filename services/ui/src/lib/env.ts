@@ -5,5 +5,4 @@
  * `VITE_USE_MSW=false npm run dev` points the app at a real Pi through the Vite
  * proxy instead.
  */
-export const USE_MSW: boolean =
-  import.meta.env.DEV && import.meta.env['VITE_USE_MSW'] !== 'false'
+export const USE_MSW: boolean = import.meta.env.DEV && import.meta.env.VITE_USE_MSW !== 'false'

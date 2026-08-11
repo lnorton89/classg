@@ -184,7 +184,11 @@ export function updateMannedMarker(node: HTMLElement, options: MannedMarkerOptio
   if (!rotator || !label) return
 
   rotator.style.transform = `rotate(${options.headingDeg ?? 0}deg)`
-  const name = options.callsign?.trim() || options.icao
+  // A callsign that trims to empty falls back to the ICAO address, so this
+  // is a truthiness test and not a nullish one: `??` would keep the "".
+  const trimmedCallsign = options.callsign?.trim()
+  const name =
+    trimmedCallsign === undefined || trimmedCallsign === '' ? options.icao : trimmedCallsign
   label.textContent = `MANNED ${name}`
 
   const description = [

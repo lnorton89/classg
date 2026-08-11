@@ -69,7 +69,9 @@ describe('logStore', () => {
     const entries = logStore.getSnapshot()
     const debugs = entries.filter((entry) => entry.level === 'debug')
     expect(debugs.length).toBeLessThan(40)
-    expect(entries.some((entry) => /not logged \(rate limit\)/.test(entry.message))).toBe(true)
+    expect(entries.some((entry) => entry.message.includes('not logged (rate limit)'))).toBe(
+      true,
+    )
     // The entry that matters survived the burst.
     expect(entries.at(-1)?.message).toBe('sensor unhealthy')
   })
@@ -89,7 +91,7 @@ function parseCsvRow(row: string): string[] {
   let field = ''
   let quoted = false
   for (let i = 0; i < row.length; i += 1) {
-    const char = row[i]
+    const char = row[i] ?? ''
     if (quoted) {
       if (char === '"' && row[i + 1] === '"') {
         field += '"'

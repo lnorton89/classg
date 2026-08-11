@@ -18,7 +18,7 @@ function ulid(seed: string): string {
   let out = ''
   for (let i = 0; i < 26; i += 1) {
     hash = (hash * 1103515245 + 12345) >>> 0
-    out += alphabet[hash % 32]
+    out += alphabet[hash % 32] ?? ''
   }
   return out
 }

@@ -34,9 +34,7 @@ function evidenceClasses(track: Track): string {
   return classes.length > 0 ? classes.join('') : '—'
 }
 
-export interface FrameLogger {
-  (frame: ServerFrame): void
-}
+export type FrameLogger = (frame: ServerFrame) => void
 
 export function createFrameLogger(): FrameLogger {
   const tracks = new Map<string, TrackMemo>()
@@ -171,8 +169,8 @@ export function createFrameLogger(): FrameLogger {
         // RSSI lives under `rf`, not at the top level — that is on Detection,
         // whereas Track hoists it. Easy to get backwards.
         const rssi = detection.rf?.rssi_dbm
-        if (typeof rssi === 'number') detail['rssi_dbm'] = rssi
-        if (detection.adsb?.icao) detail['icao'] = detection.adsb.icao
+        if (typeof rssi === 'number') detail.rssi_dbm = rssi
+        if (detection.adsb?.icao) detail.icao = detection.adsb.icao
         log.entry({
           level: 'debug',
           source: 'detection',

@@ -114,7 +114,9 @@ export function ContactsPanel({
               <li key={detection.detection_id} className="flex items-center gap-2 px-3 py-2">
                 <SatelliteDishIcon className="text-manned size-3.5 shrink-0" aria-hidden />
                 <span className="font-mono text-xs">
-                  {detection.adsb?.callsign?.trim() || detection.adsb?.icao}
+                  {detection.adsb?.callsign?.trim()
+                    ? detection.adsb.callsign.trim()
+                    : detection.adsb?.icao}
                 </span>
                 <Badge variant="outline" className="border-manned/40 text-manned">
                   manned

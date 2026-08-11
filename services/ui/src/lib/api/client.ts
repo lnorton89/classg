@@ -32,7 +32,7 @@ import type {
 } from './types'
 
 export const API_BASE: string =
-  (import.meta.env['VITE_API_BASE'] as string | undefined) ?? '/api/v1'
+  (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api/v1'
 
 export class ApiError extends Error {
   readonly status: number
@@ -78,14 +78,13 @@ function buildQuery(params: Record<string, string | number | undefined | string[
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      Accept: 'application/json',
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers,
-    },
-  })
+  const headers = new Headers(init?.headers)
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json')
+  if (init?.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  const response = await fetch(`${API_BASE}${path}`, { ...init, headers })
 
   if (!response.ok) {
     let body: unknown = null

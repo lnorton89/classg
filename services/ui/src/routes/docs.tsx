@@ -7,7 +7,7 @@ import guide from '../../../../docs/operator-guide.json'
 
 type GuideDocument = (typeof guide.documents)[number]
 
-type TreeNode = {
+interface TreeNode {
   name: string
   children: Map<string, TreeNode>
   document?: GuideDocument
@@ -94,7 +94,7 @@ export function DocsTree() {
 
 function DocsLayout() {
   return (
-    <div className="mx-auto grid w-full max-w-[90rem] gap-4 p-3 lg:grid-cols-[17rem_minmax(0,1fr)] lg:p-4">
+    <div className="mx-auto grid w-full max-w-360 gap-4 p-3 lg:grid-cols-[17rem_minmax(0,1fr)] lg:p-4">
       <aside className="border-border bg-card/70 self-start rounded-lg border p-3 lg:sticky lg:top-20">
         <div className="mb-3 flex items-center gap-2 px-2">
           <FolderTreeIcon className="text-primary size-4" aria-hidden />

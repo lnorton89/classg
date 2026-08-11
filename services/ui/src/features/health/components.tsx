@@ -22,6 +22,7 @@ import { healthQuery } from '@/lib/api/queries'
 import type { SensorHealth, SensorKind, SystemStatus } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
+import { formatDetailValue } from './detail-format'
 import type { SkyState } from './sky-state'
 
 const SENSOR_ICONS: Record<SensorKind, typeof WifiIcon> = {
@@ -244,7 +245,12 @@ export function SensorHealthCard({
             }
           />
           {Object.entries(sensor.detail ?? {}).map(([key, value]) => (
-            <DataRow key={key} label={key.replaceAll('_', ' ')} value={String(value)} mono />
+            <DataRow
+              key={key}
+              label={key.replaceAll('_', ' ')}
+              value={formatDetailValue(value)}
+              mono
+            />
           ))}
         </dl>
         {action}
