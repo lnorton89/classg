@@ -49,6 +49,13 @@ sensors:
     # - id: sdr-0
     #   kind: sdr
     #   optional: true
+    # The network ADS-B feed heartbeats like a radio does, so declaring it here
+    # is what lets /health report an uplink that never came back. It runs inside
+    # fusion rather than as its own unit, so the sensors page offers no restart
+    # button for it -- restart fusion. Only declare it if fusion.net_adsb is on.
+    # - id: net-adsb-0
+    #   kind: net
+    #   optional: true
 
   # Three missed heartbeats at the sensor default of 10s. Two would make one
   # scheduling hiccup on a loaded Pi look like a dead radio.
@@ -60,6 +67,41 @@ sensors:
 fusion:
   track_ttl: 5m
   max_history: 512
+
+  # --- Optional external data. All off; see docs/ops/07-external-data.md.
+  #
+  # Each of these enriches detections that already work without it, so every
+  # one degrades rather than failing: a dropped uplink or a missing file costs
+  # the enrichment and nothing else. None of them ever sends a detection out.
+
+  # Manned traffic from a community ADS-B aggregator, for Class D correlation
+  # on a unit with no SDR fitted. Needs map.receiver_position set -- it is the
+  # centre of the query, and an unset 0,0 is refused rather than treated as the
+  # Gulf of Guinea. Declare net_adsb_sensor_id in sensors.expected above if you
+  # want /health to notice a feed that never starts.
+  net_adsb: false
+  net_adsb_url: https://api.adsb.lol
+  net_adsb_radius_nm: 25
+  net_adsb_interval: 10s
+  net_adsb_sensor_id: net-adsb-0
+
+  # Ground elevation, so height_agl_m stops being mostly null. Worth enabling
+  # even with no uplink: point terrain_url at a local OpenTopoData with SRTM
+  # tiles and set terrain_min_interval to 0.
+  terrain: false
+  terrain_url: https://api.opentopodata.org
+  terrain_dataset: srtm30m
+  terrain_min_interval: 1s
+  # Local geoid undulation in metres, and NOT optional in practice. Elevation
+  # datasets report orthometric height; Remote ID reports height above the
+  # WGS-84 ellipsoid. Leaving this 0 does not skip a correction, it applies a
+  # wrong one -- roughly -22 m around Seattle, up to 100 m elsewhere, and in
+  # the direction that makes flights look lower than they are.
+  terrain_geoid_offset_m: 0
+
+  # OpenSky aircraft database CSV, read once at startup, so an ADS-B contact
+  # reads "N512UP, a Cessna 208" instead of "A1B2C3". `make data-aircraft`.
+  aircraft_db: ""
 
 # --- Retention -------------------------------------------------------------
 # Uniform across all data. Operator location is retained like any other field
@@ -81,6 +123,21 @@ capture:
   label: sensor-capture
   dir: captures
   allow_unprivileged: false
+
+# --- Map -------------------------------------------------------------------
+map:
+  # "lat,lon" in decimal degrees. Centres the map before any track exists to
+  # derive a position from -- the only other sources are the operator's own
+  # ODID position (only present once a drone is flying) and the browser's
+  # geolocation (needs a permission prompt and a secure origin, neither
+  # guaranteed on a Pi reached over plain http on a LAN address). Empty means
+  # unconfigured.
+  #
+  # Also read by fusion, as CLASSG_RECEIVER_POSITION, to centre the network
+  # ADS-B query. One key rather than two: a detector cannot be in two places,
+  # and a map centred somewhere the traffic query is not would be worse than
+  # either alone.
+  receiver_position: ""
 
 # --- API -------------------------------------------------------------------
 api:

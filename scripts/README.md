@@ -12,6 +12,16 @@ most commands that change an adapter's mode require `sudo`.
 | `diagnose-adapter.sh` | Reload and inspect the MT7921U adapter probe sequence |
 | `wsl-build-kernel.sh` | Build a WSL2 kernel with MT7921U support |
 
+Three more fetch optional offline reference data. Everything they download is
+third-party, gitignored, and used only to enrich detections that already work
+without it — see [docs/ops/07-external-data.md](../docs/ops/07-external-data.md).
+
+| Script | Fetches |
+|---|---|
+| `fetch-oui-registry.sh [out]` | IEEE MA-L registry, for Wi-Fi vendor fingerprinting (`make data-oui`) |
+| `fetch-aircraft-db.sh [out]` | OpenSky aircraft database, to name ADS-B contacts (`make data-aircraft`) |
+| `fetch-basemap.sh <bbox> [z]` | A Protomaps `.pmtiles` basemap for the operator UI |
+
 Start with:
 
 ```bash

@@ -46,7 +46,7 @@
         "additionalProperties": false,
         "properties": {
           "class": { "enum": ["A", "B", "C", "D", "E", "F", "G", "H"] },
-          "sensor_kind": { "enum": ["wifi", "sdr", "ble"] },
+          "sensor_kind": { "enum": ["wifi", "sdr", "ble", "net"] },
           "weight": { "type": "number" },
           "count": { "type": "integer" },
           "last_seen": { "type": "string", "format": "date-time" }
@@ -76,6 +76,10 @@
         "lon": { "type": "number", "minimum": -180, "maximum": 180 },
         "alt_geodetic_m": { "type": ["number", "null"] },
         "height_agl_m": { "type": ["number", "null"] },
+        "terrain_elevation_m": {
+          "type": ["number", "null"],
+          "description": "Ground elevation under this fix, from a terrain model rather than from any sensor. Present ONLY when fusion derived height_agl_m by subtracting it -- its absence alongside a height_agl_m means the aircraft reported that height itself. Consumers that care about provenance must check this rather than trusting height_agl_m to have come from the aircraft."
+        },
         "speed_mps": { "type": ["number", "null"] },
         "track_deg": { "type": ["number", "null"] },
         "at": { "type": "string", "format": "date-time" }

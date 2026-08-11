@@ -170,6 +170,65 @@ func TestSensorDecls(t *testing.T) {
 	}
 }
 
+func TestParseReceiverPosition(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		want    *ReceiverPosition
+		wantErr bool
+	}{
+		{name: "empty means unconfigured", raw: "", want: nil},
+		{name: "whitespace means unconfigured", raw: "  ", want: nil},
+		{name: "valid", raw: "51.4775,-0.0014", want: &ReceiverPosition{Lat: 51.4775, Lon: -0.0014}},
+		{name: "spaces around fields", raw: " 51.4775 , -0.0014 ", want: &ReceiverPosition{Lat: 51.4775, Lon: -0.0014}},
+		{name: "missing longitude", raw: "51.4775", wantErr: true},
+		{name: "too many fields", raw: "51.4775,-0.0014,10", wantErr: true},
+		{name: "non-numeric latitude", raw: "north,-0.0014", wantErr: true},
+		{name: "latitude out of range", raw: "91,0", wantErr: true},
+		{name: "longitude out of range", raw: "0,181", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseReceiverPosition(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatal("expected an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if (got == nil) != (tc.want == nil) || (got != nil && *got != *tc.want) {
+				t.Fatalf("got %+v, want %+v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestReceiverPositionSetting(t *testing.T) {
+	s, err := Resolve(map[string]string{"map.receiver_position": "51.4775,-0.0014"}, nil, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := s.ReceiverPosition("map.receiver_position")
+	if got == nil || got.Lat != 51.4775 || got.Lon != -0.0014 {
+		t.Fatalf("bad parse: %+v", got)
+	}
+
+	unset, err := Resolve(nil, nil, noEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := unset.ReceiverPosition("map.receiver_position"); got != nil {
+		t.Fatalf("expected unconfigured, got %+v", got)
+	}
+
+	if _, err := Resolve(map[string]string{"map.receiver_position": "91,0"}, nil, noEnv); err == nil {
+		t.Fatal("expected an error for out-of-range latitude")
+	}
+}
+
 // --- seed -------------------------------------------------------------------
 
 func writeSeed(t *testing.T, body string) string {
@@ -223,6 +282,84 @@ func TestUnparseableSeedIsAnError(t *testing.T) {
 	// ignoring it is the invisible-source failure ADR-0007 exists to prevent.
 	if _, err := LoadSeed(writeSeed(t, "retention:\n  tracks: [unclosed\n")); err == nil {
 		t.Fatal("expected a parse error")
+	}
+}
+
+// A seed key that matches no Def is silently inert: the file says the feature
+// is configured, nothing reads it, and the only symptom is the feature not
+// happening. Cheap to guard, and the guard is what keeps "add a setting" from
+// meaning "add it in one of the two places".
+func TestShippedSeedKeysAreAllRegistered(t *testing.T) {
+	path := filepath.Join("..", "..", "..", "..", "config", "defaults.yaml")
+	if _, err := os.Stat(path); err != nil {
+		t.Skip("shipped seed not found from this directory")
+	}
+	seed, err := LoadSeed(path)
+	if err != nil {
+		t.Fatalf("shipped seed does not load: %v", err)
+	}
+
+	known := map[string]bool{}
+	for _, d := range Defs {
+		known[d.Key] = true
+	}
+	for key := range seed {
+		if !known[key] {
+			t.Errorf("config/defaults.yaml sets %q, which is in no Def -- it does nothing", key)
+		}
+	}
+}
+
+// Every one of these is documented as off by default, in three places. A
+// default that drifted to on would turn a passive detector into one that
+// reaches out to a third party on first boot without anyone choosing that.
+func TestExternalDataIntegrationsDefaultToOff(t *testing.T) {
+	s, err := Resolve(nil, nil, noEnv)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	for _, key := range []string{"fusion.net_adsb", "fusion.terrain"} {
+		if s.Bool(key) {
+			t.Errorf("%s defaults to on; it must be a decision, not a default", key)
+		}
+	}
+	if path := s.String("fusion.aircraft_db"); path != "" {
+		t.Errorf("fusion.aircraft_db defaults to %q, want empty", path)
+	}
+	if pos := s.ReceiverPosition("map.receiver_position"); pos != nil {
+		t.Errorf("map.receiver_position defaults to %v; unset must stay unset", pos)
+	}
+}
+
+func TestFloatSetting(t *testing.T) {
+	d := Def{Key: "fusion.terrain_geoid_offset_m", Kind: KindFloat}
+	// Negative is the normal case: most of the world sits below the ellipsoid.
+	for _, raw := range []string{"0", "-22", "-22.5", "100.25"} {
+		if _, err := parse(d, raw); err != nil {
+			t.Errorf("parse(%q): %v", raw, err)
+		}
+	}
+	for _, raw := range []string{"", "twenty", "NaN", "Inf"} {
+		if _, err := parse(d, raw); err == nil {
+			t.Errorf("parse(%q) should have failed", raw)
+		}
+	}
+}
+
+// Zero is a spin risk for an interval and a legitimate value for a rate limit,
+// so it is opt-in per definition rather than globally allowed or refused.
+func TestZeroDurationOnlyWhereAllowed(t *testing.T) {
+	limit := Def{Key: "fusion.terrain_min_interval", Kind: KindDuration, AllowZero: true}
+	if _, err := parse(limit, "0s"); err != nil {
+		t.Errorf("a rate limit must accept 0 (self-hosted): %v", err)
+	}
+	if _, err := parse(limit, "-1s"); err == nil {
+		t.Error("negative durations are still nonsense")
+	}
+
+	interval := Def{Key: "retention.interval", Kind: KindDuration}
+	if _, err := parse(interval, "0s"); err == nil {
+		t.Error("a zero interval must still be refused")
 	}
 }
 

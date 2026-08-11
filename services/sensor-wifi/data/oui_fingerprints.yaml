@@ -15,6 +15,18 @@
 # fnmatch-style and matched case-insensitively.
 #
 # Verify additions against https://standards-oui.ieee.org/ before adding them.
+#
+# `oui_owner_patterns` does that verification for you. Each pattern is matched
+# (fnmatch, case-insensitive) against IEEE registrant names in the downloaded
+# oui.csv, and every block assigned to a matching organisation is added. That
+# catches the blocks nobody has transcribed into `ouis` below, and it cannot be
+# wrong about who owns one. It needs data/ieee-oui.csv -- run
+# scripts/fetch-oui-registry.sh -- and is skipped entirely when that file is
+# absent, so the hand-listed `ouis` remain the offline baseline.
+#
+# Keep patterns as specific as the vendor name allows. "*autel*" also matches
+# Autel Intelligent Technology, who make car diagnostic tools; every block of
+# theirs would become a Class C false positive on a garage forecourt.
 
 # NOTE: for aircraft that broadcast ASTM F3411 Remote ID, vendor identification
 # now comes from the CTA-2063-A manufacturer code embedded in the serial number
@@ -35,6 +47,10 @@ vendors:
       # on a single observation. Verify at https://standards-oui.ieee.org/
       # before relying on it - a wrong OUI produces false positives.
       - "8c:1e:d9"
+    # IEEE lists DJI as "SZ DJI TECHNOLOGY CO.,LTD". No other registrant has
+    # "dji" in its name, so the loose pattern is safe here.
+    oui_owner_patterns:
+      - "*dji*"
     ssid_patterns:
       # Observed on a DJI Mini 5 Pro 2026-08-10: the SSID is literally
       # "RID-<CTA-2063-A serial>", e.g. RID-1581Fxxxxxxxxxxxxxxx (serial
@@ -55,6 +71,8 @@ vendors:
       - "90:03:b7"
       - "00:12:1c"
       - "a0:14:3d"
+    oui_owner_patterns:
+      - "parrot*"
     ssid_patterns:
       - "bebop-*"
       - "anafi-*"
@@ -63,17 +81,26 @@ vendors:
 
   - vendor: autel
     ouis: []
+    # Deliberately NOT "*autel*" -- see the note at the top of this file. Autel
+    # Robotics makes the drones; Autel Intelligent Technology makes OBD-II
+    # scan tools, and matching both would put a Class C hit on every car.
+    oui_owner_patterns:
+      - "autel robotics*"
     ssid_patterns:
       - "autel-*"
       - "evo-*"
 
   - vendor: skydio
     ouis: []
+    oui_owner_patterns:
+      - "skydio*"
     ssid_patterns:
       - "skydio-*"
 
   - vendor: yuneec
     ouis: []
+    oui_owner_patterns:
+      - "yuneec*"
     ssid_patterns:
       - "typhoon-*"
       - "yuneec-*"

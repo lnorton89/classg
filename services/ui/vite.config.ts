@@ -64,7 +64,15 @@ export default defineConfig(({ mode }) => {
         // our tiles are addressed {z}/{x}/{y} and the ArcGIS endpoint expects
         // {z}/{y}/{x}. Dev and production must request the identical URL or the
         // cache built for one is useless to the other.
-        '/tiles/basemap': {
+        //
+        // A REGEX, matching nginx's `location ~ ^/tiles/basemap/…\.jpg$`
+        // exactly, because a Vite proxy key is a PREFIX. As a prefix this
+        // swallowed everything under /tiles/basemap*, including
+        // /tiles/basemap.pmtiles — the vector archive was forwarded to ArcGIS
+        // and came back as their 404, so the map silently fell through to the
+        // raster path in dev while working in production. Dev and prod
+        // disagreeing about which requests are proxied is the whole failure.
+        '^/tiles/basemap/\\d+/\\d+/\\d+\\.jpg$': {
           target: env['VITE_SATELLITE_TILE_ORIGIN'] ?? 'https://services.arcgisonline.com',
           changeOrigin: true,
           rewrite: (path: string) => {

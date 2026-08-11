@@ -1,4 +1,4 @@
-.PHONY: help env migrate-env migrate-env-dry setup sense sqlc sqlc-check dev dev-logs dev-down dev-restart dev-native dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
+.PHONY: help env data data-oui data-aircraft migrate-env migrate-env-dry setup sense sqlc sqlc-check dev dev-logs dev-down dev-restart dev-native dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
 
 DOCKER := bash ./scripts/docker.sh
 
@@ -18,10 +18,27 @@ help:
 	@echo "  make capture    record a beacon PCAP (Milestone 0 ground truth)"
 	@echo "  make compose-up build and start fusion, API, and UI via Windows Docker"
 	@echo ""
+	@echo "  make data       fetch the optional offline reference datasets"
+	@echo "  make data-oui   IEEE OUI registry, for Wi-Fi vendor fingerprinting"
+	@echo "  make data-aircraft  OpenSky aircraft database, to name ADS-B contacts"
+	@echo ""
 	@echo "Start here: docs/research/02-hardware-capabilities.md"
 
 env:
 	@test -f .env || cp .env.example .env
+
+# Optional offline reference data. Everything here is somebody else's, so it is
+# fetched rather than committed, and every feature that uses it degrades
+# cleanly when it is absent. The basemap is deliberately not in `data`: it needs
+# a bounding box, so it cannot have a sensible default.
+# See docs/ops/07-external-data.md.
+data: data-oui data-aircraft
+
+data-oui:
+	./scripts/fetch-oui-registry.sh
+
+data-aircraft:
+	./scripts/fetch-aircraft-db.sh
 
 # Migrate an existing .env to the ADR-0007 tier split. Backs up first, reports
 # what moved, and leaves customised-but-immutable values in place.

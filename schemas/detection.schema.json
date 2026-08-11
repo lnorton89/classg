@@ -14,8 +14,11 @@
       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
     },
     "ts": { "type": "string", "format": "date-time", "description": "RFC3339 UTC, millisecond precision" },
-    "sensor_id": { "type": "string", "minLength": 1, "examples": ["wifi-0", "sdr-0", "ble-0"] },
-    "sensor_kind": { "enum": ["wifi", "sdr", "ble"] },
+    "sensor_id": { "type": "string", "minLength": 1, "examples": ["wifi-0", "sdr-0", "ble-0", "net-adsb-0"] },
+    "sensor_kind": {
+      "enum": ["wifi", "sdr", "ble", "net"],
+      "description": "The physical thing that made the observation. 'net' is a network feed rather than a radio: someone else's receiver, relayed to us. It is deliberately its own kind and not 'sdr' -- a network feed has different failure modes (an uplink, not an antenna), different latency, and cannot be trusted to have seen anything at this location."
+    },
     "detection_class": {
       "enum": ["A", "B", "C", "D", "E", "F", "G", "H"],
       "description": "A=F3411 WiFi RID, B=DJI DroneID, C=OUI/SSID fingerprint, D=ADS-B, E=control link, F=analog FPV, G=BLE RID, H=GNSS interference"

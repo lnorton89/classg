@@ -14,6 +14,14 @@ var errRestartUnavailable = errors.New("cannot restart sensor units")
 // unitFor maps a sensor kind to its systemd unit, named as in ADR-0003.
 func unitFor(kind string) string { return "classg-sensor-" + kind + ".service" }
 
+// hasOwnUnit reports whether a sensor kind is a separate process under ADR-0003.
+//
+// `net` sources are not. A network feed is a goroutine inside fusion, so
+// classg-sensor-net.service does not exist and never will -- offering a restart
+// button for it would fail at the systemd layer with an error that says nothing
+// about the actual problem, which is almost always the uplink. Restart fusion.
+func hasOwnUnit(kind string) bool { return kind != "net" }
+
 func restartCommandString(argv []string, unit string) string {
 	out := make([]string, len(argv))
 	for i, a := range argv {
@@ -36,7 +44,7 @@ func restartAvailability(argv []string) (bool, string) {
 //
 // The command template comes from configuration rather than the request, and
 // the only substitution is a unit name derived from a sensor kind that is
-// already constrained to wifi|sdr|ble. There is no shell, so the template
+// already constrained to the schema enum. There is no shell, so the template
 // cannot be turned into a second command by anything a client sends.
 type SystemdSensors struct {
 	Argv []string

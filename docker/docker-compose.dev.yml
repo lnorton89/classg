@@ -95,10 +95,21 @@ services:
     working_dir: /src/services/ui
     # node_modules lives in a volume, never on the bind mount: the host's copy
     # is installed for Windows and its native binaries will not run here.
+    #
+    # The volume outlives the container, so "install once, on first run" was
+    # wrong in the way that costs an hour: adding a dependency on the host
+    # updated package.json and the lockfile, the container kept its months-old
+    # node_modules, and Vite failed with "Failed to resolve import" for a
+    # package that was plainly right there in package.json. Checking the
+    # lockfile against a stamp inside the volume is what makes a stale volume
+    # visible instead of silent -- `md5sum -c` fails when the lockfile moved,
+    # and also when the stamp is missing entirely.
     command: >
-      sh -c "if [ ! -x node_modules/.bin/vite ]; then
-               echo '--- installing UI dependencies (first run only) ---';
+      sh -c "if [ ! -x node_modules/.bin/vite ] ||
+               ! md5sum -c node_modules/.classg-deps >/dev/null 2>&1; then
+               echo '--- installing UI dependencies (lockfile changed) ---';
                npm ci --no-audit --no-fund;
+               md5sum package-lock.json > node_modules/.classg-deps;
              fi;
              exec npm run dev -- --host 0.0.0.0 --port 5173"
     environment:
@@ -106,6 +117,10 @@ services:
       # with no backend at all.
       VITE_USE_MSW: ${VITE_USE_MSW:-false}
       VITE_API_TARGET: http://api:8081
+      # Vector basemap: a /tiles/*.pmtiles archive or any MapLibre style URL.
+      # Empty means "probe the satellite raster proxy instead", which is the
+      # default. See docs/ops/07-external-data.md.
+      VITE_BASEMAP_VECTOR_URL: ${VITE_BASEMAP_VECTOR_URL:-}
       # Enables Vite's polling watcher -- see the note at the top of this file.
       CLASSG_WATCH_POLL: "true"
       # npm's upgrade nag and funding banner are the only noise in this

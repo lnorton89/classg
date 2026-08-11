@@ -56,6 +56,14 @@ dist/
 !.env.example
 !**/.env.example
 
+# Third-party reference data, fetched by scripts/fetch-*.sh. All of it is
+# somebody else's, all of it goes stale, and none of it is small. Committing a
+# copy would redistribute it and pin it to whatever month it was downloaded.
+# See docs/ops/07-external-data.md.
+/data/aircraft-database.csv
+/services/sensor-wifi/data/ieee-oui.csv
+/services/ui/public/tiles/
+
 # Temp Folder
 tmp/
 # air (hot reload) build output. tmp_dir in services/*/.air.toml -- these are

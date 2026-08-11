@@ -38,6 +38,11 @@ type ADSBContact struct {
 	// displays feet; converting to metres here and back at the edge would only
 	// add rounding error. Same reasoning as services/ui/src/lib/units.ts.
 	AltFt *int `json:"alt_ft,omitempty"`
+
+	// Aircraft is registry metadata, not an observation. Resolved once from the
+	// offline database when the contact is created -- the mapping from ICAO
+	// address to airframe does not change while an aircraft is overhead.
+	Aircraft *AircraftInfo `json:"aircraft,omitempty"`
 }
 
 // ContactStore owns ADS-B contact state.
@@ -50,6 +55,16 @@ type ContactStore struct {
 	mu          sync.RWMutex
 	byICAO      map[string]*ADSBContact
 	expireAfter time.Duration
+	aircraft    *AircraftDB
+}
+
+// UseAircraftDB attaches an offline registry so new contacts resolve to an
+// airframe. Passing nil disables it; contacts then carry only the hex address,
+// which is what they carried before.
+func (s *ContactStore) UseAircraftDB(db *AircraftDB) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.aircraft = db
 }
 
 func NewContactStore() *ContactStore {
@@ -84,6 +99,9 @@ func (s *ContactStore) Observe(d Detection) (contact *ADSBContact, isNew bool) {
 	c, ok := s.byICAO[icao]
 	if !ok {
 		c = &ADSBContact{ICAO: icao, FirstSeen: d.TS}
+		if info, found := s.aircraft.Lookup(icao); found {
+			c.Aircraft = &info
+		}
 		s.byICAO[icao] = c
 		isNew = true
 	}

@@ -8,7 +8,13 @@ import (
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 // NewTrackID returns a time-sortable 26-character ULID.
-func NewTrackID() string {
+func NewTrackID() string { return NewULID() }
+
+// NewULID returns a time-sortable 26-character ULID in Crockford base32.
+//
+// Detections and tracks share the generator because the schemas share the
+// format; only the field names differ.
+func NewULID() string {
 	var id [26]byte
 	ms := uint64(time.Now().UTC().UnixMilli())
 	for i := 9; i >= 0; i-- {

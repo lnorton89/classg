@@ -50,11 +50,14 @@ const (
 )
 
 type Position struct {
-	Lat          float64   `json:"lat"`
-	Lon          float64   `json:"lon"`
-	AltGeodeticM *float64  `json:"alt_geodetic_m,omitempty"`
-	HeightAGLM   *float64  `json:"height_agl_m,omitempty"`
-	At           time.Time `json:"at"`
+	Lat          float64  `json:"lat"`
+	Lon          float64  `json:"lon"`
+	AltGeodeticM *float64 `json:"alt_geodetic_m,omitempty"`
+	HeightAGLM   *float64 `json:"height_agl_m,omitempty"`
+	// Set only when fusion derived HeightAGLM from a terrain model. Its
+	// presence is the provenance marker for HeightAGLM -- see track.schema.json.
+	TerrainElevationM *float64  `json:"terrain_elevation_m,omitempty"`
+	At                time.Time `json:"at"`
 }
 
 type Evidence struct {
@@ -160,6 +163,26 @@ type TrackStore struct {
 	weights   map[string]float64
 	newID     func() string
 	lifecycle Lifecycle
+	terrain   TerrainResolver
+}
+
+// TerrainResolver is the part of *Terrain that track building needs.
+//
+// An interface so the store can be tested without a tile server, and so a unit
+// with a local elevation model can supply one instead.
+type TerrainResolver interface {
+	// HeightAGL must not block. Fusion's ingest loop is single-threaded and
+	// shared with every sensor on the bus; a resolver that waits on the network
+	// here stalls detection, not just enrichment.
+	HeightAGL(lat, lon, altGeodeticM float64) (agl, groundM float64, ok bool)
+}
+
+// UseTerrain enables deriving height_agl_m for fixes that report a geodetic
+// altitude but no height. Passing nil disables it again.
+func (s *TrackStore) UseTerrain(r TerrainResolver) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.terrain = r
 }
 
 func NewTrackStore(weights map[string]float64, newID func() string) *TrackStore {
@@ -268,12 +291,23 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 	t.addEvidence(d.DetectionClass, d.SensorKind, s.weights[d.DetectionClass], d.TS)
 
 	if d.Position != nil {
-		t.addPosition(Position{
+		p := Position{
 			Lat: d.Position.Lat, Lon: d.Position.Lon,
 			AltGeodeticM: d.Position.AltGeodeticM,
 			HeightAGLM:   d.Position.HeightAGLM,
 			At:           d.TS,
-		}, s.lifecycle.HistoryDepth)
+		}
+		// Only when the aircraft did not say. A height the aircraft reported is
+		// measured against its own take-off point or barometer and is the more
+		// authoritative of the two; overwriting it with a terrain subtraction
+		// would trade a real measurement for an inference.
+		if p.HeightAGLM == nil && p.AltGeodeticM != nil && s.terrain != nil {
+			if agl, ground, ok := s.terrain.HeightAGL(p.Lat, p.Lon, *p.AltGeodeticM); ok {
+				p.HeightAGLM = &agl
+				p.TerrainElevationM = &ground
+			}
+		}
+		t.addPosition(p, s.lifecycle.HistoryDepth)
 	}
 	if d.Operator != nil {
 		t.Operator = &Position{Lat: d.Operator.Lat, Lon: d.Operator.Lon, At: d.TS}

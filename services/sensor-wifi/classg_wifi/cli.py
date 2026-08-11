@@ -26,6 +26,7 @@ from .capture import CaptureError, run_capture
 from .fingerprint import FingerprintMatcher
 from .help_docs import render_cli_help, render_cli_topic, topic_ids
 from .hopper import ChannelHopper, load_channels
+from .oui import OUIRegistry
 from .pipeline import Pipeline
 
 log = logging.getLogger("classg.sensor-wifi")
@@ -75,7 +76,9 @@ def cmd_replay(args: argparse.Namespace) -> int:
         return 1
 
     matcher = (
-        FingerprintMatcher.from_yaml(args.fingerprints)
+        FingerprintMatcher.from_yaml(
+            args.fingerprints, OUIRegistry.load_if_present(args.oui_registry)
+        )
         if Path(args.fingerprints).exists()
         else FingerprintMatcher.empty()
     )
@@ -181,7 +184,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     channels = load_channels(yaml.safe_load(Path(args.channels).read_text()))
     hopper = ChannelHopper(channels, base_dwell_ms=args.dwell_ms)
-    matcher = FingerprintMatcher.from_yaml(args.fingerprints)
+    matcher = FingerprintMatcher.from_yaml(
+        args.fingerprints, OUIRegistry.load_if_present(args.oui_registry)
+    )
     pipeline = Pipeline(sensor_id=args.sensor_id, matcher=matcher)
     publisher = DetectionPublisher(
         endpoint=args.endpoint,
@@ -269,6 +274,11 @@ def main(argv: list[str] | None = None) -> int:
         default=os.getenv("CLASSG_WIFI_FINGERPRINTS_FILE", "data/oui_fingerprints.yaml"),
     )
     p_rep.add_argument(
+        "--oui-registry",
+        default=os.getenv("CLASSG_WIFI_OUI_REGISTRY", "data/ieee-oui.csv"),
+        help="IEEE oui.csv used to expand oui_owner_patterns; skipped when absent",
+    )
+    p_rep.add_argument(
         "--endpoint", default=os.getenv("CLASSG_DETECTION_ENDPOINT", DEFAULT_ENDPOINT)
     )
     p_rep.add_argument(
@@ -315,6 +325,11 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument(
         "--fingerprints",
         default=os.getenv("CLASSG_WIFI_FINGERPRINTS_FILE", "data/oui_fingerprints.yaml"),
+    )
+    p_run.add_argument(
+        "--oui-registry",
+        default=os.getenv("CLASSG_WIFI_OUI_REGISTRY", "data/ieee-oui.csv"),
+        help="IEEE oui.csv used to expand oui_owner_patterns; skipped when absent",
     )
     p_run.add_argument(
         "--endpoint", default=os.getenv("CLASSG_DETECTION_ENDPOINT", DEFAULT_ENDPOINT)

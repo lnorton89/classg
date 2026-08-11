@@ -37,7 +37,7 @@ export interface Track {
   confidence: number
   evidence?: {
     class: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H'
-    sensor_kind: 'wifi' | 'sdr' | 'ble'
+    sensor_kind: 'wifi' | 'sdr' | 'ble' | 'net'
     weight: number
     count: number
     last_seen?: string
@@ -56,6 +56,10 @@ export interface Position {
   lon: number
   alt_geodetic_m?: number | null
   height_agl_m?: number | null
+  /**
+   * Ground elevation under this fix, from a terrain model rather than from any sensor. Present ONLY when fusion derived height_agl_m by subtracting it -- its absence alongside a height_agl_m means the aircraft reported that height itself. Consumers that care about provenance must check this rather than trusting height_agl_m to have come from the aircraft.
+   */
+  terrain_elevation_m?: number | null
   speed_mps?: number | null
   track_deg?: number | null
   at?: string
@@ -75,7 +79,10 @@ export interface Detection {
    */
   ts: string
   sensor_id: string
-  sensor_kind: 'wifi' | 'sdr' | 'ble'
+  /**
+   * The physical thing that made the observation. 'net' is a network feed rather than a radio: someone else's receiver, relayed to us. It is deliberately its own kind and not 'sdr' -- a network feed has different failure modes (an uplink, not an antenna), different latency, and cannot be trusted to have seen anything at this location.
+   */
+  sensor_kind: 'wifi' | 'sdr' | 'ble' | 'net'
   /**
    * A=F3411 WiFi RID, B=DJI DroneID, C=OUI/SSID fingerprint, D=ADS-B, E=control link, F=analog FPV, G=BLE RID, H=GNSS interference
    */

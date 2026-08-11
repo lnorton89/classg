@@ -84,13 +84,34 @@ not a 404 — so an over-set ceiling blanks the map instead of blurring it. Thre
 agree when you switch:
 
 1. `services/ui/nginx.conf` — the `@satellite_tile` upstream and rewrite (production).
-2. `services/ui/vite.config.ts` — the `/tiles/basemap` proxy, or `VITE_SATELLITE_TILE_ORIGIN` (dev).
+2. `services/ui/vite.config.ts` — the `/tiles/basemap/{z}/{x}/{y}.jpg` proxy, or
+   `VITE_SATELLITE_TILE_ORIGIN` (dev).
 3. `services/ui/src/features/map/style.ts` — `BASEMAP_MAX_ZOOM`.
 
 `CLASSG_SATELLITE_TILE_URL` overrides the build-time preloader only; it does not change what
 nginx proxies at runtime. To confirm a candidate's real ceiling before committing to it,
 request tiles directly and watch for the status flip or a suspiciously small, identical
 response body at successive zooms.
+
+The dev proxy key is a **regex**, deliberately matching nginx's `location ~` exactly. It used
+to be the bare prefix `/tiles/basemap`, which also swallowed `/tiles/basemap.pmtiles` and
+forwarded the vector archive to ArcGIS — so the vector basemap 404'd in dev while working in
+production. Any new path sharing a leading segment with a proxy key goes upstream silently;
+scope the key rather than the handler.
+
+#### Or skip the imagery problem entirely
+
+The vector basemap has none of the above: no zoom ceiling to keep three files in agreement
+about, no upstream at runtime, and no redistribution question, because Protomaps builds are
+OpenStreetMap data rather than licensed imagery. It is one file in `public/tiles/`:
+
+```bash
+./scripts/fetch-basemap.sh -122.45 47.50 -122.20 47.72 14
+```
+
+It is not the default because it trades photographic detail for drawn shapes, which is the
+wrong trade for identifying a landing site and the right one for a unit with no uplink. See
+[docs/ops/07-external-data.md](../docs/ops/07-external-data.md).
 
 ## Windows + custom WSL kernel
 

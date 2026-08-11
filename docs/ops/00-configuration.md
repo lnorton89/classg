@@ -26,7 +26,8 @@ database because they are what makes it reachable.
 ## Tier 2 — the database: everything else
 
 Bus endpoints and topics, retention windows, expected sensors, capture defaults, operator
-location exposure, history depth. Read at startup, changed at runtime:
+location exposure, history depth, the receiver's own ground position. Read at startup, changed
+at runtime:
 
 ```bash
 curl localhost:8081/api/v1/config/settings
@@ -59,6 +60,29 @@ The original problem was never that values came from several places. It was that
 tell which place any given value came from — three files disagreed about the default store and
 the production checklist told operators to fix a default that was already correct in two of
 them.
+
+### External data sources
+
+The optional third-party integrations — network ADS-B, terrain elevation, the
+aircraft and OUI registries — are **Tier 2** like everything else that is not
+bootstrap or a secret. They seed from `config/defaults.yaml`, report a source
+through `GET /config/settings`, and are `PUT`-able at runtime. They are
+documented together with the data they need in
+[07-external-data.md](07-external-data.md) rather than split across this file,
+because turning one on means fetching a file as often as it means setting a
+value.
+
+Two caveats worth stating plainly:
+
+- **Fusion reads the environment, not the database.** A value stored through
+  `PUT` changes the API's view and not fusion's until the corresponding
+  `CLASSG_*` variable is set and fusion restarts. This is not new to these keys
+  — `fusion.track_ttl` and the bus endpoints have always worked this way — but
+  it does mean the settings page is a source of truth for what *should* be
+  configured, not proof of what fusion is running.
+- **`VITE_BASEMAP_VECTOR_URL` is not a setting at all.** Vite substitutes it at
+  build time, so it cannot be in the registry; it belongs with the other
+  `VITE_*` build variables.
 
 ## Bootstrap
 

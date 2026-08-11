@@ -5,6 +5,7 @@ go 1.26
 require (
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/joho/godotenv v1.5.1
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 )
 
 require (

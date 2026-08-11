@@ -14,6 +14,7 @@ package settings
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,8 +38,10 @@ const (
 	KindString     Kind = "string"
 	KindBool       Kind = "bool"
 	KindInt        Kind = "int"
+	KindFloat      Kind = "float"
 	KindDuration   Kind = "duration"
 	KindSensorList Kind = "sensor_list"
+	KindLatLon     Kind = "lat_lon"
 )
 
 // Def describes one setting.
@@ -56,7 +59,12 @@ type Def struct {
 	// ones are read at startup by something that cannot be re-pointed while
 	// running (a bound socket, a subscribed bus connection).
 	Mutable bool
-	Doc     string
+	// AllowZero permits a zero duration. Off by default because a zero
+	// interval is almost always a mistake that turns a timer into a spin, but
+	// a rate limit is the exception: zero legitimately means "do not throttle",
+	// which is what a self-hosted terrain service wants.
+	AllowZero bool
+	Doc       string
 }
 
 // Defs is the complete Tier 2 registry. Anything not here is either Tier 1
@@ -83,12 +91,59 @@ var Defs = []Def{
 		Default: "30s", Mutable: true, Doc: "heartbeat age after which a sensor is unhealthy"},
 	{Key: "sensors.restart_command", Env: "CLASSG_SENSOR_RESTART_COMMAND", Kind: KindString,
 		Default: "systemctl restart %s", Mutable: true, Doc: "argv template; %s is the unit name"},
+	{Key: "sensors.oui_registry", Env: "CLASSG_WIFI_OUI_REGISTRY", Kind: KindString,
+		Default: "data/ieee-oui.csv", Mutable: true,
+		Doc: "IEEE oui.csv used to expand vendor OUI patterns for Class C; skipped when the file is absent"},
 
 	// --- Fusion
 	{Key: "fusion.track_ttl", Env: "CLASSG_FUSION_TRACK_TTL", Kind: KindDuration,
 		Default: "5m", Mutable: true, Doc: "age after which a track with no update is closed"},
 	{Key: "fusion.max_history", Env: "CLASSG_MAX_HISTORY", Kind: KindInt,
 		Default: "512", Mutable: true, Doc: "position history points retained per track"},
+
+	// --- Fusion: optional external data (docs/ops/07-external-data.md).
+	//
+	// Registered here so they are seeded, reported with a source, and editable
+	// like every other Tier 2 value. One caveat that applies to every fusion
+	// setting, not just these: fusion reads the environment, not the database,
+	// so a value stored through PUT reaches the API's view of the world and not
+	// fusion's until the env is set and fusion restarts. That seam predates
+	// these keys -- fusion.track_ttl has it too -- and is why the defaults here
+	// deliberately match the built-in defaults in the fusion package.
+	{Key: "fusion.net_adsb", Env: "CLASSG_FUSION_NET_ADSB", Kind: KindBool,
+		Default: "false", Mutable: true,
+		Doc: "poll a network ADS-B aggregator for manned traffic; off means Class D comes from the SDR alone"},
+	{Key: "fusion.net_adsb_url", Env: "CLASSG_FUSION_NET_ADSB_URL", Kind: KindString,
+		Default: "https://api.adsb.lol", Mutable: true,
+		Doc: "base URL of a /v2/point aggregator (adsb.lol, adsb.fi, airplanes.live)"},
+	{Key: "fusion.net_adsb_radius_nm", Env: "CLASSG_FUSION_NET_ADSB_RADIUS_NM", Kind: KindInt,
+		Default: "25", Mutable: true,
+		Doc: "query radius in nautical miles, 250 maximum; larger means more aircraft stored and drawn"},
+	{Key: "fusion.net_adsb_interval", Env: "CLASSG_FUSION_NET_ADSB_INTERVAL", Kind: KindDuration,
+		Default: "10s", Mutable: true,
+		Doc: "how often to poll; faster than the 60s contact window buys nothing but load"},
+	{Key: "fusion.net_adsb_sensor_id", Env: "CLASSG_FUSION_NET_ADSB_SENSOR_ID", Kind: KindString,
+		Default: "net-adsb-0", Mutable: true,
+		Doc: "sensor id the feed heartbeats under; declare it in sensors.expected to see it on /health before its first poll"},
+	{Key: "fusion.terrain", Env: "CLASSG_FUSION_TERRAIN", Kind: KindBool,
+		Default: "false", Mutable: true,
+		Doc: "derive height_agl_m by subtracting terrain elevation from geodetic altitude"},
+	{Key: "fusion.terrain_url", Env: "CLASSG_FUSION_TERRAIN_URL", Kind: KindString,
+		Default: "https://api.opentopodata.org", Mutable: true,
+		Doc: "OpenTopoData base URL; point at a local instance to work with no uplink"},
+	{Key: "fusion.terrain_dataset", Env: "CLASSG_FUSION_TERRAIN_DATASET", Kind: KindString,
+		Default: "srtm30m", Mutable: true, Doc: "elevation dataset the instance serves"},
+	{Key: "fusion.terrain_min_interval", Env: "CLASSG_FUSION_TERRAIN_MIN_INTERVAL", Kind: KindDuration,
+		Default: "1s", Mutable: true, AllowZero: true,
+		Doc: "rate limit on elevation lookups; 0 disables it, which is what a self-hosted instance wants"},
+	{Key: "fusion.terrain_geoid_offset_m", Env: "CLASSG_FUSION_TERRAIN_GEOID_OFFSET_M", Kind: KindFloat,
+		Default: "0", Mutable: true,
+		Doc: "local geoid undulation in metres. NOT optional in practice: elevation datasets are " +
+			"orthometric and Remote ID altitude is above the WGS-84 ellipsoid, so leaving this 0 " +
+			"does not skip a correction, it applies a wrong one -- about -22 m around Seattle"},
+	{Key: "fusion.aircraft_db", Env: "CLASSG_FUSION_AIRCRAFT_DB", Kind: KindString,
+		Default: "", Mutable: true,
+		Doc: "path to an OpenSky aircraft database CSV; names ADS-B contacts. Empty means hex addresses only"},
 
 	// --- Retention
 	{Key: "retention.detections", Env: "CLASSG_RETENTION_DETECTIONS", Kind: KindDuration,
@@ -115,6 +170,13 @@ var Defs = []Def{
 		Default: "../sensor-wifi", Doc: "path to the sensor-wifi checkout used for analysis"},
 	{Key: "capture.python_bin", Env: "CLASSG_PYTHON", Kind: KindString,
 		Default: "python3", Doc: "python interpreter used to run the analyzer"},
+
+	// --- Map
+	{Key: "map.receiver_position", Env: "CLASSG_RECEIVER_POSITION", Kind: KindLatLon,
+		Default: "", Mutable: true,
+		Doc: "lat,lon of the receiver in decimal degrees; centres the map before any track " +
+			"exists to derive a position from. Empty means unconfigured -- the UI falls back to " +
+			"the browser's own location where it can ask for it, or a world view"},
 
 	// --- API
 	{Key: "api.expose_operator_location", Env: "CLASSG_EXPOSE_OPERATOR_LOCATION", Kind: KindBool,
@@ -222,6 +284,19 @@ func (s *Settings) SensorDecls(key string) []SensorDecl {
 	return decls
 }
 
+// ReceiverPosition is a fixed ground position for the receiver -- what the map
+// centres on before any track exists to derive a position from.
+type ReceiverPosition struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
+}
+
+// ReceiverPosition returns the parsed position, or nil if unconfigured.
+func (s *Settings) ReceiverPosition(key string) *ReceiverPosition {
+	pos, _ := ParseReceiverPosition(s.get(key).Raw)
+	return pos
+}
+
 // Source reports where a key's effective value came from.
 func (s *Settings) Source(key string) Source { return s.get(key).Source }
 
@@ -317,12 +392,21 @@ func parse(d Def, raw string) (any, error) {
 			return nil, fmt.Errorf("%q is not an integer", raw)
 		}
 		return v, nil
+	case KindFloat:
+		v, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a number", raw)
+		}
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return nil, fmt.Errorf("%q is not a finite number", raw)
+		}
+		return v, nil
 	case KindDuration:
 		v, err := time.ParseDuration(raw)
 		if err != nil {
 			return nil, fmt.Errorf("%q is not a duration (e.g. 30s, 24h)", raw)
 		}
-		if v <= 0 {
+		if v < 0 || (v == 0 && !d.AllowZero) {
 			return nil, fmt.Errorf("must be positive, got %s", v)
 		}
 		return v.String(), nil
@@ -332,6 +416,8 @@ func parse(d Def, raw string) (any, error) {
 			return nil, fmt.Errorf("%s", strings.Join(errs, "; "))
 		}
 		return decls, nil
+	case KindLatLon:
+		return ParseReceiverPosition(raw)
 	default:
 		return nil, fmt.Errorf("unhandled kind %q", d.Kind)
 	}
@@ -393,6 +479,35 @@ func ParseSensorDecls(raw string) ([]SensorDecl, []string) {
 		out = append(out, SensorDecl{SensorID: id, SensorKind: kind, Optional: optional})
 	}
 	return out, errs
+}
+
+// ParseReceiverPosition reads "lat,lon" in decimal degrees. An empty string is
+// valid and means unconfigured -- there is no separate sentinel for "off" on
+// top of blank, the same choice KindSensorList makes.
+func ParseReceiverPosition(raw string) (*ReceiverPosition, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("%q is not lat,lon", raw)
+	}
+	lat, err := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	if err != nil {
+		return nil, fmt.Errorf("%q: latitude is not a number", raw)
+	}
+	lon, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err != nil {
+		return nil, fmt.Errorf("%q: longitude is not a number", raw)
+	}
+	if lat < -90 || lat > 90 {
+		return nil, fmt.Errorf("latitude %v out of range (-90 to 90)", lat)
+	}
+	if lon < -180 || lon > 180 {
+		return nil, fmt.Errorf("longitude %v out of range (-180 to 180)", lon)
+	}
+	return &ReceiverPosition{Lat: lat, Lon: lon}, nil
 }
 
 // ValidationError renders as an operator-readable list.

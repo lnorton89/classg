@@ -54,18 +54,21 @@ func (s *Server) handleListSensors(w http.ResponseWriter, r *http.Request) {
 			capture.DurationS = s.cfg.CaptureDurationS
 			capture.Label = s.cfg.CaptureLabel
 		}
-		out = append(out, sensorEntry{
-			Sensor: sensor,
-			Config: sensorConfig{
-				Unit:                     unitFor(sensor.SensorKind),
-				StaleAfterS:              int(s.cfg.SensorStaleAfter.Seconds()),
-				Expected:                 expected[sensor.SensorID],
-				RestartCommand:           restartCommandString(s.cfg.SensorRestartCommand, unitFor(sensor.SensorKind)),
-				RestartAvailable:         restartAvailable,
-				RestartUnavailableReason: restartReason,
-				Capture:                  capture,
-			},
-		})
+		cfg := sensorConfig{
+			StaleAfterS:              int(s.cfg.SensorStaleAfter.Seconds()),
+			Expected:                 expected[sensor.SensorID],
+			RestartAvailable:         restartAvailable,
+			RestartUnavailableReason: restartReason,
+			Capture:                  capture,
+		}
+		if hasOwnUnit(sensor.SensorKind) {
+			cfg.Unit = unitFor(sensor.SensorKind)
+			cfg.RestartCommand = restartCommandString(s.cfg.SensorRestartCommand, cfg.Unit)
+		} else {
+			cfg.RestartAvailable = false
+			cfg.RestartUnavailableReason = sensor.SensorKind + " sources run inside fusion and have no unit of their own"
+		}
+		out = append(out, sensorEntry{Sensor: sensor, Config: cfg})
 	}
 	writeJSON(w, http.StatusOK, sensorsResponse{Sensors: out})
 }
@@ -89,6 +92,10 @@ func (s *Server) handleRestartSensor(w http.ResponseWriter, r *http.Request) {
 	}
 	if kind == "" {
 		fail(w, apierr.NotFound("no sensor with id "+id))
+		return
+	}
+	if !hasOwnUnit(kind) {
+		fail(w, apierr.SensorUnavailable(kind+" sources run inside fusion; restart fusion, not "+id))
 		return
 	}
 

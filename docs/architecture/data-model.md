@@ -6,13 +6,19 @@ Two core types. `schemas/*.schema.json` is normative — this document explains 
 
 What a sensor observed, once. Immutable. Never contains inference about identity or threat.
 
+`sensor_kind: "net"` is the one source that is not a radio on this unit: a
+network feed relaying somebody else's receivers, currently only the optional
+ADS-B one in [docs/ops/07-external-data.md](../ops/07-external-data.md). It is
+kept distinct from `sdr` because it has different failure modes and, more
+importantly, proves nothing about what this unit can hear.
+
 ```jsonc
 {
   "schema_version": "1.0",
   "detection_id": "01J8XQ...",        // ULID — sortable by time
   "ts": "2026-08-10T14:23:11.482Z",   // RFC3339, UTC, millisecond precision
   "sensor_id": "wifi-0",
-  "sensor_kind": "wifi",              // wifi | sdr | ble
+  "sensor_kind": "wifi",              // wifi | sdr | ble | net
   "detection_class": "A",             // see README class table
 
   "rf": {
@@ -107,6 +113,10 @@ Fusion's stateful correlation of detections over time. Mutable.
 
   "current": { /* latest position + kinematics */ },
   "history": [ /* ring buffer, configurable depth */ ],
+  // Track positions may also carry terrain_elevation_m. Its presence is the
+  // provenance marker for height_agl_m: fusion derived that height from a
+  // terrain model rather than the aircraft reporting it. Absent means the
+  // aircraft said so itself, which is always preferred and never overwritten.
 
   "rssi_dbm": -68,
   "adsb_correlated": false
