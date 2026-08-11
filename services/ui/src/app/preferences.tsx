@@ -26,10 +26,23 @@ function readStored(): Preferences {
     if (!raw) return DEFAULT_PREFERENCES
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null) return DEFAULT_PREFERENCES
-    return { ...DEFAULT_PREFERENCES, ...(parsed as Partial<Preferences>) }
+    const merged = { ...DEFAULT_PREFERENCES, ...(parsed as Partial<Preferences>) }
+    // The spread repairs a *missing* key but not a corrupt one. `Preferences`
+    // declares `notifyCategories` as always present, and every consumer indexes
+    // it without a guard on the strength of that — so a stored value that is
+    // not an object (hand-edited storage, a shape change across versions) has
+    // to be replaced here rather than allowed to reach a component and throw.
+    if (!isPlainObject(merged.notifyCategories)) {
+      merged.notifyCategories = DEFAULT_PREFERENCES.notifyCategories
+    }
+    return merged
   } catch {
     return DEFAULT_PREFERENCES
   }
+}
+
+function isPlainObject(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export function PreferencesProvider({ children }: { children: ReactNode }) {
