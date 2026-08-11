@@ -103,6 +103,29 @@ Channel 6 was confirmed with 176 drone beacons.
 
 ---
 
+## Confirmed by live detection — 2026-08-10 20:07
+
+First end-to-end live flight, sensor running on the AWUS036AXML in monitor mode:
+
+| | |
+|---|---|
+| Frames captured | 473 beacons in ~65 s |
+| **Detections** | **222** |
+| Dwells | 59 |
+| Escalation | fired at +10 s, locking dwell to channel 6 |
+| Track | serial `1581F9DEC259E0296040`, 222 history points, confidence 0.6 |
+| Flight window | 03:07:51 → 03:08:38 UTC (47 s) |
+| Reported altitude | 15 m geodetic |
+
+**The channel-hop escalation works as designed.** One full sweep of 19 channels
+(~10 s) found the aircraft on channel 6, after which dwell locked there — which is why
+222 of 473 captured beacons were the drone rather than a proportional share.
+
+Notable: the live track carried **no operator position**, while the replayed capture from
+earlier the same day did. Consistent with the pre-fix behaviour recorded above — the
+controller has no GPS lock for part of the flight, and the System message carries the 0,0
+sentinel. Absence of an operator position is normal, not a decode failure.
+
 ## DJI proprietary field calibration
 
 **Status: NOT YET PERFORMED**, and possibly not applicable to the Mini 5 Pro — see the open
