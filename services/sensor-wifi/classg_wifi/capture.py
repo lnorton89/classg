@@ -28,6 +28,7 @@ from __future__ import annotations
 import contextlib
 import errno
 import logging
+import os
 import select
 import subprocess
 import time
@@ -85,6 +86,54 @@ def set_channel(iface: str, channel: int) -> bool:
     return True
 
 
+def preflight(iface: str) -> None:
+    """Fail with a specific, actionable message before touching the radio.
+
+    Every one of these previously surfaced as the same scapy error, which named
+    monitor mode and root as *possibilities* without checking either. Knowing
+    which of the three it is turns a diagnosis into a command to run.
+    """
+    if not os.path.exists(f"/sys/class/net/{iface}"):
+        available = sorted(os.listdir("/sys/class/net")) if os.path.isdir("/sys/class/net") else []
+        raise CaptureError(
+            f"interface {iface!r} does not exist (have: {', '.join(available) or 'none'}). "
+            "Under WSL the adapter detaches whenever the VM restarts; reattach it from "
+            "Windows with:  usbipd attach --wsl --busid <BUSID>   then  sudo modprobe mt7921u"
+        )
+
+    if hasattr(os, "geteuid") and os.geteuid() != 0:
+        raise CaptureError(
+            "live capture needs root for AF_PACKET. Re-run with sudo, or use `make sense`."
+        )
+
+    mode = interface_mode(iface)
+    if mode is None:
+        log.warning("could not read the mode of %s; continuing", iface)
+    elif mode != "monitor":
+        raise CaptureError(
+            f"{iface} is in {mode!r} mode, not monitor, so it will only see traffic "
+            f"addressed to it. Fix with:  sudo ./scripts/setup-monitor.sh {iface}"
+        )
+
+
+def interface_mode(iface: str) -> str | None:
+    """Return the interface's `iw` type, or None if it cannot be determined."""
+    try:
+        res = subprocess.run(
+            ["iw", "dev", iface, "info"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0:
+        return None
+    for line in res.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("type "):
+            return line.split(None, 1)[1].strip()
+    return None
+
+
 def open_socket(iface: str, bpf: str = BEACON_FILTER) -> Any:
     """Open a filtered layer-2 listening socket.
 
@@ -136,6 +185,8 @@ def run_capture(
     without hardware -- see tests/test_capture.py.
     """
     stats = CaptureStats()
+    if socket_factory is open_socket:
+        preflight(iface)
     sock = socket_factory(iface)
     last_heartbeat = 0.0
     consecutive_read_errors = 0

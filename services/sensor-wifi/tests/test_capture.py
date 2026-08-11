@@ -258,3 +258,38 @@ class TestSocketOpen:
             capture.open_socket("wlan-test")
         message = str(excinfo.value)
         assert "monitor mode" in message and "root" in message
+
+
+class TestPreflight:
+    """Three different causes previously produced one scapy error that named
+    monitor mode and root as possibilities without checking either."""
+
+    def test_missing_interface_names_the_usbip_reattach(self, monkeypatch):
+        monkeypatch.setattr(capture.os.path, "exists", lambda p: False)
+        monkeypatch.setattr(capture.os.path, "isdir", lambda p: False)
+        with pytest.raises(capture.CaptureError) as excinfo:
+            capture.preflight("wlan9")
+        assert "usbipd attach" in str(excinfo.value)
+
+    def test_managed_mode_names_the_fix(self, monkeypatch):
+        monkeypatch.setattr(capture.os.path, "exists", lambda p: True)
+        monkeypatch.setattr(capture.os, "geteuid", lambda: 0, raising=False)
+        monkeypatch.setattr(capture, "interface_mode", lambda iface: "managed")
+        with pytest.raises(capture.CaptureError) as excinfo:
+            capture.preflight("wlan0")
+        message = str(excinfo.value)
+        assert "managed" in message and "setup-monitor.sh" in message
+
+    def test_non_root_is_reported_as_such(self, monkeypatch):
+        if not hasattr(capture.os, "geteuid"):
+            pytest.skip("no geteuid on this platform; the check is skipped there too")
+        monkeypatch.setattr(capture.os.path, "exists", lambda p: True)
+        monkeypatch.setattr(capture.os, "geteuid", lambda: 1000)
+        with pytest.raises(capture.CaptureError, match="root"):
+            capture.preflight("wlan0")
+
+    def test_monitor_mode_passes(self, monkeypatch):
+        monkeypatch.setattr(capture.os.path, "exists", lambda p: True)
+        monkeypatch.setattr(capture.os, "geteuid", lambda: 0, raising=False)
+        monkeypatch.setattr(capture, "interface_mode", lambda iface: "monitor")
+        capture.preflight("wlan0")  # must not raise
