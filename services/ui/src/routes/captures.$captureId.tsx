@@ -11,6 +11,7 @@ import { ApiError, api } from '@/lib/api/client'
 import { captureQuery, captureReportQuery, queryKeys } from '@/lib/api/queries'
 import type { CaptureReport } from '@/lib/api/types'
 import { EMPTY, formatBytes, formatRssi, formatTimestamp } from '@/lib/format'
+import { PageContainer } from '@/components/layout/page-container'
 
 export const Route = createFileRoute('/captures/$captureId')({
   component: CaptureDetail,
@@ -35,7 +36,7 @@ function CaptureDetail() {
   const notAnalyzed = reportError instanceof ApiError && reportError.isNotFound
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-3 sm:p-4">
+    <PageContainer>
       <div>
         <Link
           to="/sensors"
@@ -102,7 +103,7 @@ function CaptureDetail() {
       ) : null}
 
       {report ? <ReportView report={report} /> : null}
-    </div>
+    </PageContainer>
   )
 }
 

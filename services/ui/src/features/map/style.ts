@@ -146,7 +146,16 @@ export function tiledStyle(theme: 'dark' | 'light', baseUrl: string): StyleSpeci
         tiles: [`${baseUrl}${TILE_PATH}`],
         tileSize: 256,
         minzoom: 0,
-        maxzoom: 15,
+        // Measured against basemap.nationalmap.gov at the receiver's location:
+        // z16 returns real imagery, z17 returns 404. This was 15, which threw
+        // away a whole level of real detail and made every closer zoom an
+        // upsample of a z15 tile -- the "blurry when zoomed right in" problem.
+        //
+        // z16 is the hard ceiling of USGS imagery here. Zooming past it cannot
+        // reveal more; MapLibre overzooms the sharpest tile that exists, which
+        // is the best available answer. A sharper basemap means a different
+        // source -- see CLASSG_SATELLITE_TILE_URL in docker/README.md.
+        maxzoom: 16,
         attribution:
           '<a href="https://www.usgs.gov/programs/national-geospatial-program/national-map" target="_blank">USGS The National Map</a> (public domain)',
       },
@@ -159,11 +168,16 @@ export function tiledStyle(theme: 'dark' | 'light', baseUrl: string): StyleSpeci
         type: 'raster',
         source: 'basemap',
         paint: {
-          // Knock the basemap back so aircraft stay the brightest thing on screen,
-          // and invert-ish it in dark mode without needing a second tile set.
-          'raster-opacity': theme === 'dark' ? 0.55 : 0.9,
-          'raster-saturation': theme === 'dark' ? -0.6 : 0,
-          'raster-brightness-max': theme === 'dark' ? 0.75 : 1,
+          // Knock the basemap back so aircraft stay the brightest thing on
+          // screen, and desaturate it in dark mode without a second tile set.
+          //
+          // Eased from 0.55/-0.6/0.75: combined with a z15 ceiling the imagery
+          // was dim enough to read as "no detail" rather than "deliberately
+          // recessive". Aircraft and tracks are drawn in saturated cyan and
+          // magenta, so they still dominate at these values.
+          'raster-opacity': theme === 'dark' ? 0.7 : 0.95,
+          'raster-saturation': theme === 'dark' ? -0.4 : 0,
+          'raster-brightness-max': theme === 'dark' ? 0.9 : 1,
         },
       },
       {
