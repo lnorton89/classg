@@ -56,20 +56,24 @@ you actually fly, which is usually the better trade than baking them all in.
 > privately and running it on your own Pi is fine; `docker push` to anywhere public is not.
 >
 > This constraint arrived with the Esri switch — USGS imagery is public domain, so baking
-> and shipping it was unrestricted. It is unrelated to ClassG's own MIT licence, which
+> and shipping it was unrestricted. It is unrelated to ClassG's own MIT license, which
 > covers this source tree and cannot grant rights to third-party imagery.
 >
-> Two ways out if you need a publishable image: leave `CLASSG_TILE_PRELOAD_BBOX` empty and
-> let the runtime cache fill (the default — `public/tiles/basemap` is build-generated and
-> untracked, so nothing leaks via git), or point `CLASSG_SATELLITE_TILE_URL` back at the
-> public-domain USGS endpoint for the baked layer and accept its z16 ceiling.
+> If you need a publishable image, leave `CLASSG_TILE_PRELOAD_BBOX` empty and let the
+> runtime cache fill it in the field. That is the default, and `public/tiles/basemap` is
+> build-generated and untracked, so nothing leaks through git either way.
+>
+> Pointing `CLASSG_SATELLITE_TILE_URL` at the public-domain USGS endpoint would make the
+> *baked* tiles redistributable, but it is a poor trade: nginx still proxies Esri at
+> runtime, so the image would carry USGS tiles up to z15 and serve Esri above it. Different
+> imagery vintages meet mid-map, and the colour and season shift visibly at the seam.
 
 #### Changing the imagery source
 
 The default has real pixels to **z19**. Zoom ceilings are per-source and per-location;
 measured at the receiver (46.0400, -122.7673):
 
-| Source | Ceiling | Ground resolution | Licence |
+| Source | Ceiling | Ground resolution | License |
 |---|---|---|---|
 | Esri World Imagery *(default)* | z19 | 0.21 m/px | Free with attribution, [Esri terms](https://www.esri.com/en-us/legal/terms/full-master-agreement) |
 | USGS `ImageryOnly` *(previous)* | z16 | 1.66 m/px | Public domain |
