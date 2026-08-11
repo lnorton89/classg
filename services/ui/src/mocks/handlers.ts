@@ -253,7 +253,7 @@ export const handlers = [
   http.post<PathParams<'id'>>(`${base}/captures/:id/stop`, ({ params }) => {
     const index = captures.findIndex((c) => c.capture_id === params.id)
     if (index === -1) return apiError(404, 'not_found', `no such capture: ${String(params.id)}`)
-    const existing = captures[index] as Capture
+    const existing = captures[index]!
     if (existing.state !== 'running') {
       return apiError(409, 'conflict', `capture is ${existing.state}, not running`)
     }

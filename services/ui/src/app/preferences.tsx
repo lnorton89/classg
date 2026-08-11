@@ -48,9 +48,9 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const root = document.documentElement
     root.style.setProperty('--ui-scale', String(TEXT_SCALE_VALUES[preferences.textScale]))
-    root.dataset['density'] = preferences.density
-    if (preferences.motion === 'reduced') root.dataset['motion'] = 'reduced'
-    else delete root.dataset['motion']
+    root.dataset.density = preferences.density
+    if (preferences.motion === 'reduced') root.dataset.motion = 'reduced'
+    else delete root.dataset.motion
   }, [preferences.textScale, preferences.density, preferences.motion])
 
   useEffect(() => {

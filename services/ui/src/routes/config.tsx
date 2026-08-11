@@ -91,7 +91,7 @@ function ChannelPlanEditor() {
   )
   const apiError = save.error instanceof ApiError ? save.error : null
 
-  const onSubmit = (event: React.FormEvent) => {
+  const onSubmit = (event: React.SyntheticEvent) => {
     event.preventDefault()
     const parsed = channelPlanSchema.safeParse(draft)
     if (!parsed.success) {
@@ -138,7 +138,7 @@ function ChannelPlanEditor() {
 
         <form onSubmit={onSubmit}>
           <div className="max-h-96 overflow-auto">
-            <table className="w-full min-w-[30rem] text-left text-xs">
+            <table className="w-full min-w-120 text-left text-xs">
               <caption className="sr-only">Weighted channel plan</caption>
               <thead className="bg-card text-muted-foreground sticky top-0">
                 <tr className="border-border border-b">
@@ -262,7 +262,7 @@ function FusionWeightsEditor() {
     ),
   )
 
-  const onSubmit = (event: React.FormEvent) => {
+  const onSubmit = (event: React.SyntheticEvent) => {
     event.preventDefault()
     const parsed = weightsSchema.safeParse(draft)
     if (!parsed.success) {

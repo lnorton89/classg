@@ -62,7 +62,12 @@ if ! grep -qE "^mt7921u " /proc/modules 2>/dev/null; then
     fi
 fi
 
-command -v airmon-ng >/dev/null 2>&1 && airmon-ng check kill >/dev/null 2>&1 || true
+# Not `A && B || true`: that reads as if-then-else but runs the fallback when A
+# succeeds and B fails too. Killing the interfering processes is best-effort
+# either way, so say so explicitly.
+if command -v airmon-ng >/dev/null 2>&1; then
+    airmon-ng check kill >/dev/null 2>&1 || true
+fi
 
 if ! ip link show "$IFACE" >/dev/null 2>&1; then
     echo "  interface $IFACE not found. Available wireless interfaces:" >&2

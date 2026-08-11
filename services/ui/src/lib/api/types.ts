@@ -220,7 +220,7 @@ export interface ChannelPlan {
 }
 
 /** Fusion confidence weights, keyed by detection class. */
-export type FusionWeights = {
+export interface FusionWeights {
   weights: Partial<Record<DetectionClass, number>>
 }
 

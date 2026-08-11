@@ -253,10 +253,24 @@ jobs:
 
   # Single job for branch protection to require, so adding a language later does
   # not mean reconfiguring required checks.
+  # The shell scripts are load-bearing -- they bring up the dev stack, put the
+  # adapter in monitor mode and start the sensor -- and nothing checked them.
+  # An unquoted expansion in scripts/dev-sensor.sh reached main because the only
+  # thing that noticed was an editor plugin on one machine.
+  shell:
+    name: shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: shellcheck --version
+
+      - run: shellcheck scripts/*.sh
+
   ci:
     name: CI
     runs-on: ubuntu-latest
-    needs: [python, go, api, ui, rust, schemas]
+    needs: [python, go, api, ui, rust, schemas, shell]
     if: always()
     steps:
       - name: Check results

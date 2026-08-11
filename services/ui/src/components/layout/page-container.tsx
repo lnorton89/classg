@@ -22,9 +22,9 @@ export function PageContainer({
   return (
     <div
       className={cn(
-        // max-w-[96rem] is wide enough for the tracks table's columns without
+        // max-w-384 is wide enough for the tracks table's columns without
         // letting text run to an unreadable measure on an ultrawide display.
-        'mx-auto flex w-full max-w-[96rem] flex-col gap-4 p-3 sm:p-4 lg:p-6',
+        'mx-auto flex w-full max-w-384 flex-col gap-4 p-3 sm:p-4 lg:p-6',
         className,
       )}
     >

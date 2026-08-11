@@ -60,7 +60,7 @@ if ! ip link show "$IFACE" >/dev/null 2>&1; then
     elif [ "$COUNT" -gt 1 ]; then
         # Guessing between two radios could put the sensor on the one that is
         # carrying your network connection.
-        skip "$IFACE does not exist and there is more than one candidate: $(echo $DETECTED | tr '\n' ' ')" \
+        skip "$IFACE does not exist and there is more than one candidate: $(printf '%s' "$DETECTED" | tr '\n' ' ')" \
              "pick one: make dev-sensor IFACE=<iface>"
     fi
 

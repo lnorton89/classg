@@ -110,7 +110,7 @@ export class LiveStream {
   }
 
   send(frame: ClientFrame): void {
-    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+    if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(frame))
     }
   }
