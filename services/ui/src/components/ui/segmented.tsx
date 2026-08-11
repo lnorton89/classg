@@ -47,7 +47,8 @@ export function Segmented<T extends string>({
       // An empty array means the operator pressed the already-selected option.
       // For a single choice that must be a no-op, not "no units at all".
       onValueChange={(next) => {
-        const chosen = next[0] as T | undefined
+        // noUncheckedIndexedAccess already types this as T | undefined.
+        const chosen = next[0]
         if (chosen) onValueChange(chosen)
       }}
       className={cn(
