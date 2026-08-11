@@ -32,6 +32,18 @@ HEALTHY_RUN_S=60
 
 backoff=$MIN_BACKOFF_S
 child=""
+nap_pid=""
+
+# bash defers a trap until the current foreground command finishes, so a plain
+# `sleep 60` makes the supervisor take up to a minute to notice SIGTERM --
+# `make dev-down` would sit there looking hung. Backgrounding the sleep and
+# waiting on it lets the trap fire immediately, because `wait` is interruptible.
+nap() {
+    sleep "$1" &
+    nap_pid=$!
+    wait "$nap_pid" 2>/dev/null
+    nap_pid=""
+}
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') supervisor: $*"; }
 
@@ -40,6 +52,7 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') supervisor: $*"; }
 # the next start finds the interface busy for reasons nothing explains.
 shutdown() {
     trap - TERM INT
+    [ -n "$nap_pid" ] && kill "$nap_pid" 2>/dev/null
     if [ -n "$child" ] && kill -0 "$child" 2>/dev/null; then
         log "stopping capture (pid $child)"
         kill "$child" 2>/dev/null
@@ -61,7 +74,7 @@ log "supervising $IFACE (pid $$)"
 while true; do
     if ! ip link show "$IFACE" >/dev/null 2>&1; then
         log "$IFACE is gone; waiting for the adapter to come back (usbipd attach on the Windows side)"
-        sleep "$backoff"
+        nap "$backoff"
         backoff=$(( backoff * 2 )); [ "$backoff" -gt "$MAX_BACKOFF_S" ] && backoff=$MAX_BACKOFF_S
         continue
     fi
@@ -73,7 +86,7 @@ while true; do
         log "$IFACE is in '${mode:-unknown}' mode; restoring monitor"
         if ! ./scripts/setup-monitor.sh "$IFACE" 2>&1; then
             log "could not put $IFACE into monitor mode; retrying in ${backoff}s"
-            sleep "$backoff"
+            nap "$backoff"
             backoff=$(( backoff * 2 )); [ "$backoff" -gt "$MAX_BACKOFF_S" ] && backoff=$MAX_BACKOFF_S
             continue
         fi
@@ -102,7 +115,7 @@ while true; do
     fi
 
     log "capture exited ${code} after ${ran}s; restarting in ${backoff}s"
-    sleep "$backoff"
+    nap "$backoff"
     if [ "$ran" -lt "$HEALTHY_RUN_S" ]; then
         backoff=$(( backoff * 2 )); [ "$backoff" -gt "$MAX_BACKOFF_S" ] && backoff=$MAX_BACKOFF_S
     fi
