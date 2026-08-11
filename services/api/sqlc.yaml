@@ -1,0 +1,34 @@
+# SQL is derived from the schema, never hand-written in Go.
+#
+#   sqlc generate     (or: make sqlc)
+#
+# schema.sql is the single definition of the database. It is applied verbatim at
+# startup AND type-checks every query here, so a column renamed in one place and
+# not the other fails the build rather than a running detector.
+#
+# CI runs `sqlc diff`, which fails if the committed generated code does not match
+# what the current SQL would produce -- otherwise an edited query with stale
+# generated code would compile and quietly do the old thing.
+
+version: "2"
+sql:
+  - engine: sqlite
+    schema: internal/store/libsqlstore/sql/schema.sql
+    queries: internal/store/libsqlstore/sql/queries.sql
+    gen:
+      go:
+        package: sqlcgen
+        out: internal/store/libsqlstore/sqlcgen
+        # database/sql, not pgx: the driver is go-libsql (ADR-0006), which
+        # registers as a standard database/sql driver.
+        sql_package: database/sql
+        emit_interface: true
+        emit_empty_slices: true
+        # Keeps `count` from becoming `Count_` and similar.
+        emit_exact_table_names: false
+        overrides:
+          # Nullable TEXT columns come back as sql.NullString by default, which
+          # is honest -- a serial genuinely can be absent before Basic ID
+          # arrives -- so they are deliberately NOT overridden to plain string.
+          - db_type: "REAL"
+            go_type: "float64"

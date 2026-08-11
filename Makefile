@@ -1,4 +1,4 @@
-.PHONY: help env migrate-env migrate-env-dry setup sense dev dev-logs dev-down dev-restart dev-native dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
+.PHONY: help env migrate-env migrate-env-dry setup sense sqlc sqlc-check dev dev-logs dev-down dev-restart dev-native dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
 
 DOCKER := bash ./scripts/docker.sh
 
@@ -38,6 +38,14 @@ setup: env
 	cd services/api && go mod download
 	cd services/ui && npm ci
 	cd services/sensor-sdr && cargo fetch
+
+# SQL is derived from schema.sql, never hand-written in Go. Regenerate after
+# editing either .sql file; CI fails if the committed output is stale.
+sqlc:
+	cd services/api && sqlc generate
+
+sqlc-check:
+	cd services/api && sqlc diff
 
 test: test-wifi test-fusion test-api test-ui test-sdr
 

@@ -12,6 +12,7 @@ package libsqlstore
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -115,58 +116,48 @@ func (s *Store) migrate(ctx context.Context) error {
 		slog.Warn("could not set busy_timeout", "err", err)
 	}
 
-	ddl := []string{
-		`CREATE TABLE IF NOT EXISTS tracks (
-			track_id        TEXT PRIMARY KEY,
-			state           TEXT NOT NULL,
-			first_seen      TEXT NOT NULL,
-			last_seen       TEXT NOT NULL,
-			detection_count INTEGER NOT NULL,
-			confidence      REAL NOT NULL,
-			serial          TEXT,
-			doc             TEXT NOT NULL
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_tracks_page ON tracks(last_seen DESC, track_id DESC)`,
-		`CREATE TABLE IF NOT EXISTS detections (
-			detection_id    TEXT PRIMARY KEY,
-			ts              TEXT NOT NULL,
-			sensor_id       TEXT NOT NULL,
-			sensor_kind     TEXT NOT NULL,
-			detection_class TEXT NOT NULL,
-			serial          TEXT,
-			mac             TEXT,
-			doc             TEXT NOT NULL
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_detections_page ON detections(ts DESC, detection_id DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_detections_sensor ON detections(sensor_id, ts DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_detections_serial ON detections(serial, ts DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_detections_mac ON detections(mac, ts DESC)`,
-		`CREATE TABLE IF NOT EXISTS sensors (
-			sensor_id      TEXT PRIMARY KEY,
-			sensor_kind    TEXT NOT NULL,
-			last_heartbeat TEXT,
-			healthy        INTEGER NOT NULL DEFAULT 0,
-			reason         TEXT,
-			detail         TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS captures (
-			capture_id TEXT PRIMARY KEY,
-			doc        TEXT NOT NULL,
-			started_at TEXT NOT NULL,
-			report     TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS config (
-			key        TEXT PRIMARY KEY,
-			value      TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)`,
-	}
-	for _, stmt := range ddl {
+	// The schema is applied from the same file sqlc type-checks queries
+	// against. Two copies of the DDL -- one here, one for codegen -- could
+	// disagree, and the disagreement would only ever surface at runtime.
+	for _, stmt := range splitStatements(schemaSQL) {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("migrate: %w", err)
+			return fmt.Errorf("migrate %q: %w", stmt, err)
 		}
 	}
 	return nil
+}
+
+//go:embed sql/schema.sql
+var schemaSQL string
+
+// splitStatements breaks the schema into individual statements.
+//
+// database/sql executes one statement per call, and the schema is plain DDL
+// with no procedural bodies or embedded semicolons, so splitting on ";" is
+// sufficient -- deliberately not a general-purpose SQL parser.
+func splitStatements(sql string) []string {
+	var out []string
+	for _, raw := range strings.Split(sql, ";") {
+		stmt := strings.TrimSpace(stripSQLComments(raw))
+		if stmt != "" {
+			out = append(out, stmt)
+		}
+	}
+	return out
+}
+
+// stripSQLComments drops whole-line -- comments so they do not become empty
+// statements after the split.
+func stripSQLComments(s string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
+			continue
+		}
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // --- tracks ----------------------------------------------------------------
