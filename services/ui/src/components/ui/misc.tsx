@@ -2,6 +2,7 @@ import { AlertTriangleIcon, CheckCircle2Icon, InfoIcon, XCircleIcon } from 'luci
 import type { ComponentProps, ReactNode } from 'react'
 
 import { cn } from '@/lib/cn'
+import { EMPTY } from '@/lib/format'
 
 export function Skeleton({ className, ...props }: ComponentProps<'div'>) {
   return (
@@ -67,23 +68,80 @@ export function Alert({ tone = 'info', title, children, className, action }: Ale
   )
 }
 
-/** Label + value pair. Used everywhere in detail views. */
+/**
+ * A `<dl>` of `DataRow`s, optionally under a section label.
+ *
+ * The rules between rows are the point: a label on the left and its value on
+ * the right are separated by a gap wide enough that the eye loses the pairing
+ * once a list passes about five rows. Grouping under a label keeps any one run
+ * shorter than that.
+ */
+export function DataList({
+  label,
+  className,
+  children,
+}: {
+  label?: ReactNode
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <div className={cn('min-w-0', className)}>
+      {label ? <p className="label-caps mb-0.5">{label}</p> : null}
+      <dl className="divide-border/60 divide-y">{children}</dl>
+    </div>
+  )
+}
+
+/**
+ * Label + value pair. Used everywhere in detail views.
+ *
+ * A missing reading is dimmed and announced as "not reported"; left as a bare
+ * em dash a screen reader either says "em dash" or nothing at all, and neither
+ * conveys that the field exists but was never broadcast.
+ */
 export function DataRow({
   label,
   value,
+  hint,
   mono = false,
   className,
 }: {
   label: ReactNode
   value: ReactNode
+  /** Secondary line under the value — an age, a unit note, a caveat. */
+  hint?: ReactNode
   mono?: boolean
   className?: string
 }) {
   return (
-    <div className={cn('flex items-baseline justify-between gap-4 py-1', className)}>
+    <div
+      // The first consumer of the compact-density preference on a detail page:
+      // 0.5rem here, 0.375rem when the operator asks for compact.
+      data-density-row
+      className={cn('flex items-baseline justify-between gap-4 py-2', className)}
+    >
       <dt className="text-muted-foreground shrink-0 text-xs">{label}</dt>
-      <dd className={cn('min-w-0 text-right text-xs break-all', mono && 'font-mono')}>
-        {value}
+      <dd
+        className={cn(
+          'min-w-0 text-right text-xs',
+          // Identifiers may break anywhere; prose must not.
+          mono ? 'font-mono break-all' : 'tnum break-words',
+        )}
+      >
+        {value === EMPTY ? (
+          <span className="text-muted-foreground/70">
+            <span aria-hidden>{EMPTY}</span>
+            <span className="sr-only">not reported</span>
+          </span>
+        ) : (
+          value
+        )}
+        {hint ? (
+          <span className="text-muted-foreground mt-0.5 block font-sans text-2xs font-normal">
+            {hint}
+          </span>
+        ) : null}
       </dd>
     </div>
   )
