@@ -35,18 +35,18 @@ invoke the Kismet fallback in [ADR-0005](../architecture/adr/0005-own-sniffer-vs
 ## Milestone 1 — Wi-Fi detection end to end
 *Goal: the DJI appears on a map.*
 
-- [ ] `sensor-wifi` capture loop with **passive** monitor mode
-- [ ] Weighted channel hopper, config-driven
-- [ ] ODID parser: Message Pack, Basic ID, Location, System, Operator ID
-- [ ] DJI parser: subcommand `0x10` and `0x11`
+- [x] `sensor-wifi` capture loop with **passive** monitor mode
+- [x] Weighted channel hopper, config-driven
+- [x] ODID parser: Message Pack, Basic ID, Location, System, Operator ID
+- [x] DJI parser: subcommand `0x10` and `0x11`
 - [ ] **Calibrate DJI units** (altitude, height, velocity) against the real drone → write up in `docs/ops/04-calibration.md`
-- [ ] OUI/SSID fingerprint matcher, YAML-driven
+- [x] OUI/SSID fingerprint matcher, YAML-driven
 - [ ] Detection schema validation in CI
-- [ ] ZMQ publisher with HWM and drop counters
-- [ ] `fusion`: track lifecycle, serial/MAC correlation, noisy-OR confidence
-- [ ] `api`: REST `/tracks`, `/health`, WebSocket `/ws`
-- [ ] `ui`: MapLibre map, live track markers, track detail panel
-- [ ] Health endpoint distinguishes "no drones" from "sensor broken"
+- [x] ZMQ publisher with HWM and drop counters
+- [x] `fusion`: track lifecycle, serial/MAC correlation, noisy-OR confidence
+- [x] `api`: REST `/tracks`, `/health`, WebSocket `/ws`
+- [x] `ui`: MapLibre map, live track markers, track detail panel
+- [x] Health endpoint distinguishes "no drones" from "sensor broken"
 
 **Exit criterion:** fly the DJI, watch it appear and move on the map in real time, with the
 correct serial number.
