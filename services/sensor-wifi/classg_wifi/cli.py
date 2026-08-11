@@ -22,6 +22,7 @@ from typing import cast
 from dotenv import find_dotenv, load_dotenv
 
 from .bus import DEFAULT_ENDPOINT, DetectionPublisher
+from .capture import CaptureError, run_capture
 from .fingerprint import FingerprintMatcher
 from .help_docs import render_cli_help, render_cli_topic, topic_ids
 from .hopper import ChannelHopper, load_channels
@@ -191,36 +192,32 @@ def cmd_run(args: argparse.Namespace) -> int:
         socket_mode=args.socket_mode,
     )
 
-    # NOTE (Milestone 1): the live capture loop is not implemented yet.
-    # It belongs here and must:
-    #   1. open a raw AF_PACKET socket on args.iface (monitor mode, PASSIVE only)
-    #   2. apply a BPF filter for management/beacon frames -- filter in the kernel,
-    #      not in Python, so neighbours' traffic never reaches userspace
-    #      (docs/research/06-legal-and-ethics.md#privacy-of-your-own-capture)
-    #   3. for each dwell: set channel, read frames until dwell expires
-    #   4. feed frames through pipeline.process_frame()
-    #   5. publish results; call hopper.on_drone_detected() on Class A/B
-    #   6. emit publisher.heartbeat() every N seconds REGARDLESS of detections
-    log.error("live capture not implemented yet - see Milestone 1 in docs/planning/roadmap.md")
-    log.info("meanwhile: 'capture' to record a PCAP, 'replay' to exercise the pipeline")
-
-    last_heartbeat = 0.0
-    while _running:
-        now = time.time()
-        if now - last_heartbeat >= args.heartbeat_s:
-            publisher.heartbeat(
-                healthy=False,
-                detail={
-                    "reason": "capture loop not implemented",
-                    "hopper": hopper.efficiency_report(),
-                    "frames_seen": pipeline.stats.frames_seen,
-                },
-            )
-            last_heartbeat = now
-        time.sleep(0.5)
+    log.info(
+        "sensor %s: %s, %d channels, %d ms base dwell",
+        args.sensor_id, args.iface, len(channels), args.dwell_ms,
+    )
+    try:
+        run_capture(
+            iface=args.iface,
+            hopper=hopper,
+            pipeline=pipeline,
+            publisher=publisher,
+            heartbeat_s=args.heartbeat_s,
+            should_run=lambda: _running,
+        )
+    except CaptureError as exc:
+        # The radio is unusable. Say so on the bus before exiting so /health
+        # shows a broken sensor rather than a quiet sky, then exit non-zero and
+        # let systemd restart with backoff (ADR-0003).
+        log.error("%s", exc)
+        publisher.heartbeat(healthy=False, detail={"reason": str(exc)})
+        publisher.close()
+        return 1
+    except KeyboardInterrupt:
+        pass
 
     publisher.close()
-    return 1
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
