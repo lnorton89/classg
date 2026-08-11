@@ -85,11 +85,18 @@ dev: env
 dev-sensor:
 	@./scripts/dev-sensor.sh $(IFACE)
 
+# SIGTERM to the supervisor, which stops its capture child before exiting. The
+# pkill is a backstop for a supervisor that was killed without its trap running
+# and left the capture orphaned -- a root-owned python holding the radio is not
+# something to leave behind.
 dev-sensor-stop:
 	@if [ -f .dev/sensor.pid ]; then \
 		sudo kill "$$(cat .dev/sensor.pid)" 2>/dev/null || true; \
-		rm -f .dev/sensor.pid; echo "sensor stopped"; \
-	else echo "no sensor pidfile; nothing to stop"; fi
+		sleep 1; rm -f .dev/sensor.pid; \
+	fi
+	@sudo pkill -f 'sensor-supervise\.sh' 2>/dev/null || true
+	@sudo pkill -f 'classg_wifi\.cli run' 2>/dev/null || true
+	@echo "sensor stopped"
 
 dev-logs:
 	$(DOCKER) compose --env-file .env -f docker/docker-compose.dev.yml logs -f
