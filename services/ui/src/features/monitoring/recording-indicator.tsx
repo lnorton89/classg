@@ -3,9 +3,10 @@ import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api/client'
-import { monitoringQuery, queryKeys } from '@/lib/api/queries'
+import { healthQuery, monitoringQuery, queryKeys } from '@/lib/api/queries'
 import type { MonitoringState } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
+import { RECORDING_DESCRIPTION, RECORDING_LABEL, recordingState } from './recording-state'
 
 /**
  * Always-visible recording state, with the control to change it.
@@ -22,6 +23,9 @@ import { cn } from '@/lib/cn'
 export function RecordingIndicator({ className }: { className?: string }) {
   const queryClient = useQueryClient()
   const { data, isPending } = useQuery(monitoringQuery())
+  // Cross-referenced with health on purpose: the switch being on is not the
+  // same as anything reaching it.
+  const { data: health } = useQuery(healthQuery())
   const [confirming, setConfirming] = useState(false)
 
   const mutation = useMutation({
@@ -42,15 +46,26 @@ export function RecordingIndicator({ className }: { className?: string }) {
   }
 
   const recording = data.enabled
+  // The switch being on is not the same as anything reaching it. See
+  // recording-state.ts -- intent must never be presented as coverage.
+  const state = recordingState(data, health) ?? 'paused'
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
       <span
+        title={RECORDING_DESCRIPTION[state]}
         className={cn(
-          'flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium',
-          recording
-            ? 'bg-emerald-500/10 text-emerald-400'
-            : 'bg-amber-500/15 text-amber-300 ring-1 ring-amber-500/40',
+          'flex items-center gap-1.5 rounded-full px-2 py-0.5 text-2xs font-semibold',
+          // Health tokens, not raw palette colours: `ok`, `warn` and
+          // `destructive` are the hues licensed to carry urgency here, and the
+          // only ones tuned for both themes.
+          state === 'recording' && 'bg-ok/12 text-ok',
+          // destructive, not warn: claiming to record while nothing can reach
+          // the recorder is worth shouting about, not hinting at.
+          state === 'no-coverage' &&
+            'bg-destructive/15 text-destructive ring-destructive/45 ring-1',
+          (state === 'degraded' || state === 'paused') &&
+            'bg-warn/15 text-warn ring-warn/45 ring-1',
         )}
         // Announced, because a change here is consequential and a screen-reader
         // user should not have to poll a badge to learn recording stopped.
@@ -61,15 +76,19 @@ export function RecordingIndicator({ className }: { className?: string }) {
           aria-hidden
           className={cn(
             'size-1.5 rounded-full',
-            recording ? 'animate-pulse bg-emerald-400' : 'bg-amber-400',
+            // Only a genuinely recording system gets the live pulse: a pulsing
+            // dot reads as "working" and must not appear when nothing is.
+            state === 'recording' && 'bg-ok animate-pulse',
+            state === 'no-coverage' && 'bg-destructive',
+            (state === 'degraded' || state === 'paused') && 'bg-warn',
           )}
         />
-        {recording ? 'Recording' : 'Paused'}
+        {RECORDING_LABEL[state]}
       </span>
 
       {!recording && data.discarded_while_paused > 0 && (
         // A paused system must not be mistakable for a quiet one.
-        <span className="text-muted-foreground hidden text-[11px] sm:inline">
+        <span className="text-muted-foreground hidden text-2xs sm:inline">
           {data.discarded_while_paused.toLocaleString()} discarded
         </span>
       )}

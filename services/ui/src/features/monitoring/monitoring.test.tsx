@@ -6,6 +6,7 @@ import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { RecordingIndicator } from './recording-indicator'
+import { recordingState } from './recording-state'
 
 const API = '*/api/v1'
 
@@ -89,5 +90,41 @@ describe('RecordingIndicator', () => {
     renderIndicator()
     const status = await screen.findByRole('status')
     expect(status).toHaveTextContent('Recording')
+  })
+})
+
+describe('recordingState', () => {
+  const on = { enabled: true, since: '', discarded_while_paused: 0 }
+  const off = { enabled: false, since: '', discarded_while_paused: 0 }
+  const sensor = (healthy: boolean) => ({ sensor_id: 'wifi-0', sensor_kind: 'wifi', healthy })
+  const health = (...sensors: ReturnType<typeof sensor>[]) =>
+    ({ status: 'ok', uptime_s: 1, version: '0', sensors }) as never
+
+  it('is not "recording" when every sensor is unhealthy', () => {
+    // The bug this exists to prevent: a green "Recording" badge next to a
+    // "no sensor coverage" banner. The switch was on, so it claimed to be
+    // recording while nothing could reach it.
+    expect(recordingState(on, health(sensor(false)))).toBe('no-coverage')
+  })
+
+  it('is "recording" only with a healthy sensor', () => {
+    expect(recordingState(on, health(sensor(true)))).toBe('recording')
+  })
+
+  it('reports partial coverage rather than full', () => {
+    expect(recordingState(on, health(sensor(true), sensor(false)))).toBe('degraded')
+  })
+
+  it('treats no declared sensors as no coverage', () => {
+    expect(recordingState(on, health())).toBe('no-coverage')
+  })
+
+  it('paused wins regardless of sensor health', () => {
+    expect(recordingState(off, health(sensor(true)))).toBe('paused')
+  })
+
+  it('does not raise a false alarm when health is unknown', () => {
+    // A failed health request must not be reported as lost coverage.
+    expect(recordingState(on, undefined)).toBe('recording')
   })
 })
