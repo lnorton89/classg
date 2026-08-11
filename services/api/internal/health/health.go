@@ -41,6 +41,10 @@ type Sensor struct {
 	Detections5m          int            `json:"detections_5m"`
 	Reason                string         `json:"reason,omitempty"`
 	Detail                map[string]any `json:"detail,omitempty"`
+	// Optional reports that this sensor was declared as hardware the unit may
+	// not have fitted. Additive: consumers that ignore it see exactly what they
+	// saw before.
+	Optional bool `json:"optional,omitempty"`
 }
 
 // FusionLink reports whether the api is actually receiving from fusion.
@@ -76,6 +80,9 @@ type entry struct {
 	// seen is false for a sensor that was declared in configuration but has
 	// never published a heartbeat.
 	seen bool
+	// optional marks hardware this unit may not have fitted. Only meaningful
+	// while seen is false; see Snapshot.
+	optional bool
 }
 
 // Registry tracks sensor liveness.
@@ -96,13 +103,17 @@ func NewRegistry(staleAfter time.Duration) *Registry {
 
 // Expect declares a sensor that ought to exist. Called once at startup from
 // CLASSG_EXPECTED_SENSORS.
-func (r *Registry) Expect(sensorID, kind string) {
+//
+// optional declares hardware the unit may not have fitted -- an SDR or a BLE
+// dongle on a build that ships without one. It suppresses nothing except the
+// "never reported at all" case; see Snapshot.
+func (r *Registry) Expect(sensorID, kind string, optional bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.sensors[sensorID]; ok {
 		return
 	}
-	r.sensors[sensorID] = &entry{kind: kind}
+	r.sensors[sensorID] = &entry{kind: kind, optional: optional}
 }
 
 // Restore seeds the registry from persisted state so a sensor that was known
@@ -208,19 +219,23 @@ func (r *Registry) Snapshot(now time.Time, uptime time.Duration, version string,
 
 	healthy, total := 0, 0
 	for id, e := range r.sensors {
-		total++
 		s := Sensor{
 			SensorID:     id,
 			SensorKind:   e.kind,
 			Detections5m: detections5m[id],
 			Detail:       e.detail,
 			Reason:       e.reason,
+			Optional:     e.optional,
 		}
 		switch {
 		case !e.seen:
 			s.Healthy = false
 			if s.Reason == "" {
-				s.Reason = "no heartbeat since the api started"
+				if e.optional {
+					s.Reason = "not fitted"
+				} else {
+					s.Reason = "no heartbeat since the api started"
+				}
 			}
 		default:
 			last := e.last
@@ -233,6 +248,20 @@ func (r *Registry) Snapshot(now time.Time, uptime time.Duration, version string,
 				s.Reason = "heartbeat stale"
 			}
 		}
+		// Optional hardware that has never reported is a supported build, not a
+		// fault, so it is listed but not counted. Counting it would leave a Pi
+		// with no SDR permanently `degraded`, and an operator who learns to
+		// ignore a standing warning will ignore a real one -- the same false
+		// confidence, arrived at from the opposite direction.
+		//
+		// The moment it HAS reported, e.seen is true and it counts like any
+		// other sensor: a radio that worked and stopped is exactly what this
+		// endpoint exists to surface.
+		if e.optional && !e.seen {
+			rep.Sensors = append(rep.Sensors, s)
+			continue
+		}
+		total++
 		if s.Healthy {
 			healthy++
 		}

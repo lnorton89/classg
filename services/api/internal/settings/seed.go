@@ -90,7 +90,11 @@ func encodeList(key string, items []any) (string, error) {
 			if id == "" || kind == "" {
 				return "", fmt.Errorf("%s[%d]: needs both id and kind", key, i)
 			}
-			parts = append(parts, id+":"+kind)
+			part := id + ":" + kind
+			if optional, _ := m["optional"].(bool); optional {
+				part += ":optional"
+			}
+			parts = append(parts, part)
 		}
 		return strings.Join(parts, ","), nil
 	default:

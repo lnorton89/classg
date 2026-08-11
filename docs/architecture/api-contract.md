@@ -46,6 +46,15 @@ The most important endpoint in the system. It must distinguish **"no drones are 
       "last_heartbeat": "2026-08-10T14:12:44Z",
       "seconds_since_heartbeat": 1098,
       "reason": "device not found"
+    },
+    {
+      "sensor_id": "ble-0",
+      "sensor_kind": "ble",
+      "healthy": false,
+      "optional": true,              // declared as hardware this unit may lack
+      "last_heartbeat": null,
+      "seconds_since_heartbeat": null,
+      "reason": "not fitted"         // never reported => excluded from status
     }
   ]
 }
@@ -53,6 +62,13 @@ The most important endpoint in the system. It must distinguish **"no drones are 
 
 `status` is `degraded` when any sensor is unhealthy but at least one is healthy; `down` when
 none are healthy.
+
+A sensor declared `optional` that has **never** reported is listed but excluded from that
+tally, so a unit built without an SDR or BLE dongle reads `ok` rather than sitting at
+`degraded` forever — a standing warning trains operators to ignore warnings, which is the
+same false confidence this endpoint exists to prevent, reached from the other direction.
+The exclusion covers only the never-reported case: once an optional sensor has heartbeated
+it counts like any other, so one that worked and then went quiet still degrades `status`.
 
 **UI requirement:** an empty map with an unhealthy sensor must look visibly different from an
 empty map with all sensors healthy. This is the single most important thing the interface
