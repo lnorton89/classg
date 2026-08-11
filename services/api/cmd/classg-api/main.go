@@ -27,6 +27,7 @@ import (
 	"github.com/classg/api/internal/hub"
 	"github.com/classg/api/internal/ingest"
 	"github.com/classg/api/internal/model"
+	"github.com/classg/api/internal/monitoring"
 	"github.com/classg/api/internal/settings"
 	"github.com/classg/api/internal/store"
 	"github.com/classg/api/internal/store/libsqlstore"
@@ -122,6 +123,19 @@ func run() error {
 
 	h := hub.New()
 
+	// Recording is always-on by default and its state survives restarts, so a
+	// deliberate pause is not silently undone and a running system is never
+	// left not-recording without someone having asked for that.
+	recording := monitoring.New(set.Bool("monitoring.enabled"), time.Now().UTC())
+	recording.OnChange(func(state monitoring.State) {
+		st := state
+		h.Broadcast(hub.Frame{Type: hub.TypeMonitoring, Monitoring: &st})
+		slog.Info("recording state changed", "enabled", st.Enabled, "reason", st.Reason)
+	})
+	if !recording.Enabled() {
+		slog.Warn("recording is PAUSED at startup; detections will be discarded until resumed")
+	}
+
 	captures := capture.NewManager(st, capture.Options{
 		Dir:               cfg.CaptureDir,
 		AllowUnprivileged: cfg.CaptureAllowUnprivileged,
@@ -144,14 +158,15 @@ func run() error {
 	}
 
 	srv := httpapi.New(httpapi.Options{
-		Config:   cfg,
-		Store:    st,
-		Registry: registry,
-		Hub:      h,
-		Captures: captures,
-		Settings: set,
-		Sensors:  httpapi.SystemdSensors{Argv: cfg.SensorRestartCommand},
-		Started:  time.Now(),
+		Config:     cfg,
+		Store:      st,
+		Registry:   registry,
+		Hub:        h,
+		Captures:   captures,
+		Settings:   set,
+		Monitoring: recording,
+		Sensors:    httpapi.SystemdSensors{Argv: cfg.SensorRestartCommand},
+		Started:    time.Now(),
 	})
 
 	in := &ingest.Ingestor{
@@ -160,6 +175,7 @@ func run() error {
 		Hub:                    h,
 		MaxHistory:             cfg.MaxHistory,
 		ExposeOperatorLocation: cfg.ExposeOperatorLocation,
+		Monitoring:             recording,
 	}
 
 	go bus.Run(ctx, bus.Options{

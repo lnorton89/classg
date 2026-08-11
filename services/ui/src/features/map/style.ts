@@ -14,6 +14,29 @@ import type { StyleSpecification } from 'maplibre-gl'
 /** Where self-hosted tiles live, relative to the Vite base. */
 export const TILE_PATH = 'tiles/basemap/{z}/{x}/{y}.jpg'
 
+/**
+ * Deepest zoom the upstream imagery actually has pixels for.
+ *
+ * This is a property of whichever source `/tiles/basemap` proxies to, so it must
+ * be changed together with the upstream in `nginx.conf`, `vite.config.ts`, and
+ * `scripts/preload-satellite-tiles.mjs`. Measured at the receiver's location
+ * (46.0400, -122.7673):
+ *
+ *   USGSImageryOnly   z16 -> 200, z17+ -> 404          (1.66 m/px ceiling)
+ *   Esri World Imagery z19 -> 200, z20+ -> "Map data
+ *                      not yet available" placeholder  (0.21 m/px ceiling)
+ *
+ * Setting this too high is worse than too low: Esri answers past its ceiling
+ * with a grey placeholder tile at HTTP 200, so the map would go blank rather
+ * than blurry. Too low and MapLibre upsamples, which is what made a z16 source
+ * viewed at z19 -- an 8x magnification of the sharpest tile that existed --
+ * look like the smeared mush it did.
+ */
+export const BASEMAP_MAX_ZOOM = 19
+
+const BASEMAP_ATTRIBUTION =
+  '<a href="https://www.arcgis.com/home/item.html?id=10df2279f9684e4a9f6a7f08febac2a9" target="_blank">Esri World Imagery</a>'
+
 export type BasemapMode = 'tiles' | 'no-tiles'
 
 interface Palette {
@@ -146,18 +169,8 @@ export function tiledStyle(theme: 'dark' | 'light', baseUrl: string): StyleSpeci
         tiles: [`${baseUrl}${TILE_PATH}`],
         tileSize: 256,
         minzoom: 0,
-        // Measured against basemap.nationalmap.gov at the receiver's location:
-        // z16 returns real imagery, z17 returns 404. This was 15, which threw
-        // away a whole level of real detail and made every closer zoom an
-        // upsample of a z15 tile -- the "blurry when zoomed right in" problem.
-        //
-        // z16 is the hard ceiling of USGS imagery here. Zooming past it cannot
-        // reveal more; MapLibre overzooms the sharpest tile that exists, which
-        // is the best available answer. A sharper basemap means a different
-        // source -- see CLASSG_SATELLITE_TILE_URL in docker/README.md.
-        maxzoom: 16,
-        attribution:
-          '<a href="https://www.usgs.gov/programs/national-geospatial-program/national-map" target="_blank">USGS The National Map</a> (public domain)',
+        maxzoom: BASEMAP_MAX_ZOOM,
+        attribution: BASEMAP_ATTRIBUTION,
       },
       rings: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
     },

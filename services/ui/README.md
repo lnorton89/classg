@@ -21,12 +21,20 @@ tile CDN is useless exactly when you'd want it. MapLibre + a self-hosted TileSer
 this; the approach is borrowed from
 [RemoteIDReceiver](https://github.com/cyber-defence-campus/RemoteIDReceiver).
 
-The container uses public-domain USGS imagery as a satellite basemap in the United States.
-It serves build-seeded tiles first, fetches missing tiles while online, and retains runtime
-downloads in the `classg-tile-cache` Docker volume. Set
-`CLASSG_TILE_PRELOAD_BBOX=west,south,east,north` before `docker compose build` to seed an
-operations area at zoom levels 12–15. If neither the cache nor internet is available, the
-map keeps its range-ring fallback.
+The container uses Esri World Imagery as a satellite basemap. It serves build-seeded tiles
+first, fetches missing tiles while online, and retains runtime downloads in the
+`classg-tile-cache` Docker volume. Set `CLASSG_TILE_PRELOAD_BBOX=west,south,east,north`
+before `docker compose build` to seed an operations area at zoom levels 12–15. If neither
+the cache nor internet is available, the map keeps its range-ring fallback.
+
+Esri rather than the public-domain USGS imagery this used to serve, because USGS
+`ImageryOnly` has no pixels past **z16** (1.66 m/px at the receiver) and 404s above it — so
+the track detail view, which fits to z19, was showing an 8× upsample of the sharpest tile
+that existed. Esri carries real imagery to **z19** (0.21 m/px). The trade is licensing:
+USGS is public domain, Esri's basemap is free-to-use **with attribution** under
+[Esri's terms](https://www.esri.com/en-us/legal/terms/full-master-agreement), not public
+domain. To go back, or to move to a keyed source such as Mapbox or MapTiler, see
+[Satellite basemap cache](../../docker/README.md#satellite-basemap-cache).
 
 ## Views
 

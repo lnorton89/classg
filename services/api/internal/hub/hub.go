@@ -12,6 +12,7 @@ import (
 
 	"github.com/classg/api/internal/health"
 	"github.com/classg/api/internal/model"
+	"github.com/classg/api/internal/monitoring"
 )
 
 // Topic names from the contract's subscribe message.
@@ -29,6 +30,7 @@ const (
 	TypeDetection     = "detection"
 	TypeHealth        = "health"
 	TypeCaptureStatus = "capture.status"
+	TypeMonitoring    = "monitoring"
 	TypePing          = "ping"
 	TypePong          = "pong"
 )
@@ -36,13 +38,14 @@ const (
 // Frame is a server-to-client message. Every frame carries type and ts; the
 // rest is set according to type.
 type Frame struct {
-	Type      string           `json:"type"`
-	TS        time.Time        `json:"ts"`
-	Track     *model.Track     `json:"track,omitempty"`
-	TrackID   string           `json:"track_id,omitempty"`
-	Detection *model.Detection `json:"detection,omitempty"`
-	Health    *health.Report   `json:"health,omitempty"`
-	Capture   *model.Capture   `json:"capture,omitempty"`
+	Type       string            `json:"type"`
+	TS         time.Time         `json:"ts"`
+	Track      *model.Track      `json:"track,omitempty"`
+	TrackID    string            `json:"track_id,omitempty"`
+	Detection  *model.Detection  `json:"detection,omitempty"`
+	Health     *health.Report    `json:"health,omitempty"`
+	Capture    *model.Capture    `json:"capture,omitempty"`
+	Monitoring *monitoring.State `json:"monitoring,omitempty"`
 }
 
 // TopicFor maps a frame type to the topic a client must have subscribed to.
@@ -56,6 +59,11 @@ func TopicFor(frameType string) string {
 		return TopicHealth
 	case TypeCaptureStatus:
 		return TopicCaptures
+	case TypeMonitoring:
+		// Rides the health topic rather than needing its own subscription:
+		// whether the system is recording is part of whether it is working,
+		// and a client that cares about one always cares about the other.
+		return TopicHealth
 	}
 	return ""
 }

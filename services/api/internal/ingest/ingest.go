@@ -17,6 +17,7 @@ import (
 	"github.com/classg/api/internal/health"
 	"github.com/classg/api/internal/hub"
 	"github.com/classg/api/internal/model"
+	"github.com/classg/api/internal/monitoring"
 	"github.com/classg/api/internal/store"
 )
 
@@ -30,10 +31,24 @@ type Ingestor struct {
 	MaxHistory int
 	// ExposeOperatorLocation gates whether operator positions reach clients.
 	ExposeOperatorLocation bool
+	// Monitoring is the always-on recording switch. When paused, detections
+	// and tracks are discarded at this boundary rather than stopping the
+	// radio -- see internal/monitoring for why.
+	Monitoring *monitoring.Switch
+}
+
+// recording reports whether to keep what arrives. A nil Switch means always
+// recording, so nothing that constructs an Ingestor without one goes silent.
+func (in *Ingestor) recording() bool {
+	return in.Monitoring == nil || in.Monitoring.Enabled()
 }
 
 // Track handles one message from fusion's track topic.
 func (in *Ingestor) Track(ctx context.Context, topic string, body []byte) {
+	if !in.recording() {
+		in.Monitoring.NoteDiscarded()
+		return
+	}
 	// track.closed carries only an id, so try that shape first.
 	if strings.HasSuffix(topic, "closed") {
 		var closed struct {
@@ -85,6 +100,12 @@ func (in *Ingestor) Track(ctx context.Context, topic string, body []byte) {
 
 // Detection handles one message from a sensor's detection topic.
 func (in *Ingestor) Detection(ctx context.Context, topic string, body []byte) {
+	if !in.recording() {
+		// Counted rather than silently dropped: a paused system must not look
+		// identical to a quiet sky.
+		in.Monitoring.NoteDiscarded()
+		return
+	}
 	d, err := model.DecodeDetection(body)
 	if err != nil {
 		slog.Warn("dropping malformed detection from the bus", "topic", topic, "err", err)

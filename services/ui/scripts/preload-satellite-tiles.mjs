@@ -17,13 +17,17 @@ if (west >= east || south >= north || west < -180 || east > 180 || south < -85 |
   throw new Error('CLASSG_TILE_PRELOAD_BBOX is outside valid Web Mercator bounds')
 }
 
-const minZoom = integerEnv('CLASSG_TILE_PRELOAD_MIN_ZOOM', 12, 0, 15)
-const maxZoom = integerEnv('CLASSG_TILE_PRELOAD_MAX_ZOOM', 15, minZoom, 15)
+// 19 is the deepest zoom the default source has real pixels for; see
+// BASEMAP_MAX_ZOOM in src/features/map/style.ts. Preloading past a source's
+// ceiling silently bakes placeholder tiles into the image, so the clamp and
+// that constant have to move together.
+const minZoom = integerEnv('CLASSG_TILE_PRELOAD_MIN_ZOOM', 12, 0, 19)
+const maxZoom = integerEnv('CLASSG_TILE_PRELOAD_MAX_ZOOM', 15, minZoom, 19)
 const maxTiles = integerEnv('CLASSG_TILE_PRELOAD_MAX_TILES', 600, 1, 10_000)
 const concurrency = integerEnv('CLASSG_TILE_PRELOAD_CONCURRENCY', 8, 1, 32)
 const sourceTemplate =
   process.env.CLASSG_SATELLITE_TILE_URL?.trim() ||
-  'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}'
+  'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
 const outputRoot = path.resolve('public/tiles/basemap')
 
 const jobs = [{ z: 0, x: 0, y: 0 }]

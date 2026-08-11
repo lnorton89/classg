@@ -55,23 +55,23 @@ export default defineConfig(({ mode }) => {
         },
 
         // Satellite basemap. In production nginx serves these, falling back to
-        // USGS imagery and caching the result (services/ui/nginx.conf). The dev
-        // server has no nginx, so without this the map loads with no satellite
-        // background at all -- which looks like a broken basemap rather than a
-        // missing proxy.
+        // Esri World Imagery and caching the result (services/ui/nginx.conf).
+        // The dev server has no nginx, so without this the map loads with no
+        // satellite background at all -- which looks like a broken basemap
+        // rather than a missing proxy.
         //
         // The path deliberately mirrors nginx's, including the z/y/x reorder:
         // our tiles are addressed {z}/{x}/{y} and the ArcGIS endpoint expects
         // {z}/{y}/{x}. Dev and production must request the identical URL or the
         // cache built for one is useless to the other.
         '/tiles/basemap': {
-          target: env['VITE_SATELLITE_TILE_ORIGIN'] ?? 'https://basemap.nationalmap.gov',
+          target: env['VITE_SATELLITE_TILE_ORIGIN'] ?? 'https://services.arcgisonline.com',
           changeOrigin: true,
           rewrite: (path: string) => {
             const m = /^\/tiles\/basemap\/(\d+)\/(\d+)\/(\d+)\.jpg$/.exec(path)
             if (!m) return path
             const [, z, x, y] = m
-            return `/arcgis/rest/services/USGSImageryOnly/MapServer/tile/${z}/${y}/${x}`
+            return `/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`
           },
         },
       },

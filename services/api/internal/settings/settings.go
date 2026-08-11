@@ -123,6 +123,12 @@ var Defs = []Def{
 		Default: "../ui/dist", Doc: `directory of the built web app, or "off" to serve API only`},
 	{Key: "api.version", Env: "CLASSG_VERSION", Kind: KindString,
 		Default: "0.1.0", Doc: "version string reported by /health"},
+
+	// --- Monitoring. Always-on by default: a detector you have to remember to
+	// arm is a detector that is off when it matters.
+	{Key: "monitoring.enabled", Env: "CLASSG_MONITORING_ENABLED", Kind: KindBool,
+		Default: "true", Mutable: true,
+		Doc: "record detections continuously; pausing discards them at ingest, it does not stop the radio"},
 }
 
 func defByKey() map[string]Def {

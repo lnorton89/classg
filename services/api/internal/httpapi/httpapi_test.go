@@ -15,7 +15,9 @@ import (
 	"github.com/classg/api/internal/health"
 	"github.com/classg/api/internal/httpapi"
 	"github.com/classg/api/internal/hub"
+	"github.com/classg/api/internal/ingest"
 	"github.com/classg/api/internal/model"
+	"github.com/classg/api/internal/monitoring"
 	"github.com/classg/api/internal/settings"
 	"github.com/classg/api/internal/store"
 	"github.com/classg/api/internal/store/memstore"
@@ -28,11 +30,12 @@ type fakeSensors struct{ err error }
 func (f fakeSensors) Restart(string, string) error { return f.err }
 
 type harness struct {
-	server *httpapi.Server
-	store  store.Store
-	reg    *health.Registry
-	hub    *hub.Hub
-	cfg    *config.Config
+	server     *httpapi.Server
+	store      store.Store
+	reg        *health.Registry
+	hub        *hub.Hub
+	cfg        *config.Config
+	monitoring *monitoring.Switch
 }
 
 func newHarness(t *testing.T, env map[string]string) *harness {
@@ -67,15 +70,42 @@ func newHarness(t *testing.T, env map[string]string) *harness {
 	reg := health.NewRegistry(cfg.SensorStaleAfter)
 	h := hub.New()
 	caps := capture.NewManager(st, capture.Options{Dir: t.TempDir()})
+	rec := monitoring.New(set.Bool("monitoring.enabled"), time.Now().UTC())
 
 	return &harness{
 		server: httpapi.New(httpapi.Options{
-			Settings: set,
-			Config:   cfg, Store: st, Registry: reg, Hub: h,
+			Settings: set, Monitoring: rec,
+			Config: cfg, Store: st, Registry: reg, Hub: h,
 			Captures: caps, Sensors: fakeSensors{}, Started: time.Now(),
 		}),
-		store: st, reg: reg, hub: h, cfg: cfg,
+		store: st, reg: reg, hub: h, cfg: cfg, monitoring: rec,
 	}
+}
+
+// ingestDetection pushes a detection through the same path the bus uses, so
+// the monitoring gate is exercised where it actually lives rather than being
+// asserted on in isolation.
+func (h *harness) ingestDetection(t *testing.T, body []byte) {
+	t.Helper()
+	in := &ingest.Ingestor{
+		Store: h.store, Registry: h.reg, Hub: h.hub,
+		MaxHistory: h.cfg.MaxHistory,
+		Monitoring: h.monitoring,
+	}
+	in.Detection(context.Background(), "detection.A", body)
+}
+
+// sampleDetection is the minimum a detection needs to be storable.
+func sampleDetection(id string) []byte {
+	return []byte(`{
+		"schema_version": "1.0",
+		"detection_id": "` + id + `",
+		"ts": "2026-08-11T04:00:00.000Z",
+		"sensor_id": "wifi-0",
+		"sensor_kind": "wifi",
+		"detection_class": "A",
+		"identity": {"serial": "1581F9DEC259E0296040"}
+	}`)
 }
 
 func (h *harness) do(t *testing.T, method, path string, body string) *httptest.ResponseRecorder {
