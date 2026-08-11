@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, Link, notFound } from '@tanstack/react-router'
 import { ArrowLeftIcon, ChevronRightIcon, HistoryIcon, UserIcon } from 'lucide-react'
 
+import { useFormat, useTicker } from '@/app/use-format'
+import { CopyButton } from '@/components/ui/copy-button'
 import { Alert, DataRow, EmptyState } from '@/components/ui/misc'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip } from '@/components/ui/tooltip'
@@ -16,19 +18,7 @@ import {
 import { ApiError } from '@/lib/api/client'
 import { trackDetectionsQuery, trackQuery } from '@/lib/api/queries'
 import type { Position } from '@/lib/api/types'
-import {
-  EMPTY,
-  formatClock,
-  formatConfidence,
-  formatHeading,
-  formatLatLon,
-  formatMetres,
-  formatRelative,
-  formatRssi,
-  formatSpeed,
-  formatTimestamp,
-  splitSerial,
-} from '@/lib/format'
+import { EMPTY } from '@/lib/format'
 import { PageContainer } from '@/components/layout/page-container'
 
 export const Route = createFileRoute('/tracks/$trackId')({
@@ -55,16 +45,18 @@ function TrackDetail() {
   const { trackId } = Route.useParams()
   const { data: track } = useQuery(trackQuery(trackId))
   const { data: detectionsData } = useQuery(trackDetectionsQuery(trackId))
+  const format = useFormat()
+  useTicker(5000)
 
   if (!track) return null
 
   const detections = detectionsData?.detections ?? []
   const rssiSamples = samplesFromDetections(detections)
-  const serial = splitSerial(track.identity?.serial)
+  const serial = format.splitSerial(track.identity?.serial)
   const current = track.current
   const operator = track.operator
   const history = track.history ?? []
-  const peakRssi = formatRssi(
+  const peakRssi = format.rssi(
     rssiSamples.length ? Math.max(...rssiSamples.map((sample) => sample.rssi)) : null,
   )
 
@@ -78,7 +70,7 @@ function TrackDetail() {
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
           <ConfidenceBar confidence={track.confidence} className="w-32 sm:w-40" />
           <span className="font-mono text-base font-semibold">
-            {formatConfidence(track.confidence)}
+            {format.confidence(track.confidence)}
           </span>
           <span className="text-muted-foreground text-xs">confidence that this is a drone</span>
         </div>
@@ -122,7 +114,10 @@ function TrackDetail() {
               track.identity?.macs?.length ? (
                 <span className="flex flex-col items-end gap-0.5">
                   {track.identity.macs.map((mac) => (
-                    <span key={mac}>{mac}</span>
+                    <span key={mac} className="inline-flex items-center gap-1">
+                      {mac}
+                      <CopyButton value={mac} label="MAC address" />
+                    </span>
                   ))}
                 </span>
               ) : (
@@ -131,10 +126,14 @@ function TrackDetail() {
             }
           />
           <DataRow label="Detections" value={track.detection_count} mono />
-          <DataRow label="First seen" value={formatTimestamp(track.first_seen)} mono />
           <DataRow
-            label="Last seen"
-            value={`${formatTimestamp(track.last_seen)} (${formatRelative(track.last_seen)})`}
+            label={`First seen (${format.zoneLabel})`}
+            value={format.timestamp(track.first_seen)}
+            mono
+          />
+          <DataRow
+            label={`Last seen (${format.zoneLabel})`}
+            value={`${format.timestamp(track.last_seen)} (${format.relative(track.last_seen)})`}
             mono
           />
         </dl>
@@ -163,12 +162,20 @@ function TrackDetail() {
         <dl className="space-y-0.5">
           <DataRow
             label="Latitude, longitude"
-            value={formatLatLon(current.lat, current.lon)}
+            value={
+              <span className="inline-flex items-center gap-1">
+                {format.coords(current.lat, current.lon)}
+                <CopyButton
+                  value={`${current.lat.toFixed(6)}, ${current.lon.toFixed(6)}`}
+                  label="coordinates"
+                />
+              </span>
+            }
             mono
           />
           <DataRow
             label="Geodetic altitude"
-            value={formatMetres(current.alt_geodetic_m)}
+            value={format.length(current.alt_geodetic_m)}
             mono
           />
           <DataRow
@@ -176,15 +183,19 @@ function TrackDetail() {
             value={
               <Tooltip content="Some aircraft report height above the takeoff point rather than above ground level. The Mini 5 Pro does; see docs/ops/04-calibration.md.">
                 <span className="underline decoration-dotted">
-                  {formatMetres(current.height_agl_m)}
+                  {format.length(current.height_agl_m)}
                 </span>
               </Tooltip>
             }
             mono
           />
-          <DataRow label="Ground speed" value={formatSpeed(current.speed_mps)} mono />
-          <DataRow label="Track" value={formatHeading(current.track_deg)} mono />
-          <DataRow label="Reported at" value={formatClock(current.at)} mono />
+          <DataRow label="Ground speed" value={format.speed(current.speed_mps)} mono />
+          <DataRow label="Track" value={format.heading(current.track_deg)} mono />
+          <DataRow
+            label={`Reported at (${format.zoneLabel})`}
+            value={format.clock(current.at)}
+            mono
+          />
         </dl>
       ) : (
         <EmptyState title="No position reported">
@@ -206,25 +217,29 @@ function TrackDetail() {
         <dl className="space-y-0.5">
           <DataRow
             label="Latitude, longitude"
-            value={formatLatLon(operator.lat, operator.lon)}
+            value={format.coords(operator.lat, operator.lon)}
             mono
           />
-          <DataRow label="Altitude" value={formatMetres(operator.alt_geodetic_m)} mono />
+          <DataRow label="Altitude" value={format.length(operator.alt_geodetic_m)} mono />
           {current ? (
             <>
               <DataRow
                 label="Distance from aircraft"
-                value={`${Math.round(distanceMetres(current, operator))} m`}
+                value={format.range(distanceMetres(current, operator))}
                 mono
               />
               <DataRow
                 label="Bearing from aircraft"
-                value={formatHeading(bearingDegrees(current, operator))}
+                value={format.heading(bearingDegrees(current, operator))}
                 mono
               />
             </>
           ) : null}
-          <DataRow label="Reported at" value={formatClock(operator.at)} mono />
+          <DataRow
+            label={`Reported at (${format.zoneLabel})`}
+            value={format.clock(operator.at)}
+            mono
+          />
         </dl>
       ) : (
         <p className="text-muted-foreground text-sm leading-relaxed">
@@ -256,6 +271,10 @@ function TrackDetail() {
           <h1 className="min-w-0 font-mono text-xl font-semibold tracking-tight break-all sm:text-2xl">
             {track.identity?.serial ?? track.identity?.macs?.[0] ?? track.track_id}
           </h1>
+          <CopyButton
+            value={track.identity?.serial ?? track.identity?.macs?.[0] ?? track.track_id}
+            label="identifier"
+          />
           <TrackStateBadge state={track.state} />
           {track.adsb_correlated ? (
             <Tooltip content="Correlated with an ADS-B contact. Fusion uses this to suppress energy-only false positives; it never suppresses a decoded Remote ID.">
@@ -264,9 +283,12 @@ function TrackDetail() {
           ) : null}
         </div>
         <div className="text-muted-foreground mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs">
-          <span className="font-mono">{track.track_id}</span>
+          <span className="inline-flex items-center gap-1 font-mono">
+            {track.track_id}
+            <CopyButton value={track.track_id} label="track ID" />
+          </span>
           <span>{track.detection_count} detections</span>
-          <span>Last seen {formatRelative(track.last_seen)}</span>
+          <span>Last seen {format.when(track.last_seen)}</span>
           <span>Peak RSSI {peakRssi}</span>
         </div>
       </header>
@@ -277,6 +299,8 @@ function TrackDetail() {
 }
 
 function PositionHistory({ history }: { history: Position[] }) {
+  const format = useFormat()
+
   return (
     <details className="group border-border border-t">
       <summary className="hover:bg-accent/30 focus-visible:ring-ring flex cursor-pointer list-none items-center gap-3 px-4 py-3 focus-visible:ring-2 focus-visible:outline-none [&::-webkit-details-marker]:hidden">
@@ -303,7 +327,7 @@ function PositionHistory({ history }: { history: Position[] }) {
                 <thead className="text-muted-foreground bg-card sticky top-0 z-10">
                   <tr className="border-border border-b">
                     <th scope="col" className="py-2 pr-4 font-medium">
-                      Time
+                      Time ({format.zoneLabel})
                     </th>
                     <th scope="col" className="py-2 pr-4 font-medium">
                       Latitude, longitude
@@ -325,21 +349,21 @@ function PositionHistory({ history }: { history: Position[] }) {
                 <tbody className="divide-border divide-y font-mono">
                   {[...history].reverse().map((position, index) => (
                     <tr key={`${position.at ?? index}-${position.lat}`}>
-                      <td className="py-1.5 pr-4">{formatClock(position.at)}</td>
+                      <td className="py-1.5 pr-4">{format.clock(position.at)}</td>
                       <td className="py-1.5 pr-4">
-                        {formatLatLon(position.lat, position.lon)}
+                        {format.coords(position.lat, position.lon)}
                       </td>
                       <td className="py-1.5 pr-4 text-right">
-                        {formatMetres(position.height_agl_m)}
+                        {format.length(position.height_agl_m)}
                       </td>
                       <td className="py-1.5 pr-4 text-right">
-                        {formatMetres(position.alt_geodetic_m)}
+                        {format.length(position.alt_geodetic_m)}
                       </td>
                       <td className="py-1.5 pr-4 text-right">
-                        {formatSpeed(position.speed_mps)}
+                        {format.speed(position.speed_mps)}
                       </td>
                       <td className="py-1.5 pr-1 text-right">
-                        {formatHeading(position.track_deg)}
+                        {format.heading(position.track_deg)}
                       </td>
                     </tr>
                   ))}

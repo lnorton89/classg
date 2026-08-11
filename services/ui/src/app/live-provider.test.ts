@@ -3,13 +3,10 @@ import { describe, expect, it } from 'vitest'
 
 import { applyFrame } from './live-provider'
 import { queryKeys } from '@/lib/api/queries'
-import type {
-  Detection,
-  SensorHealth,
-  ServerFrame,
-  Track,
-  TracksResponse,
-} from '@/lib/api/types'
+import type { Detection, SensorHealth, Track, TracksResponse } from '@/lib/api/types'
+
+/** Every server frame carries `ts`; the value is irrelevant to these assertions. */
+const FRAME_TS = '2026-08-10T00:00:02Z'
 
 function track(trackId: string): Track {
   return {
@@ -48,7 +45,7 @@ describe('applyFrame', () => {
     client.setQueryData(queryKeys.tracks(), response)
     client.setQueryData(queryKeys.tracks({ min_confidence: 0.5 }), response)
 
-    applyFrame(client, { type: 'track.update', track: updated } as ServerFrame)
+    applyFrame(client, { type: 'track.update', ts: FRAME_TS, track: updated })
 
     expect(client.getQueryData(queryKeys.track('T1'))).toMatchObject({ confidence: 0.8 })
     expect(client.getQueryData<TracksResponse>(queryKeys.tracks())?.tracks[0]).toMatchObject({
@@ -68,7 +65,7 @@ describe('applyFrame', () => {
       total: 1,
     })
 
-    applyFrame(client, { type: 'track.closed', track_id: 'T1' })
+    applyFrame(client, { type: 'track.closed', ts: FRAME_TS, track_id: 'T1' })
 
     expect(client.getQueryData<TracksResponse>(queryKeys.tracks())).toMatchObject({
       tracks: [{ track_id: 'T1', state: 'CLOSED' }],
@@ -82,8 +79,8 @@ describe('applyFrame', () => {
     const query = queryKeys.detections({ class: ['D'], limit: 200 })
     client.setQueryData(query, { detections: [], next_cursor: null, total: 0 })
 
-    applyFrame(client, { type: 'detection', detection: detection('wifi', 'A') })
-    applyFrame(client, { type: 'detection', detection: detection('adsb', 'D') })
+    applyFrame(client, { type: 'detection', ts: FRAME_TS, detection: detection('wifi', 'A') })
+    applyFrame(client, { type: 'detection', ts: FRAME_TS, detection: detection('adsb', 'D') })
 
     expect(client.getQueryData<{ detections: Detection[] }>(query)?.detections).toEqual([
       expect.objectContaining({ detection_id: 'adsb' }),
@@ -117,6 +114,7 @@ describe('applyFrame', () => {
 
     applyFrame(client, {
       type: 'health',
+      ts: FRAME_TS,
       health: {
         status: 'ok',
         uptime_s: 10,

@@ -12,7 +12,9 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConfigRouteImport } from './routes/config'
 import { Route as DocsRouteImport } from './routes/docs'
+import { Route as LogsRouteImport } from './routes/logs'
 import { Route as SensorsRouteImport } from './routes/sensors'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as CapturesIndexRouteImport } from './routes/captures.index'
 import { Route as CapturesCaptureIdRouteImport } from './routes/captures.$captureId'
 import { Route as DocsIndexRouteImport } from './routes/docs.index'
@@ -35,9 +37,19 @@ const DocsRoute = DocsRouteImport.update({
   path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LogsRoute = LogsRouteImport.update({
+  id: '/logs',
+  path: '/logs',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SensorsRoute = SensorsRouteImport.update({
   id: '/sensors',
   path: '/sensors',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CapturesIndexRoute = CapturesIndexRouteImport.update({
@@ -75,7 +87,9 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/config': typeof ConfigRoute
   '/docs': typeof DocsRouteWithChildren
+  '/logs': typeof LogsRoute
   '/sensors': typeof SensorsRoute
+  '/settings': typeof SettingsRoute
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
@@ -86,7 +100,9 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/config': typeof ConfigRoute
+  '/logs': typeof LogsRoute
   '/sensors': typeof SensorsRoute
+  '/settings': typeof SettingsRoute
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
@@ -99,7 +115,9 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/config': typeof ConfigRoute
   '/docs': typeof DocsRouteWithChildren
+  '/logs': typeof LogsRoute
   '/sensors': typeof SensorsRoute
+  '/settings': typeof SettingsRoute
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
@@ -113,7 +131,9 @@ export interface FileRouteTypes {
     | '/'
     | '/config'
     | '/docs'
+    | '/logs'
     | '/sensors'
+    | '/settings'
     | '/captures/$captureId'
     | '/docs/$docId'
     | '/tracks/$trackId'
@@ -124,7 +144,9 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/config'
+    | '/logs'
     | '/sensors'
+    | '/settings'
     | '/captures/$captureId'
     | '/docs/$docId'
     | '/tracks/$trackId'
@@ -136,7 +158,9 @@ export interface FileRouteTypes {
     | '/'
     | '/config'
     | '/docs'
+    | '/logs'
     | '/sensors'
+    | '/settings'
     | '/captures/$captureId'
     | '/docs/$docId'
     | '/tracks/$trackId'
@@ -149,7 +173,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ConfigRoute: typeof ConfigRoute
   DocsRoute: typeof DocsRouteWithChildren
+  LogsRoute: typeof LogsRoute
   SensorsRoute: typeof SensorsRoute
+  SettingsRoute: typeof SettingsRoute
   CapturesCaptureIdRoute: typeof CapturesCaptureIdRoute
   TracksTrackIdRoute: typeof TracksTrackIdRoute
   CapturesIndexRoute: typeof CapturesIndexRoute
@@ -179,11 +205,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/logs': {
+      id: '/logs'
+      path: '/logs'
+      fullPath: '/logs'
+      preLoaderRoute: typeof LogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sensors': {
       id: '/sensors'
       path: '/sensors'
       fullPath: '/sensors'
       preLoaderRoute: typeof SensorsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/captures/': {
@@ -247,7 +287,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ConfigRoute: ConfigRoute,
   DocsRoute: DocsRouteWithChildren,
+  LogsRoute: LogsRoute,
   SensorsRoute: SensorsRoute,
+  SettingsRoute: SettingsRoute,
   CapturesCaptureIdRoute: CapturesCaptureIdRoute,
   TracksTrackIdRoute: TracksTrackIdRoute,
   CapturesIndexRoute: CapturesIndexRoute,

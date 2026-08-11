@@ -17,10 +17,10 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataRow } from '@/components/ui/misc'
 import { Tooltip } from '@/components/ui/tooltip'
+import { useFormat, useTicker } from '@/app/use-format'
 import { healthQuery } from '@/lib/api/queries'
 import type { SensorHealth, SensorKind, SystemStatus } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
-import { formatDuration, formatRelative } from '@/lib/format'
 
 import type { SkyState } from './sky-state'
 
@@ -89,6 +89,11 @@ export function SystemStatusPill({ className }: { className?: string }) {
 /** Live-stream connection indicator. A dead socket means stale data, not calm. */
 export function StreamStatusPill({ className }: { className?: string }) {
   const { connection, lastFrameAt, reconnectAttempt } = useLive()
+  const format = useFormat()
+  // Per second, unlike the heavier lists: this pill is the freshness indicator,
+  // and it renders one badge. "Last frame 3s ago" going stale here would
+  // undermine the one thing it exists to tell you.
+  useTicker(1000)
 
   const map = {
     open: { tone: 'ok' as const, label: 'Live', icon: ActivityIcon },
@@ -106,7 +111,7 @@ export function StreamStatusPill({ className }: { className?: string }) {
     <Tooltip
       content={
         connection === 'open'
-          ? `Last frame ${formatRelative(
+          ? `Last frame ${format.relative(
               lastFrameAt ? new Date(lastFrameAt).toISOString() : null,
             )}. Tracks are refetched on every reconnect, so gaps do not persist.`
           : 'The live stream is not connected. Track positions on screen may be stale.'
@@ -184,6 +189,11 @@ export function SensorHealthCard({
   sensor: SensorHealth
   action?: ReactNode
 }) {
+  const format = useFormat()
+  // Heartbeat age has to advance on its own — a card frozen at "3s ago" is
+  // exactly the lie this page exists to prevent. Five seconds is well inside
+  // the 30 s staleness threshold it is being read against.
+  useTicker(5000)
   const Icon = SENSOR_ICONS[sensor.sensor_kind]
   return (
     <Card
@@ -212,8 +222,8 @@ export function SensorHealthCard({
             label="Last heartbeat"
             value={
               <span className={cn(!sensor.healthy && 'text-down font-medium')}>
-                {formatRelative(sensor.last_heartbeat)} (
-                {formatDuration(sensor.seconds_since_heartbeat)})
+                {format.relative(sensor.last_heartbeat)} (
+                {format.duration(sensor.seconds_since_heartbeat)})
               </span>
             }
           />

@@ -26,12 +26,13 @@ import {
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, SearchIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
+import { useFormat, useTicker, type Formatters } from '@/app/use-format'
+import { CopyButton } from '@/components/ui/copy-button'
 import { Input } from '@/components/ui/field'
 import { EmptyState } from '@/components/ui/misc'
 import { Select } from '@/components/ui/select'
 import type { Track, TrackState } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
-import { formatConfidence, formatRelative, formatRssi } from '@/lib/format'
 
 import { ConfidenceBar, EvidenceChips, TrackStateBadge } from './evidence'
 
@@ -62,102 +63,120 @@ function searchableIdentity(track: Track): string {
     .join(' ')
 }
 
-const columns = helper.columns([
-  helper.accessor(searchableIdentity, {
-    id: 'identity',
-    header: 'Identity',
-    filterFn: 'includesString',
-    sortFn: 'alphanumeric',
-    cell: (info) => {
-      const track = info.row.original
-      const serial = track.identity?.serial
-      const mac = track.identity?.macs?.[0]
-      return (
-        <div className="min-w-0">
-          <Link
-            to="/tracks/$trackId"
-            params={{ trackId: track.track_id }}
-            className="text-primary block truncate font-mono text-xs underline-offset-2 hover:underline"
-          >
-            {serial ?? mac ?? track.track_id}
-          </Link>
-          <span className="text-muted-foreground block truncate text-[11px]">
-            {serial && mac
-              ? mac
-              : track.identity?.vendor
-                ? `vendor ${track.identity.vendor}`
-                : '—'}
-          </span>
+/**
+ * Columns are built from the active formatters rather than defined once at
+ * module scope: unit and time preferences change what a cell says, and a
+ * module-level column definition would capture whichever setting happened to be
+ * in force when the bundle loaded.
+ */
+function buildColumns(format: Formatters) {
+  return helper.columns([
+    helper.accessor(searchableIdentity, {
+      id: 'identity',
+      header: 'Identity',
+      filterFn: 'includesString',
+      sortFn: 'alphanumeric',
+      cell: (info) => {
+        const track = info.row.original
+        const serial = track.identity?.serial
+        const mac = track.identity?.macs?.[0]
+        const primary = serial ?? mac ?? track.track_id
+        return (
+          <div className="min-w-0">
+            <span className="flex min-w-0 items-center gap-1">
+              <Link
+                to="/tracks/$trackId"
+                params={{ trackId: track.track_id }}
+                className="text-primary block truncate font-mono text-xs underline-offset-2 hover:underline"
+              >
+                {primary}
+              </Link>
+              {/* The identifier is what gets transcribed into a report, so it is
+                copyable everywhere it appears rather than only on the detail page. */}
+              <CopyButton value={primary} label="identifier" />
+            </span>
+            <span className="text-muted-foreground block truncate text-2xs">
+              {serial && mac
+                ? mac
+                : track.identity?.vendor
+                  ? `vendor ${track.identity.vendor}`
+                  : '—'}
+            </span>
+          </div>
+        )
+      },
+    }),
+
+    helper.accessor('state', {
+      id: 'state',
+      header: 'State',
+      sortFn: 'alphanumeric',
+      cell: (info) => <TrackStateBadge state={info.getValue()} />,
+    }),
+
+    helper.accessor('confidence', {
+      id: 'confidence',
+      header: 'Confidence',
+      sortFn: 'basic',
+      cell: (info) => (
+        <div className="flex items-center gap-2">
+          <ConfidenceBar confidence={info.getValue()} className="w-14" />
+          <span className="font-mono text-xs">{format.confidence(info.getValue())}</span>
         </div>
-      )
-    },
-  }),
-
-  helper.accessor('state', {
-    id: 'state',
-    header: 'State',
-    sortFn: 'alphanumeric',
-    cell: (info) => <TrackStateBadge state={info.getValue()} />,
-  }),
-
-  helper.accessor('confidence', {
-    id: 'confidence',
-    header: 'Confidence',
-    sortFn: 'basic',
-    cell: (info) => (
-      <div className="flex items-center gap-2">
-        <ConfidenceBar confidence={info.getValue()} className="w-14" />
-        <span className="font-mono text-xs">{formatConfidence(info.getValue())}</span>
-      </div>
-    ),
-  }),
-
-  helper.accessor((track) => (track.evidence ?? []).map((e) => e.class).join(''), {
-    id: 'evidence',
-    header: 'Evidence',
-    filterFn: 'includesString',
-    cell: (info) => <EvidenceChips evidence={info.row.original.evidence ?? []} />,
-  }),
-
-  helper.accessor('detection_count', {
-    id: 'detection_count',
-    header: 'Detections',
-    sortFn: 'basic',
-    cell: (info) => <span className="font-mono text-xs">{info.getValue()}</span>,
-  }),
-
-  helper.accessor((track) => track.rssi_dbm ?? null, {
-    id: 'rssi',
-    header: 'RSSI',
-    sortFn: 'basic',
-    cell: (info) => <span className="font-mono text-xs">{formatRssi(info.getValue())}</span>,
-  }),
-
-  helper.accessor((track) => Date.parse(track.last_seen), {
-    id: 'last_seen',
-    header: 'Last seen',
-    sortFn: 'basic',
-    cell: (info) => (
-      <span className="text-muted-foreground text-xs">
-        {formatRelative(info.row.original.last_seen)}
-      </span>
-    ),
-  }),
-
-  helper.accessor((track) => (track.current ? 'yes' : 'no'), {
-    id: 'position',
-    header: 'Position',
-    cell: (info) =>
-      info.getValue() === 'yes' ? (
-        <span className="text-muted-foreground font-mono text-[11px]">
-          {info.row.original.current?.lat.toFixed(4)},{' '}
-          {info.row.original.current?.lon.toFixed(4)}
-        </span>
-      ) : (
-        <span className="text-warn text-[11px]">no fix</span>
       ),
-  }),
-])
+    }),
+
+    helper.accessor((track) => (track.evidence ?? []).map((e) => e.class).join(''), {
+      id: 'evidence',
+      header: 'Evidence',
+      filterFn: 'includesString',
+      cell: (info) => <EvidenceChips evidence={info.row.original.evidence ?? []} />,
+    }),
+
+    helper.accessor('detection_count', {
+      id: 'detection_count',
+      header: 'Detections',
+      sortFn: 'basic',
+      cell: (info) => <span className="font-mono text-xs">{info.getValue()}</span>,
+    }),
+
+    helper.accessor((track) => track.rssi_dbm ?? null, {
+      id: 'rssi',
+      header: 'RSSI',
+      sortFn: 'basic',
+      cell: (info) => <span className="font-mono text-xs">{format.rssi(info.getValue())}</span>,
+    }),
+
+    helper.accessor((track) => Date.parse(track.last_seen), {
+      id: 'last_seen',
+      // The zone is in the header rather than repeated in every cell.
+      header: `Last seen (${format.zoneLabel})`,
+      sortFn: 'basic',
+      cell: (info) => (
+        <span className="text-muted-foreground text-xs whitespace-nowrap">
+          {format.when(info.row.original.last_seen)}
+        </span>
+      ),
+    }),
+
+    helper.accessor((track) => (track.current ? 'yes' : 'no'), {
+      id: 'position',
+      header: 'Position',
+      cell: (info) => {
+        const current = info.row.original.current
+        return current ? (
+          <span className="text-muted-foreground font-mono text-2xs whitespace-nowrap">
+            {format.coords(current.lat, current.lon)}
+          </span>
+        ) : (
+          // Not a missing value: the aircraft is broadcasting without a GPS fix,
+          // which is why it is absent from the map as well.
+          <span className="text-warn text-2xs">no fix</span>
+        )
+      },
+    }),
+  ])
+}
 
 const STATE_OPTIONS: { value: TrackState | 'ALL'; label: string }[] = [
   { value: 'ALL', label: 'All states' },
@@ -182,6 +201,14 @@ export function TracksTable({
   emptyDescription = 'Check the sensor health banner before concluding the sky is empty.',
   showStateFilter = true,
 }: TracksTableProps) {
+  const format = useFormat()
+  // Ages in this table must keep moving even when no frame arrives. Five
+  // seconds rather than one: this re-renders every row, and `formatRelative` is
+  // coarse by design, so a per-second tick buys no accuracy an operator can use
+  // and costs a full table pass every second on a Pi.
+  useTicker(5000)
+  const columns = useMemo(() => buildColumns(format), [format])
+
   const [sorting, setSorting] = useState<SortingState>([{ id: 'last_seen', desc: true }])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [globalFilter, setGlobalFilter] = useState('')

@@ -12,6 +12,7 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef, useState } from 'react'
 
 import { useTheme } from '@/app/theme-context'
+import { useFormat } from '@/app/use-format'
 import type { Detection, Track } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
@@ -69,6 +70,9 @@ export function LiveMap({
   const mannedMarkers = useRef(new Map<string, { marker: Marker; node: HTMLElement }>())
   const onSelectRef = useRef(onSelectTrack)
   const fittedBoundsRef = useRef<string | null>(null)
+  // Marker accessible names are the text equivalent of the canvas, so they
+  // follow the operator's unit preference like every other reading.
+  const format = useFormat()
 
   useEffect(() => {
     onSelectRef.current = onSelectTrack
@@ -248,6 +252,7 @@ export function LiveMap({
         track,
         selected: track.track_id === selectedTrackId,
         onSelect: onSelectRef.current ? (id: string) => onSelectRef.current?.(id) : undefined,
+        format,
       }
       const existing = droneMarkers.current.get(track.track_id)
       if (existing) {
@@ -274,7 +279,7 @@ export function LiveMap({
         operatorMarkers.current.delete(id)
       }
     }
-  }, [tracks, selectedTrackId, ready])
+  }, [tracks, selectedTrackId, ready, format])
 
   // --- manned traffic ------------------------------------------------------
   useEffect(() => {
@@ -293,6 +298,7 @@ export function LiveMap({
         callsign: detection.adsb?.callsign ?? null,
         headingDeg: detection.kinematics?.track_deg ?? null,
         altFt: detection.adsb?.alt_ft ?? null,
+        format,
       }
       const existing = mannedMarkers.current.get(icao)
       if (existing) {
@@ -313,7 +319,7 @@ export function LiveMap({
         mannedMarkers.current.delete(icao)
       }
     }
-  }, [adsb, ready])
+  }, [adsb, ready, format])
 
   // --- route/contact fit ---------------------------------------------------
   useEffect(() => {
@@ -363,7 +369,7 @@ export function LiveMap({
       ) : null}
 
       {basemap === 'no-tiles' ? (
-        <p className="text-muted-foreground bg-background/80 ring-border pointer-events-none absolute right-2 bottom-2 z-10 rounded px-2 py-1 text-[10px] ring-1">
+        <p className="text-muted-foreground bg-background/80 ring-border pointer-events-none absolute right-2 bottom-2 z-10 rounded px-2 py-1 text-2xs ring-1">
           No basemap tiles — range rings only
         </p>
       ) : null}

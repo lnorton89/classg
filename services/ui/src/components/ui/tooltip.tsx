@@ -24,10 +24,16 @@ export function Tooltip({ content, children, side = 'top', className }: TooltipP
         {children}
       </BaseTooltip.Trigger>
       <BaseTooltip.Portal>
-        <BaseTooltip.Positioner side={side} sideOffset={6}>
+        {/*
+          The z-index belongs on the Positioner, not the Popup. Base UI gives
+          the Positioner a transform, which creates a stacking context — so a
+          z-index on the Popup inside it is scoped to that context and cannot
+          clear the z-40 app header. See the layer list in styles.css.
+        */}
+        <BaseTooltip.Positioner side={side} sideOffset={6} className="z-50">
           <BaseTooltip.Popup
             className={cn(
-              'bg-popover text-popover-foreground border-border z-50 max-w-72 rounded-md border',
+              'bg-popover text-popover-foreground border-border max-w-72 rounded-md border',
               'px-2.5 py-1.5 text-xs shadow-md',
               className,
             )}

@@ -11,7 +11,7 @@ import { Alert, EmptyState } from '@/components/ui/misc'
 import { ApiError, api } from '@/lib/api/client'
 import { capturesQuery, queryKeys } from '@/lib/api/queries'
 import type { Capture, SensorHealth, StartCaptureRequest } from '@/lib/api/types'
-import { formatBytes, formatRelative, formatTimestamp } from '@/lib/format'
+import { useFormat } from '@/app/use-format'
 
 export function SensorCaptureControl({ sensor }: { sensor: SensorHealth }) {
   const queryClient = useQueryClient()
@@ -141,7 +141,7 @@ export function CaptureHistory() {
         </ul>
       )}
 
-      <p className="text-muted-foreground text-[11px] leading-relaxed">
+      <p className="text-muted-foreground text-2xs leading-relaxed">
         Monitor mode records every 802.11 beacon in range, not only drone beacons. Treat PCAP
         files as sensitive and delete them when they are no longer needed.
       </p>
@@ -150,6 +150,7 @@ export function CaptureHistory() {
 }
 
 function CaptureRow({ capture }: { capture: Capture }) {
+  const format = useFormat()
   const queryClient = useQueryClient()
   const stop = useMutation({
     mutationFn: () => api.stopCapture(capture.capture_id),
@@ -173,11 +174,11 @@ function CaptureRow({ capture }: { capture: Capture }) {
           </div>
           <p className="text-muted-foreground mt-1 text-xs">
             ch {capture.channel} · {capture.iface} · {capture.duration_s}s ·{' '}
-            {formatBytes(capture.size_bytes)} · {capture.frame_count} frames ·{' '}
-            {formatRelative(capture.started_at)}
+            {format.bytes(capture.size_bytes)} · {capture.frame_count} frames ·{' '}
+            {format.relative(capture.started_at)}
           </p>
-          <p className="text-muted-foreground font-mono text-[11px]">
-            {formatTimestamp(capture.started_at)}
+          <p className="text-muted-foreground font-mono text-2xs">
+            {format.timestamp(capture.started_at)}
           </p>
         </div>
 

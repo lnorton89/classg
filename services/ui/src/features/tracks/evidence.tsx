@@ -13,7 +13,7 @@ import { Tooltip } from '@/components/ui/tooltip'
 import type { Evidence } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 import { DETECTION_CLASS_ORDER, detectionClassInfo, noisyOr } from '@/lib/detection-classes'
-import { formatConfidence, formatRelative } from '@/lib/format'
+import { useFormat } from '@/app/use-format'
 
 const TRACK_STATES = [
   {
@@ -49,9 +49,7 @@ export function EvidenceChips({
   className?: string
 }) {
   if (evidence.length === 0) {
-    return (
-      <span className={cn('text-muted-foreground text-[11px]', className)}>no evidence</span>
-    )
+    return <span className={cn('text-muted-foreground text-2xs', className)}>no evidence</span>
   }
   return (
     <span className={cn('flex flex-wrap items-center gap-1', className)}>
@@ -74,7 +72,7 @@ export function EvidenceChips({
           >
             <span
               className={cn(
-                'rounded border px-1 py-px font-mono text-[10px] leading-tight',
+                'rounded border px-1 py-px font-mono text-2xs leading-tight',
                 info.chipClass,
               )}
             >
@@ -98,13 +96,14 @@ export function ConfidenceBar({
   confidence: number
   className?: string
 }) {
+  const format = useFormat()
   return (
     <span
       role="meter"
       aria-valuenow={Math.round(confidence * 100)}
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-label={`Confidence that this is a drone: ${formatConfidence(confidence)}`}
+      aria-label={`Confidence that this is a drone: ${format.confidence(confidence)}`}
       className={cn('bg-muted relative block h-1.5 overflow-hidden rounded-full', className)}
     >
       <span
@@ -128,6 +127,7 @@ export function EvidenceBreakdown({
   confidence: number
   className?: string
 }) {
+  const format = useFormat()
   const sorted = sortEvidence(evidence)
   const contributing = sorted.filter((e) => e.weight > 0)
   const recomputed = noisyOr(contributing.map((e) => e.weight))
@@ -175,7 +175,7 @@ export function EvidenceBreakdown({
                   <th scope="row" className="py-2 pr-2 font-normal">
                     <span
                       className={cn(
-                        'rounded border px-1 py-px font-mono text-[10px]',
+                        'rounded border px-1 py-px font-mono text-2xs',
                         info.chipClass,
                       )}
                     >
@@ -185,7 +185,7 @@ export function EvidenceBreakdown({
                   </th>
                   <td className="text-muted-foreground py-2 pr-2">
                     {info.signal}
-                    <span className="block text-[11px] opacity-80">via {item.sensor_kind}</span>
+                    <span className="block text-2xs opacity-80">via {item.sensor_kind}</span>
                   </td>
                   <td className="py-2 pr-2 text-right font-mono">{item.count}</td>
                   <td className="py-2 pr-2 text-right font-mono">
@@ -200,7 +200,7 @@ export function EvidenceBreakdown({
                     )}
                   </td>
                   <td className="text-muted-foreground py-2 text-right">
-                    {formatRelative(item.last_seen)}
+                    {format.relative(item.last_seen)}
                   </td>
                 </tr>
               )
@@ -227,7 +227,7 @@ export function EvidenceBreakdown({
         </p>
         {mismatch ? (
           <p className="text-warn mt-2 text-xs">
-            The API reported {formatConfidence(confidence)}, which does not match the weights
+            The API reported {format.confidence(confidence)}, which does not match the weights
             above. Fusion may be using a different weight table — check Config → Fusion weights.
           </p>
         ) : null}
@@ -264,7 +264,7 @@ export function TrackStateKey() {
         <h2 id="track-state-key-title" className="text-xs font-semibold">
           Track state key
         </h2>
-        <p className="text-muted-foreground text-[11px]">
+        <p className="text-muted-foreground text-2xs">
           States advance automatically as detections arrive or stop (default timings shown).
         </p>
       </div>
@@ -274,7 +274,7 @@ export function TrackStateKey() {
             <dt className="shrink-0">
               <TrackStateBadge state={state} />
             </dt>
-            <dd className="text-muted-foreground pt-0.5 text-[11px] leading-snug">{meaning}</dd>
+            <dd className="text-muted-foreground pt-0.5 text-2xs leading-snug">{meaning}</dd>
           </div>
         ))}
       </dl>

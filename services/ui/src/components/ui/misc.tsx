@@ -1,4 +1,4 @@
-import { AlertTriangleIcon, InfoIcon, XCircleIcon } from 'lucide-react'
+import { AlertTriangleIcon, CheckCircle2Icon, InfoIcon, XCircleIcon } from 'lucide-react'
 import type { ComponentProps, ReactNode } from 'react'
 
 import { cn } from '@/lib/cn'
@@ -19,6 +19,7 @@ export function Separator({ className, ...props }: ComponentProps<'div'>) {
 
 const ALERT_ICONS = {
   info: InfoIcon,
+  ok: CheckCircle2Icon,
   warn: AlertTriangleIcon,
   error: XCircleIcon,
 } as const
@@ -35,22 +36,31 @@ export function Alert({ tone = 'info', title, children, className, action }: Ale
   const Icon = ALERT_ICONS[tone]
   const toneClass = {
     info: 'border-border bg-muted/40 text-foreground',
+    ok: 'border-ok/40 bg-ok/10 text-foreground',
     warn: 'border-warn/40 bg-warn/10 text-foreground',
     error: 'border-down/45 bg-down/10 text-foreground',
   }[tone]
-  const iconClass = { info: 'text-muted-foreground', warn: 'text-warn', error: 'text-down' }[
-    tone
-  ]
+  const iconClass = {
+    info: 'text-muted-foreground',
+    ok: 'text-ok',
+    warn: 'text-warn',
+    error: 'text-down',
+  }[tone]
 
   return (
     <div
-      role={tone === 'info' ? undefined : 'alert'}
+      // `alert` interrupts a screen reader. Reserved for the two tones that
+      // mean the operator must act; info and success are announced politely by
+      // the surrounding live region, or not at all.
+      role={tone === 'warn' || tone === 'error' ? 'alert' : undefined}
       className={cn('flex items-start gap-3 rounded-lg border p-3', toneClass, className)}
     >
       <Icon className={cn('mt-0.5 size-4 shrink-0', iconClass)} aria-hidden />
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">{title}</p>
-        {children ? <div className="text-muted-foreground mt-1 text-xs">{children}</div> : null}
+        <p className="text-sm leading-snug font-semibold">{title}</p>
+        {children ? (
+          <div className="text-muted-foreground mt-1 text-xs leading-relaxed">{children}</div>
+        ) : null}
       </div>
       {action}
     </div>

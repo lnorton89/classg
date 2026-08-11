@@ -70,7 +70,7 @@ export function DocsDocument({ document }: { document: GuideDocument }) {
                     <dd className="text-muted-foreground">{item.body}</dd>
                     {'path' in item ? (
                       <dd>
-                        <code className="bg-muted rounded px-1 py-0.5 text-[11px]">
+                        <code className="bg-muted rounded px-1 py-0.5 text-2xs">
                           {item.path}
                         </code>
                       </dd>
@@ -122,7 +122,7 @@ export function DocsDocument({ document }: { document: GuideDocument }) {
                         <dd className="text-muted-foreground text-xs leading-5">
                           {item.body}
                           {'path' in item ? (
-                            <code className="bg-muted text-foreground ml-2 inline-block rounded px-1.5 py-0.5 text-[11px]">
+                            <code className="bg-muted text-foreground ml-2 inline-block rounded px-1.5 py-0.5 text-2xs">
                               {item.path}
                             </code>
                           ) : null}
