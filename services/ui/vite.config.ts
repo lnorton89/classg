@@ -37,6 +37,14 @@ export default defineConfig(({ mode }) => {
 
     server: {
       port: 5173,
+      // Bind mounts from the Windows filesystem deliver no inotify events into
+      // a Linux container, so the default watcher never fires and HMR silently
+      // stops working. Polling is the only thing that crosses that boundary.
+      // Opt-in, because it costs CPU and is pointless when running natively.
+      watch:
+        process.env['CLASSG_WATCH_POLL'] === 'true'
+          ? { usePolling: true, interval: 400 }
+          : undefined,
       proxy: {
         // Only reached when VITE_USE_MSW=false; MSW intercepts before the network
         // otherwise. Kept here so pointing at a real Pi is a one-env-var change.

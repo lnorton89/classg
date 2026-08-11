@@ -1,0 +1,123 @@
+# Development stack: edit source, see it live, never rebuild an image.
+#
+#   make dev          start
+#   make dev-logs     follow
+#   make dev-down     stop
+#
+# STANDALONE, not an overlay on docker-compose.yml. The production file serves
+# the UI from nginx and ships pre-built images; merging the two produced a `ui`
+# service that carried both nginx's port 80 and Vite's 5173 and built an image
+# it then ignored. A separate file is easier to reason about than a merge.
+#
+# Same compose project name as production on purpose: this is the dev variant of
+# one stack, so starting it replaces the production containers rather than
+# fighting them for ports.
+#
+# How rebuilds are avoided:
+#   - the repository is bind-mounted at /src, so a saved file is immediately
+#     visible in the container
+#   - Go services run under `air`, which rebuilds in-container on change
+#   - the UI runs the Vite dev server with HMR instead of a built bundle
+#
+# The one thing that makes this work on Windows: POLLING. Bind mounts from the
+# Windows filesystem do not deliver inotify events into a Linux container, so
+# every watcher here polls. Without it the stack starts, looks healthy, and
+# silently never notices a change -- worse than failing outright.
+
+name: classg
+
+services:
+  fusion:
+    build:
+      context: ..
+      dockerfile: services/fusion/Dockerfile
+      target: dev
+    container_name: classg-fusion
+    working_dir: /src/services/fusion
+    command: air -c .air.toml
+    environment:
+      CLASSG_DETECTION_ENDPOINT: tcp://0.0.0.0:5556
+      CLASSG_FUSION_DETECTION_SOCKET_MODE: listen
+      CLASSG_TRACK_ENDPOINT: tcp://0.0.0.0:5557
+      CLASSG_DETECTION_TOPIC: ${CLASSG_DETECTION_TOPIC:-detection.}
+      CLASSG_HEARTBEAT_TOPIC: ${CLASSG_HEARTBEAT_TOPIC:-heartbeat.}
+      CLASSG_TRACK_TOPIC: ${CLASSG_TRACK_TOPIC:-track.}
+    volumes:
+      - ..:/src
+      # Without these every start re-downloads modules and air's first build
+      # takes minutes instead of seconds.
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+    ports:
+      # The WSL Wi-Fi sensor publishes here.
+      - "${CLASSG_BUS_PORT:-5556}:5556"
+
+  api:
+    build:
+      context: ..
+      dockerfile: services/api/Dockerfile
+      target: dev
+    container_name: classg-api
+    working_dir: /src/services/api
+    command: air -c .air.toml
+    environment:
+      # Tier 1 only (ADR-0007). Everything else comes from the database, seeded
+      # from config/defaults.yaml, reachable through the /src bind mount.
+      CLASSG_LISTEN: :8081
+      CLASSG_LOG_LEVEL: ${CLASSG_LOG_LEVEL:-debug}
+      CLASSG_STORE: ${CLASSG_STORE:-libsql}
+      CLASSG_DB: /data/classg.db
+      CLASSG_CONFIG_SEED: /src/config/defaults.yaml
+      CLASSG_TURSO_URL: ${CLASSG_TURSO_URL:-}
+      CLASSG_TURSO_AUTH_TOKEN: ${CLASSG_TURSO_AUTH_TOKEN:-}
+      # Container topology the seed cannot know: container loopback is not the
+      # host's.
+      CLASSG_TRACK_ENDPOINT: tcp://fusion:5557
+      CLASSG_DETECTION_ENDPOINT: tcp://fusion:5557
+      # Vite serves the UI in dev. If the API also served a stale dist/ you
+      # would edit a component, reload, and see yesterday's build.
+      CLASSG_UI_DIR: "off"
+      CLASSG_CAPTURE_DIR: /src/captures
+    volumes:
+      - ..:/src
+      - go-mod-cache:/go/pkg/mod
+      - go-build-cache:/root/.cache/go-build
+      - classg-dev-data:/data
+    ports:
+      - "${CLASSG_API_PORT:-8081}:8081"
+    depends_on:
+      - fusion
+
+  ui:
+    # Plain node image: dev serves from Vite, not nginx.
+    image: node:22-bookworm-slim
+    container_name: classg-ui
+    working_dir: /src/services/ui
+    # node_modules lives in a volume, never on the bind mount: the host's copy
+    # is installed for Windows and its native binaries will not run here.
+    command: >
+      sh -c "if [ ! -x node_modules/.bin/vite ]; then
+               echo '--- installing UI dependencies (first run only) ---';
+               npm ci --no-audit --no-fund;
+             fi;
+             exec npm run dev -- --host 0.0.0.0 --port 5173"
+    environment:
+      # Talk to the real API rather than MSW mocks. Set true to develop the UI
+      # with no backend at all.
+      VITE_USE_MSW: ${VITE_USE_MSW:-false}
+      VITE_API_TARGET: http://api:8081
+      # Enables Vite's polling watcher -- see the note at the top of this file.
+      CLASSG_WATCH_POLL: "true"
+    volumes:
+      - ..:/src
+      - ui-node-modules:/src/services/ui/node_modules
+    ports:
+      - "${CLASSG_UI_DEV_PORT:-5173}:5173"
+    depends_on:
+      - api
+
+volumes:
+  go-mod-cache:
+  go-build-cache:
+  ui-node-modules:
+  classg-dev-data:

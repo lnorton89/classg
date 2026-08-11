@@ -44,7 +44,7 @@ Toolchains:
 
 ```bash
 # Go
-curl -fsSL https://go.dev/dl/go1.23.0.linux-arm64.tar.gz | sudo tar -C /usr/local -xz
+curl -fsSL https://go.dev/dl/go1.26.5.linux-arm64.tar.gz | sudo tar -C /usr/local -xz
 echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
 
 # Rust
