@@ -93,11 +93,22 @@ def open_socket(iface: str, bpf: str = BEACON_FILTER) -> Any:
     gain, and the analysis path already depends on scapy.
     """
     try:
+        # scapy.arch MUST be imported before conf is used: it is what assigns
+        # the platform's socket classes. Importing scapy.config alone yields a
+        # conf whose L2listen is still None, and calling it fails with the
+        # thoroughly unhelpful "'NoneType' object is not callable".
+        import scapy.arch  # noqa: F401
         from scapy.config import conf
     except ImportError as exc:  # pragma: no cover - dependency check
         raise CaptureError(
             "live capture needs scapy: pip install '.[replay]'"
         ) from exc
+
+    if conf.L2listen is None:  # pragma: no cover - platform guard
+        raise CaptureError(
+            "scapy has no layer-2 listening socket for this platform; "
+            "live capture needs Linux with AF_PACKET"
+        )
 
     try:
         return conf.L2listen(iface=iface, filter=bpf, monitor=True)

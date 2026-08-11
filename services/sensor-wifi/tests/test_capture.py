@@ -211,3 +211,50 @@ class TestFailures:
         stats, pub, _, _ = run_once(radio)
         assert stats.frames == 3
         assert any(d["detection_class"] == "A" for d in pub.published)
+
+
+class TestSocketOpen:
+    """open_socket was the one path the fake radio never exercised, which is
+    exactly where the bug was: importing scapy.config alone leaves
+    conf.L2listen as None, and calling it fails with "'NoneType' object is not
+    callable" -- a message that sends you hunting for a hardware fault."""
+
+    def test_scapy_provides_a_layer2_socket_after_our_import(self):
+        pytest.importorskip("scapy")
+        import sys
+
+        if not sys.platform.startswith("linux"):
+            pytest.skip("AF_PACKET listening sockets are Linux-only")
+
+        # Mirrors capture.open_socket's imports exactly.
+        import scapy.arch  # noqa: F401
+        from scapy.config import conf
+
+        assert conf.L2listen is not None, (
+            "scapy.arch must be imported before conf is used, or capture cannot "
+            "open a socket"
+        )
+        assert callable(conf.L2listen)
+
+    def test_missing_socket_class_gives_an_actionable_error(self, monkeypatch):
+        pytest.importorskip("scapy")
+        import scapy.arch  # noqa: F401
+        from scapy.config import conf
+
+        monkeypatch.setattr(conf, "L2listen", None)
+        with pytest.raises(capture.CaptureError, match="AF_PACKET"):
+            capture.open_socket("wlan-test")
+
+    def test_open_failure_names_monitor_mode_and_root(self, monkeypatch):
+        pytest.importorskip("scapy")
+        import scapy.arch  # noqa: F401
+        from scapy.config import conf
+
+        def boom(**_kwargs):
+            raise OSError("Operation not permitted")
+
+        monkeypatch.setattr(conf, "L2listen", boom)
+        with pytest.raises(capture.CaptureError) as excinfo:
+            capture.open_socket("wlan-test")
+        message = str(excinfo.value)
+        assert "monitor mode" in message and "root" in message
