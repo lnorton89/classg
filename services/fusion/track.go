@@ -205,7 +205,18 @@ func (s *TrackStore) resolve(serial, mac string) *Track {
 	return nil
 }
 
+// Ingest folds a detection into the track it belongs to, creating one if
+// needed. Returns nil for a detection that must not become a track.
 func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
+	// Manned traffic is not a track. ADS-B carries neither serial nor MAC, so
+	// resolve can never match one, and before this guard every message minted a
+	// fresh zero-confidence track -- a single aircraft at 1 Hz produced hundreds
+	// of them, each published on the bus, stored, and drawn on the map as a
+	// contact of interest. Class D belongs in ContactStore; see contact.go.
+	if d.DetectionClass == ClassADSB {
+		return nil
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -214,6 +225,14 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 
 	t := s.resolve(serial, mac)
 	if t == nil {
+		// A new track needs an identity, or the next detection from the same
+		// aircraft cannot find it. The same unbounded accumulation Class D used
+		// to cause follows from any identity-less detection, whatever emitted
+		// it, so refuse here rather than trusting every present and future
+		// sensor to never send one.
+		if serial == "" && mac == "" {
+			return nil
+		}
 		t = &Track{
 			SchemaVersion: "1.0",
 			TrackID:       s.newID(),
