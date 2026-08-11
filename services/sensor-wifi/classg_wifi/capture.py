@@ -31,6 +31,7 @@ import logging
 import os
 import select
 import subprocess
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -223,6 +224,7 @@ def run_capture(
     pipeline: Pipeline,
     publisher: DetectionPublisher,
     heartbeat_s: float = 10.0,
+    watchdog_s: float | None = None,
     should_run: Callable[[], bool] = lambda: True,
     socket_factory: Callable[[str], Any] = open_socket,
 ) -> CaptureStats:
@@ -238,6 +240,19 @@ def run_capture(
     last_heartbeat = 0.0
     consecutive_read_errors = 0
     consecutive_channel_errors = 0
+
+    # Shared with the watchdog thread, which cannot read the local above.
+    #
+    # Off unless asked for: tests drive this loop with heartbeat_s=0 and finish
+    # in milliseconds, and a watchdog derived from that would kill the test
+    # runner. The CLI turns it on for real captures, which is where wedging
+    # happens.
+    beat = _Heartbeat()
+    stop_watchdog = (
+        _start_watchdog(beat, timeout_s=watchdog_s, iface=iface)
+        if watchdog_s and watchdog_s > 0
+        else _noop
+    )
 
     log.info("capture starting on %s", iface)
     try:
@@ -332,8 +347,10 @@ def run_capture(
             if now - last_heartbeat >= heartbeat_s:
                 _heartbeat(publisher, stats, pipeline, hopper, iface)
                 last_heartbeat = now
+                beat.mark()
     finally:
         _close(sock)
+        stop_watchdog()
         # One last heartbeat so a clean shutdown is distinguishable from a
         # crash in whatever is watching the bus.
         _heartbeat(publisher, stats, pipeline, hopper, iface, healthy=False,
@@ -343,6 +360,78 @@ def run_capture(
             stats.frames, pipeline.stats.beacons, stats.detections, stats.dwells,
         )
     return stats
+
+
+def _noop() -> None:
+    """Stand-in for the watchdog shutdown when no watchdog is running."""
+
+
+class _Heartbeat:
+    """The time of the last published heartbeat, readable from another thread."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._at = time.monotonic()
+
+    def mark(self) -> None:
+        with self._lock:
+            self._at = time.monotonic()
+
+    def age_s(self) -> float:
+        with self._lock:
+            return time.monotonic() - self._at
+
+
+def _start_watchdog(
+    beat: _Heartbeat,
+    *,
+    timeout_s: float,
+    iface: str,
+    on_wedged: Callable[[int], None] = os._exit,
+) -> Callable[[], None]:
+    """Kill the process if the capture loop stops publishing heartbeats.
+
+    Every bounded wait in the loop -- select(), the `iw` subprocess -- has a
+    timeout, so in principle it cannot hang. In practice it does: when the USB
+    transport dies mid-capture (over usbip, `vhci_hcd: seqnum max`), a read or
+    an `iw` call can land in uninterruptible sleep, where a timeout cannot reach
+    it. Observed once for nearly five minutes: process alive, adapter still
+    listed, interface still in monitor mode, and not one frame or heartbeat.
+
+    That is the worst failure this system has, because everything looks fine.
+    ADR-0003 says a sensor degrades visibly rather than wedging, and a process
+    that has stopped reporting cannot report that it has stopped.
+
+    on_wedged defaults to os._exit rather than raising: the main thread is stuck
+    in a syscall and will never see an exception. Exiting makes the sensor
+    visibly absent, which the health banner already knows how to say. It is a
+    parameter so a test can prove the watchdog fires without killing pytest.
+    """
+    stop = threading.Event()
+
+    def watch() -> None:
+        while not stop.wait(timeout_s / 3):
+            age = beat.age_s()
+            if age > timeout_s:
+                log.error(
+                    "watchdog: no heartbeat for %.0fs on %s (limit %.0fs); the capture "
+                    "loop is wedged, most likely on a USB transport that went away. "
+                    "Exiting so the sensor reads as down instead of silently blind.",
+                    age, iface, timeout_s,
+                )
+                on_wedged(1)
+                return
+
+    thread = threading.Thread(target=watch, name="capture-watchdog", daemon=True)
+    thread.start()
+
+    def shutdown() -> None:
+        # Joined, not just signalled: a watchdog still running after its caller
+        # has moved on can fire against a process that is already fine.
+        stop.set()
+        thread.join(timeout=timeout_s)
+
+    return shutdown
 
 
 def _recv(sock: Any, stats: CaptureStats) -> bytes | None:
