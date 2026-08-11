@@ -280,6 +280,7 @@ def run_capture(
             dwell_started = time.monotonic()
             deadline = dwell_started + dwell_s
             saw_drone_this_dwell = False
+            beacons_at_dwell_start = pipeline.stats.beacons
 
             while should_run():
                 remaining = deadline - time.monotonic()
@@ -320,6 +321,10 @@ def run_capture(
 
             stats.dwells += 1
             hopper.record_dwell(spec.channel, (time.monotonic() - dwell_started) * 1000.0)
+            # Without this the per-channel beacon counts stayed empty for the
+            # whole run while the total climbed into the thousands, so the
+            # channel weights in channels.yaml had no evidence behind them.
+            hopper.on_beacon(spec.channel, pipeline.stats.beacons - beacons_at_dwell_start)
             if saw_drone_this_dwell:
                 hopper.on_drone_detected(spec.channel)
 

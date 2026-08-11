@@ -105,8 +105,16 @@ class ChannelHopper:
             log.info("escalating: locking dwell to channel %d for %.0fs",
                      channel, self.escalation_hold_s)
 
-    def on_beacon(self, channel: int) -> None:
-        self.stats.beacons[channel] = self.stats.beacons.get(channel, 0) + 1
+    def on_beacon(self, channel: int, count: int = 1) -> None:
+        """Record beacons heard on a channel.
+
+        `count` exists because the capture loop learns the number for a whole
+        dwell at once, from the pipeline's running total, rather than one frame
+        at a time.
+        """
+        if count <= 0:
+            return
+        self.stats.beacons[channel] = self.stats.beacons.get(channel, 0) + count
 
     def next_channel(self) -> ChannelSpec:
         if self.is_escalated:
