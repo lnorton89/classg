@@ -78,12 +78,12 @@ export function SortableTrackDetailGrid({ cards }: { cards: TrackDetailCard[] })
   function handleDragEnd(event: DragEndEvent) {
     setActiveId(null)
     if (!event.over || event.active.id === event.over.id) return
+    // Read out here, not inside the updater: the guard above proves `over` is
+    // set, but that narrowing does not survive into the closure.
+    const activeId = event.active.id as TrackDetailCardId
+    const overId = event.over.id as TrackDetailCardId
     setOrder((current) => {
-      const next = arrayMove(
-        current,
-        current.indexOf(event.active.id as TrackDetailCardId),
-        current.indexOf(event.over!.id as TrackDetailCardId),
-      )
+      const next = arrayMove(current, current.indexOf(activeId), current.indexOf(overId))
       persistOrder(next)
       return next
     })

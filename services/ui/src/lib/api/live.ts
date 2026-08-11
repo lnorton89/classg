@@ -208,7 +208,13 @@ export class LiveStream {
 }
 
 /** Resolve the stream URL from the API base, honouring http→ws / https→wss. */
-export function streamUrl(apiBase: string, origin = globalThis.location?.origin ?? ''): string {
+export function streamUrl(
+  apiBase: string,
+  // The DOM types say `location` is always there. It is not in Node, which is
+  // where the tests for this function run.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  origin = globalThis.location?.origin ?? '',
+): string {
   if (/^wss?:\/\//.test(apiBase)) return `${apiBase.replace(/\/$/, '')}/stream`
   const absolute = /^https?:\/\//.test(apiBase)
     ? apiBase

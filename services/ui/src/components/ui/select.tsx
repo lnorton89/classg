@@ -31,6 +31,9 @@ export function Select<T extends string>({
   return (
     <BaseSelect.Root
       value={value}
+      // Base UI types the callback value as nullable for clearable selects.
+      // None of ours are clearable, so a null never arrives.
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       onValueChange={(next) => onValueChange(next!)}
       disabled={disabled}
       // Without `items`, `<Select.Value />` has no way to map the selected

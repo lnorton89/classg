@@ -45,6 +45,10 @@ const STATUS_LABEL: Record<SystemStatus, string> = {
 export function SystemStatusPill({ className }: { className?: string }) {
   const { data: health, isPending, isError } = useQuery(healthQuery())
 
+  // `!health` is redundant per the query's types, but it is what narrows
+  // `health` to defined for everything below. Removing it trades a dead check
+  // for a pile of new type errors.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if (isPending || isError || !health) {
     return (
       <span

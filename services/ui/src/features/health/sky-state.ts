@@ -44,8 +44,9 @@ export interface SkyState {
 function describeSensors(sensors: SensorHealth[]): string {
   if (sensors.length === 0) return ''
   const names = sensors.map((s) => `${s.sensor_id} (${s.reason ?? 'no heartbeat'})`)
-  if (names.length === 1) return names[0]!
-  return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]!}`
+  if (names.length === 1) return names.join('')
+  const last = names[names.length - 1] ?? ''
+  return `${names.slice(0, -1).join(', ')} and ${last}`
 }
 
 export function computeSkyState(health: Health | undefined, trackCount: number): SkyState {

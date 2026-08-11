@@ -9,7 +9,10 @@
 import type { Position, Track } from '@/lib/api/types'
 
 export function hasPosition(track: Track): track is Track & { current: Position } {
-  return track.current !== undefined && track.current !== null
+  // `!= null` rather than two comparisons: `current` is optional, so the type
+  // is Position | undefined and an explicit `!== null` is dead. The loose
+  // check still covers a null if one ever appears on the wire.
+  return track.current != null
 }
 
 /** Trails, one LineString per track that has at least two history points. */

@@ -61,9 +61,7 @@ export function SectionHeader({
 }: PageHeaderProps & { id?: string }) {
   return (
     <div className={cn('flex flex-wrap items-start gap-x-3 gap-y-2', className)}>
-      {Icon ? (
-        <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
-      ) : null}
+      <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
       <div className="min-w-0 flex-1">
         <h2 id={id} className="font-display text-base leading-tight font-semibold">
           {title}

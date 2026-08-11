@@ -252,8 +252,8 @@ export const handlers = [
 
   http.post<PathParams<'id'>>(`${base}/captures/:id/stop`, ({ params }) => {
     const index = captures.findIndex((c) => c.capture_id === params.id)
-    if (index === -1) return apiError(404, 'not_found', `no such capture: ${String(params.id)}`)
-    const existing = captures[index]!
+    const existing = index === -1 ? undefined : captures[index]
+    if (!existing) return apiError(404, 'not_found', `no such capture: ${String(params.id)}`)
     if (existing.state !== 'running') {
       return apiError(409, 'conflict', `capture is ${existing.state}, not running`)
     }
@@ -362,7 +362,6 @@ export const handlers = [
   http.put<PathParams, FusionWeights>(`${base}/config/weights`, async ({ request }) => {
     const body = await request.json()
     for (const [cls, weight] of Object.entries(body.weights)) {
-      if (weight === undefined) continue
       if (weight < 0 || weight > 1) {
         return apiError(
           400,
