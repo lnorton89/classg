@@ -71,8 +71,14 @@ function SensorsView() {
 
   const activeTracks =
     tracksData?.tracks.filter((track) => track.state !== 'CLOSED').length ?? 0
-  const skyState = computeSkyState(health, activeTracks)
   const sensors = sensorsData ?? health?.sensors ?? []
+  // The banner is computed from the SAME list the cards below render, not from
+  // health.sensors. They are two endpoints on two query caches, and when they
+  // disagreed the page said "Quiet sky -- all sensors are reporting" directly
+  // above a card marked "unhealthy". A banner whose entire job is telling the
+  // operator whether an empty map is evidence cannot be allowed to contradict
+  // the evidence printed underneath it.
+  const skyState = computeSkyState(health ? { ...health, sensors } : undefined, activeTracks)
   const restartError = restart.error instanceof ApiError ? restart.error : null
 
   return (
