@@ -71,16 +71,32 @@ dev: env
 	@./scripts/dev-preflight.sh
 	$(DOCKER) compose --env-file .env -f docker/docker-compose.dev.yml up -d --build
 	@echo ""
+	@./scripts/dev-sensor.sh $(IFACE)
+	@echo ""
 	@echo "  UI   http://localhost:5173"
 	@echo "  API  http://localhost:8081/api/v1"
 	@echo ""
-	@echo "  make dev-logs   follow all three services"
-	@echo "  make dev-down   stop"
+	@echo "  make dev-logs     follow all three services"
+	@echo "  make dev-sensor   start the sensor if it was skipped above"
+	@echo "  make dev-down     stop"
+
+# Start the sensor against an already-running stack -- for when `make dev`
+# skipped it because the adapter was not attached yet.
+dev-sensor:
+	@./scripts/dev-sensor.sh $(IFACE)
+
+dev-sensor-stop:
+	@if [ -f .dev/sensor.pid ]; then \
+		sudo kill "$$(cat .dev/sensor.pid)" 2>/dev/null || true; \
+		rm -f .dev/sensor.pid; echo "sensor stopped"; \
+	else echo "no sensor pidfile; nothing to stop"; fi
 
 dev-logs:
 	$(DOCKER) compose --env-file .env -f docker/docker-compose.dev.yml logs -f
 
-dev-down:
+# Stops the sensor too. A sensor still capturing after the stack it feeds is
+# gone is the mirror of the bug this all exists to prevent.
+dev-down: dev-sensor-stop
 	$(DOCKER) compose --env-file .env -f docker/docker-compose.dev.yml down
 
 dev-restart:

@@ -59,3 +59,6 @@ build-errors.log
 
 # TypeScript incremental build info -- regenerated on every build.
 *.tsbuildinfo
+
+# Dev-stack runtime state: sensor pidfile and log.
+.dev/

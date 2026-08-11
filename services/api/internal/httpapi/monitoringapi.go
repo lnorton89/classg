@@ -8,10 +8,16 @@ import (
 	"github.com/classg/api/internal/settings"
 )
 
-// SettingMonitoringEnabled persists the switch across restarts. Without it a
-// deliberate pause would silently undo itself on the next restart -- and a
-// detector that resumes recording without being asked is as wrong as one that
-// stops without being asked.
+// SettingMonitoringEnabled records the live state of the switch. It is written
+// on every change and at startup, but deliberately NOT read back to decide
+// whether to record: if the stack is up, it is recording. A pause lasts as long
+// as the process does.
+//
+// The rejected alternative was persisting a pause across restarts. It sounds
+// more respectful of the operator's choice, but it means a stack can come up
+// and sit there not recording, looking healthy, because of something somebody
+// clicked a week ago. Restarting to resume is a cost worth paying to make that
+// state unreachable.
 const SettingMonitoringEnabled = "monitoring.enabled"
 
 type monitoringRequest struct {
@@ -50,10 +56,9 @@ func (s *Server) handlePutMonitoring(w http.ResponseWriter, r *http.Request) {
 
 	state := s.monitoring.Set(req.Enabled, req.Reason, time.Now().UTC())
 
-	// Persist through the settings tier so the choice survives a restart. A
-	// failure here is logged but not fatal: the running state is already
-	// correct, and refusing the request would be worse than a pause that does
-	// not outlive the process.
+	// Persist through the settings tier so anything reading configuration sees
+	// the live state. A failure here is not fatal: the running state is already
+	// correct, and startup does not consult the stored value anyway.
 	value := "false"
 	if req.Enabled {
 		value = "true"
@@ -62,7 +67,7 @@ func (s *Server) handlePutMonitoring(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, struct {
 			State   any    `json:"state"`
 			Warning string `json:"warning"`
-		}{state, "recording state changed but could not be saved; it will reset on restart"})
+		}{state, "recording state changed but could not be saved; the change is in effect, and stored configuration now reports the wrong value"})
 		return
 	}
 	writeJSON(w, http.StatusOK, state)
