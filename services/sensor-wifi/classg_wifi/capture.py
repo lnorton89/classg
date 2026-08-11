@@ -263,7 +263,21 @@ def run_capture(
 
 
 def _recv(sock: Any, stats: CaptureStats) -> bytes | None:
+    """Read one frame as raw bytes.
+
+    recv_raw() is preferred over recv(): we parse radiotap and 802.11 ourselves
+    (parsers/dot11.py), so letting scapy dissect every frame first is wasted
+    work. It also avoids scapy's
+
+        WARNING: Unable to guess type (interface=wlan0 protocol=0x3 family=803)
+
+    which is scapy failing to map ARPHRD_IEEE80211_RADIOTAP to a dissector --
+    harmless, since we only ever wanted the bytes, but noisy on every start.
+    """
     try:
+        if hasattr(sock, "recv_raw"):
+            _cls, raw, _ts = sock.recv_raw()
+            return raw if raw else None
         pkt = sock.recv()
     except Exception as exc:
         stats.read_errors += 1
