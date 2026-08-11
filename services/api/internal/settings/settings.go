@@ -124,11 +124,14 @@ var Defs = []Def{
 	{Key: "api.version", Env: "CLASSG_VERSION", Kind: KindString,
 		Default: "0.1.0", Doc: "version string reported by /health"},
 
-	// --- Monitoring. Always-on by default: a detector you have to remember to
-	// arm is a detector that is off when it matters.
+	// --- Monitoring. Always-on: a detector you have to remember to arm is a
+	// detector that is off when it matters. Startup forces this to true and
+	// does not read the stored value, so this reflects the live state rather
+	// than controlling it -- if the stack is up, it is recording. Pausing lasts
+	// as long as the process does.
 	{Key: "monitoring.enabled", Env: "CLASSG_MONITORING_ENABLED", Kind: KindBool,
 		Default: "true", Mutable: true,
-		Doc: "record detections continuously; pausing discards them at ingest, it does not stop the radio"},
+		Doc: "reports whether detections are being recorded; pausing discards them at ingest, it does not stop the radio, and a restart resumes"},
 }
 
 func defByKey() map[string]Def {
