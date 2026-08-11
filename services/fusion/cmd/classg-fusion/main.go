@@ -79,6 +79,7 @@ func main() {
 	}
 
 	store := fusion.NewTrackStoreWithLifecycle(fusion.DefaultWeights(), fusion.NewTrackID, lifecycle)
+	contacts := fusion.NewContactStore()
 	messages := make(chan busMessage)
 	go receive(ctx, sub, messages, detectionSocketMode == "listen")
 	ticker := time.NewTicker(reapInterval)
@@ -111,11 +112,32 @@ func main() {
 				slog.Warn("dropping malformed detection", "topic", msg.topic, "err", err)
 				continue
 			}
+			// Manned traffic is airspace context, not a track. The API already
+			// holds this detection from the relay above -- which is how it
+			// reaches the map -- so fusion keeps it purely as correlation state.
+			if d.DetectionClass == fusion.ClassADSB {
+				contact, isNew := contacts.Observe(d)
+				switch {
+				case contact == nil:
+					slog.Warn("dropping ADS-B detection with no ICAO address", "sensor_id", d.SensorID)
+				case isNew:
+					slog.Info("adsb contact acquired", "icao", contact.ICAO, "callsign", contact.Callsign, "contacts", contacts.Len())
+				}
+				continue
+			}
 			track := store.Ingest(d, time.Now().UTC())
+			if track == nil {
+				slog.Warn("dropping detection with no usable identity",
+					"sensor_id", d.SensorID, "detection_class", d.DetectionClass, "detection_id", d.DetectionID)
+				continue
+			}
 			if err := publish(pub, trackTopic+"update", track); err != nil {
 				slog.Error("publish track", "track_id", track.TrackID, "err", err)
 			}
 		case now := <-ticker.C:
+			for _, icao := range contacts.Reap(now.UTC()) {
+				slog.Info("adsb contact lost", "icao", icao, "contacts", contacts.Len())
+			}
 			for _, track := range store.Reap(now.UTC()) {
 				if track.State == fusion.StateClosed {
 					if err := publish(pub, trackTopic+"closed", map[string]string{"track_id": track.TrackID}); err != nil {
