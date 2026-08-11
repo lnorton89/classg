@@ -91,18 +91,20 @@ if ! sudo -n true 2>/dev/null; then
 fi
 
 echo "  starting the Wi-Fi sensor on $IFACE (log: $LOG)"
-cd services/sensor-wifi || exit 1
-nohup sudo .venv/bin/python -m classg_wifi.cli run --iface "$IFACE" \
-    >>"../../$LOG" 2>&1 &
-echo $! >"../../$PIDFILE"
+# Supervised, not bare. The capture watchdog exits a wedged process so the
+# sensor reads as absent rather than blind, which is right -- but on its own it
+# turns a transient USB drop into permanent silence. The supervisor restores
+# monitor mode and restarts, and waits it out when the adapter is gone entirely.
+nohup sudo ./scripts/sensor-supervise.sh "$IFACE" >>"$LOG" 2>&1 &
+echo $! >"$PIDFILE"
 
 # Confirm it survived startup. Reporting "started" for a process that died on a
 # vanished adapter would be the same lie this script exists to prevent.
-sleep 2
-if ! kill -0 "$(cat "../../$PIDFILE")" 2>/dev/null; then
+sleep 3
+if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
     echo "  sensor exited immediately; last lines of $LOG:"
-    tail -n 15 "../../$LOG" | sed 's/^/    /'
-    rm -f "../../$PIDFILE"
+    tail -n 15 "$LOG" | sed 's/^/    /'
+    rm -f "$PIDFILE"
     exit 0
 fi
-echo "  sensor running (pid $(cat "../../$PIDFILE"))"
+echo "  sensor running under supervision (pid $(cat "$PIDFILE"))"

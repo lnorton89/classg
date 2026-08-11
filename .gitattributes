@@ -1,0 +1,36 @@
+# Line endings are LF in the repository, and LF in the working tree.
+#
+# This is not a style preference. Development happens on Windows while
+# everything actually runs on Linux -- WSL, the dev containers, CI, and the Pi
+# -- so a file written with CRLF by a Windows tool is a file that breaks on
+# every machine that matters:
+#
+#   * A shell script with a CRLF shebang fails as "No such file or directory",
+#     because the kernel looks for an interpreter literally named
+#     `/usr/bin/env bash\r`. The error names the script, not the line ending,
+#     so it reads as a missing file.
+#   * Python tolerates CRLF, so a converted file passes tests and lint while
+#     rewriting every line in the diff. Four files were committed that way
+#     before this existed; each showed as fully rewritten, and `git blame`
+#     pointed at that commit for every line.
+#
+# `text=auto eol=lf` normalises on commit and checks out LF, so a Windows editor
+# writing CRLF is corrected on the way in rather than becoming everyone's
+# problem.
+* text=auto eol=lf
+
+# Belt and braces for the executables, where the failure is worst and least
+# self-explanatory.
+*.sh text eol=lf
+
+# Never touch these: byte-for-byte or not at all.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.pcap binary
+*.pcapng binary
+*.woff binary
+*.woff2 binary
