@@ -10,8 +10,14 @@ captures/*
 *.iq
 *.fc32
 
-# Test vectors ARE committed -- they are the parser regression net.
-!services/sensor-wifi/tests/vectors/**
+# Real-capture test vectors are gitignored, not committed: decoded, they carry
+# the aircraft's real serial and the operator's real GPS position (see
+# docs/research/06-legal-and-ethics.md). Generate your own locally with
+# `python -m tests.extract_vectors`; tests/test_vectors_real.py skips cleanly
+# when none is present. sample.json is hand-built synthetic data with no real
+# capture bytes in it, so it stays committed as the always-on regression net.
+services/sensor-wifi/tests/vectors/*
+!services/sensor-wifi/tests/vectors/sample.json
 
 # Python
 __pycache__/

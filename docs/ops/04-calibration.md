@@ -81,8 +81,9 @@ and a different aircraft can put us straight back in the hard regime.
 
 ### Also observed: the SSID embeds the serial
 
-The beacon SSID is literally **`RID-1581F0000000FAKE0001`** — the `RID-` prefix followed by the
-CTA-2063-A serial. That identifies the vendor with no OUI lookup and no payload parsing at all,
+The beacon SSID is literally `RID-<serial>` — the `RID-` prefix followed by the CTA-2063-A
+serial (redacted here; it uniquely identifies this aircraft — manufacturer code confirmed as
+**1581 = DJI**). That identifies the vendor with no OUI lookup and no payload parsing at all,
 and it survives MAC randomisation.
 
 Added to `data/oui_fingerprints.yaml` as `rid-1581*` → DJI. A generic `rid-*` pattern maps to
@@ -113,7 +114,7 @@ First end-to-end live flight, sensor running on the AWUS036AXML in monitor mode:
 | **Detections** | **222** |
 | Dwells | 59 |
 | Escalation | fired at +10 s, locking dwell to channel 6 |
-| Track | serial `1581F0000000FAKE0001`, 222 history points, confidence 0.6 |
+| Track | serial redacted (mfr 1581 = DJI), 222 history points, confidence 0.6 |
 | Flight window | 03:07:51 → 03:08:38 UTC (47 s) |
 | Reported altitude | 15 m geodetic |
 

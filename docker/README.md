@@ -36,7 +36,7 @@ The UI proxies Esri World Imagery through a persistent Docker cache. To bake the
 expected operations area into the UI image as well, set a WGS84 bounding box before building:
 
 ```dotenv
-CLASSG_TILE_PRELOAD_BBOX=-122.78,46.03,-122.75,46.05
+CLASSG_TILE_PRELOAD_BBOX=-122.35,47.60,-122.32,47.62
 CLASSG_TILE_PRELOAD_MIN_ZOOM=12
 CLASSG_TILE_PRELOAD_MAX_ZOOM=15
 ```
@@ -71,7 +71,7 @@ you actually fly, which is usually the better trade than baking them all in.
 #### Changing the imagery source
 
 The default has real pixels to **z19**. Zoom ceilings are per-source and per-location;
-measured at the receiver (46.0400, -122.7673):
+measured at the receiver (47.6062, -122.3321):
 
 | Source | Ceiling | Ground resolution | License |
 |---|---|---|---|

@@ -108,10 +108,8 @@ Fusion's stateful correlation of detections over time. Mutable.
   "current": { /* latest position + kinematics */ },
   "history": [ /* ring buffer, configurable depth */ ],
 
-  "suppression": {
-    "adsb_correlated": false,
-    "adsb_icao": null
-  }
+  "rssi_dbm": -68,
+  "adsb_correlated": false
 }
 ```
 

@@ -45,7 +45,7 @@
   │    api    │ Go   │   storage   │  libSQL / Turso
   │ REST + WS │◄─────┤  + WAL      │
   └─────┬─────┘      └─────────────┘
-        │ :8080
+        │ :8081
         ▼
   ┌───────────┐
   │    ui     │  Vite + MapLibre
@@ -150,6 +150,13 @@ sensors often see a Location message before a Basic ID.
    altitude window, downweight energy-only detections (Classes E/F) during that window.
 
 Never suppress Class A/B detections. A decoded Remote ID serial is not a helicopter.
+
+**Network ADS-B fallback.** Units without an SDR, or with SDR ground-level terrain shadow,
+can enable `CLASSG_FUSION_NET_ADSB=true` to pull manned traffic from a community feed
+(`api.adsb.lol` by default) instead of `dump1090`. It publishes as `sensor_kind: "net"`
+(default `sensor_id: net-adsb-0`) and feeds the same suppression path — Class D still never
+contributes confidence. Off by default: a detector that silently phones home is a different
+product from one that doesn't. See `services/fusion/netadsb.go`.
 
 ---
 

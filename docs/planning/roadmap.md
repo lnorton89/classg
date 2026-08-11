@@ -44,7 +44,7 @@ invoke the Kismet fallback in [ADR-0005](../architecture/adr/0005-own-sniffer-vs
 - [x] Detection schema validation in CI
 - [x] ZMQ publisher with HWM and drop counters
 - [x] `fusion`: track lifecycle, serial/MAC correlation, noisy-OR confidence
-- [x] `api`: REST `/tracks`, `/health`, WebSocket `/ws`
+- [x] `api`: REST `/tracks`, `/health`, WebSocket `/api/v1/stream`
 - [x] `ui`: MapLibre map, live track markers, track detail panel
 - [x] Health endpoint distinguishes "no drones" from "sensor broken"
 

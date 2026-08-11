@@ -39,6 +39,7 @@ If you read three documents, read these:
 | [0005](architecture/adr/0005-own-sniffer-vs-kismet.md) | Own capture loop rather than wrapping Kismet |
 | [0006](architecture/adr/0006-storage-turso-libsql.md) | libSQL (Turso) storage, local-first with optional sync |
 | [0007](architecture/adr/0007-configuration-tiers.md) | Bootstrap env / database settings / YAML seed |
+| [0008](architecture/adr/0008-adsb-via-dump1090.md) | dump1090 owns the radio; fusion consumes its decoded output |
 
 ## Planning
 
@@ -51,8 +52,10 @@ If you read three documents, read these:
 
 | Doc | Contents |
 |---|---|
+| [00 — Configuration](ops/00-configuration.md) | Env / database settings / YAML seed tiers, and how to bootstrap `.env` |
 | [01 — Pi setup](ops/01-pi-setup.md) | Hardware, OS, toolchains, tuning |
 | [02 — Wi-Fi adapter](ops/02-wifi-adapter.md) | **Read before plugging it in** — two ways to break it |
 | [03 — SDR setup](ops/03-sdr-setup.md) | The V4 needs a specific driver fork |
 | [04 — Calibration](ops/04-calibration.md) | DJI field units — fill in during Milestone 1 |
 | [05 — Troubleshooting](ops/05-troubleshooting.md) | Diagnose bottom-up, not top-down |
+| [06 — First capture](ops/06-first-capture.md) | Capture a DJI powering up and get a ground-truth PCAP |
