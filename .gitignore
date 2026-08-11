@@ -56,3 +56,6 @@ tmp/
 # compiled binaries, tens of MB each.
 .air/
 build-errors.log
+
+# TypeScript incremental build info -- regenerated on every build.
+*.tsbuildinfo
