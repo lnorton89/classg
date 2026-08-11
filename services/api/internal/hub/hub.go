@@ -114,22 +114,13 @@ func (c *Client) wants(frameType string) bool {
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[*Client]struct{}
-	// onFirstClient fires when the client count goes 0 -> 1, i.e. when the web
-	// app appears. Recording follows the UI being up, by design.
-	onFirstClient func()
 }
 
 func New() *Hub { return &Hub{clients: map[*Client]struct{}{}} }
 
-// OnFirstClient registers a callback fired when the first client connects to an
-// otherwise empty hub. Called without the hub lock held, so the callback may
-// broadcast.
-func (h *Hub) OnFirstClient(fn func()) {
-	h.mu.Lock()
-	h.onFirstClient = fn
-	h.mu.Unlock()
-}
-
+// Register subscribes a client. Note that connecting has no effect on whether
+// the system is recording: recording follows the stack being up, not anyone
+// watching. Nobody needs to have the app open for a flight to be captured.
 func (h *Hub) Register(topics []string) *Client {
 	c := &Client{
 		Frames:  make(chan Frame, clientBuffer),
@@ -137,15 +128,8 @@ func (h *Hub) Register(topics []string) *Client {
 	}
 	c.SetTopics(topics)
 	h.mu.Lock()
-	first := len(h.clients) == 0
 	h.clients[c] = struct{}{}
-	fn := h.onFirstClient
 	h.mu.Unlock()
-
-	// Outside the lock: the callback resumes recording, which broadcasts.
-	if first && fn != nil {
-		fn()
-	}
 	return c
 }
 

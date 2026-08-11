@@ -123,36 +123,26 @@ func run() error {
 
 	h := hub.New()
 
-	// Recording is always-on by default and its state survives restarts, so a
-	// deliberate pause is not silently undone and a running system is never
-	// left not-recording without someone having asked for that.
-	recording := monitoring.New(set.Bool("monitoring.enabled"), time.Now().UTC())
+	// If the stack is up, it is recording. Startup does not consult the stored
+	// setting, deliberately: a process that is running and not recording is a
+	// detector that looks alive and sees nothing, which is the one failure an
+	// operator has no way to notice. Pausing is a live operation for as long as
+	// this process runs, and a restart is how you undo it.
+	//
+	// The stored value is still written, so anything reading configuration sees
+	// the true current state rather than the last session's.
+	recording := monitoring.New(true, time.Now().UTC())
 	recording.OnChange(func(state monitoring.State) {
 		st := state
 		h.Broadcast(hub.Frame{Type: hub.TypeMonitoring, Monitoring: &st})
 		slog.Info("recording state changed", "enabled", st.Enabled, "reason", st.Reason)
 	})
-	if !recording.Enabled() {
-		slog.Warn("recording is PAUSED at startup; detections will be discarded until resumed")
+	if !set.Bool("monitoring.enabled") {
+		slog.Info("recording was paused when the stack last stopped; starting recording anyway")
 	}
-
-	// If the web app is up, the system is recording. Opening it resumes a
-	// paused detector rather than silently showing an empty map that the
-	// operator has no reason to distrust.
-	//
-	// The consequence worth knowing: a pause does not survive a page reload,
-	// because a reload is a fresh connection and therefore the UI coming up
-	// again. Pausing is for a deliberate stretch with the app open.
-	h.OnFirstClient(func() {
-		if recording.Enabled() {
-			return
-		}
-		slog.Info("web app connected; resuming recording")
-		recording.Set(true, "resumed automatically: web app connected", time.Now().UTC())
-		if err := settings.PutOne(ctx, st, httpapi.SettingMonitoringEnabled, "true"); err != nil {
-			slog.Warn("could not persist the resumed recording state", "err", err)
-		}
-	})
+	if err := settings.PutOne(ctx, st, httpapi.SettingMonitoringEnabled, "true"); err != nil {
+		slog.Warn("could not persist the recording state", "err", err)
+	}
 
 	captures := capture.NewManager(st, capture.Options{
 		Dir:               cfg.CaptureDir,
