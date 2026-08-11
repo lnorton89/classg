@@ -268,12 +268,27 @@ export interface PongMessage {
 
 export type ClientFrame = SubscribeMessage | PongMessage
 
+/**
+ * The always-on recording switch.
+ *
+ * `discarded_while_paused` matters: without it a paused system looks exactly
+ * like a quiet sky, which is the confusion the whole health design exists to
+ * prevent.
+ */
+export interface MonitoringState {
+  enabled: boolean
+  since: string
+  reason?: string
+  discarded_while_paused: number
+}
+
 export type ServerFrame =
   | { type: 'track.update'; ts: string; track: Track }
   | { type: 'track.closed'; ts: string; track_id: string }
   | { type: 'detection'; ts: string; detection: Detection }
   | { type: 'health'; ts: string; health: Health }
   | { type: 'capture.status'; ts: string; capture: Capture }
+  | { type: 'monitoring'; ts: string; monitoring: MonitoringState }
   | { type: 'ping'; ts?: string }
 
 export type ServerFrameType = ServerFrame['type']

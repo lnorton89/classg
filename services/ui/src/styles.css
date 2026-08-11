@@ -51,18 +51,70 @@
   --color-manned: var(--manned);
   --color-operator: var(--operator);
 
+  /*
+   * Brand constants. Fixed hex, not theme-derived: these are the identity
+   * colours from docs/planning/brand-identity.md and they must be the same
+   * colour on a printed sticker as on the screen. Anything that reacts to the
+   * theme uses the semantic tokens above instead.
+   */
+  --color-brand-night: #061827;
+  --color-brand-cyan: #57c8f7;
+  --color-brand-fog: #f0f3f5;
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
+  /*
+   * Type. Three families, each with a job:
+   *
+   *   sans    Inter — the reading face. Everything that is prose, labels,
+   *           table cells or form text. Chosen for aperture and x-height at
+   *           12–14px, which is where this interface actually lives.
+   *   display Manrope — the accent face. Brand wordmark, page and section
+   *           titles, and big numerals. It is the approved brand type
+   *           (brand-identity.md) and its tighter, geometric forms read as
+   *           "heading" without needing size alone to signal hierarchy.
+   *   mono    JetBrains Mono — identifiers only: serials, MACs, coordinates,
+   *           log lines. A real mono with a slashed zero and a disambiguated
+   *           1/l/I matters when the string IS the evidence.
+   */
+  --font-sans:
+    'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-display: 'Manrope', 'Inter Variable', ui-sans-serif, system-ui, sans-serif;
   --font-mono:
-    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
-  --font-brand: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+    'JetBrains Mono Variable', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
+  /* Retained: the brand lockup referenced it by this name. */
+  --font-brand: var(--font-display);
+
+  /*
+   * The small end of the scale is raised deliberately. 11px and 10px text was
+   * doing real work in tables and map labels, which is unreadable at arm's
+   * length outdoors. 12px is the floor; `text-xs` — by far the most-used size
+   * here — is 13px rather than Tailwind's 12px.
+   */
+  --text-2xs: 0.75rem;
+  --text-2xs--line-height: 1.0833rem;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.1875rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.3125rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.4375rem;
 }
 
 :root {
   --radius: 0.5rem;
+
+  /*
+   * Set by the preferences provider from the operator's "Text size" choice.
+   * Everything is rem-based, so this one number scales the whole interface —
+   * including the map labels and table cells that a per-component override
+   * would miss.
+   */
+  --ui-scale: 1;
 
   --background: oklch(0.985 0.002 250);
   --foreground: oklch(0.17 0.015 258);
@@ -75,7 +127,8 @@
   --secondary: oklch(0.95 0.008 250);
   --secondary-foreground: oklch(0.24 0.02 258);
   --muted: oklch(0.95 0.008 250);
-  --muted-foreground: oklch(0.47 0.018 256);
+  /* Lifted from 0.47 to 0.44: body-size secondary text now clears 7:1. */
+  --muted-foreground: oklch(0.44 0.018 256);
   --accent: oklch(0.94 0.014 240);
   --accent-foreground: oklch(0.24 0.02 258);
   --destructive: oklch(0.52 0.21 27);
@@ -84,17 +137,17 @@
   --input: oklch(0.9 0.008 255);
   --ring: oklch(0.52 0.13 235);
 
-  --ok: oklch(0.55 0.13 155);
+  --ok: oklch(0.52 0.13 155);
   --ok-foreground: oklch(0.99 0.005 240);
-  --warn: oklch(0.62 0.15 70);
-  --warn-foreground: oklch(0.15 0.02 70);
+  --warn: oklch(0.55 0.14 62);
+  --warn-foreground: oklch(0.99 0.005 240);
   --down: oklch(0.52 0.21 27);
   --down-foreground: oklch(0.99 0.005 240);
 
   --track: oklch(0.55 0.15 220);
   --track-dim: oklch(0.68 0.07 220);
   --manned: oklch(0.42 0.02 90);
-  --operator: oklch(0.55 0.2 330);
+  --operator: oklch(0.5 0.2 330);
 }
 
 .dark {
@@ -109,26 +162,28 @@
   --secondary: oklch(0.26 0.018 258);
   --secondary-foreground: oklch(0.95 0.006 250);
   --muted: oklch(0.26 0.018 258);
-  --muted-foreground: oklch(0.72 0.015 254);
+  /* Lifted from 0.72 to 0.755 — secondary text carries most of the explanation
+     in this UI and it was sitting just above the 4.5:1 line at 12px. */
+  --muted-foreground: oklch(0.755 0.015 254);
   --accent: oklch(0.3 0.025 250);
   --accent-foreground: oklch(0.97 0.005 250);
   --destructive: oklch(0.65 0.2 25);
   --destructive-foreground: oklch(0.15 0.02 25);
-  --border: oklch(0.98 0 0 / 12%);
-  --input: oklch(0.98 0 0 / 16%);
+  --border: oklch(0.98 0 0 / 14%);
+  --input: oklch(0.98 0 0 / 18%);
   --ring: oklch(0.72 0.13 225);
 
-  --ok: oklch(0.75 0.16 158);
+  --ok: oklch(0.78 0.16 158);
   --ok-foreground: oklch(0.16 0.02 158);
-  --warn: oklch(0.79 0.16 72);
+  --warn: oklch(0.82 0.16 76);
   --warn-foreground: oklch(0.18 0.03 72);
-  --down: oklch(0.68 0.2 24);
+  --down: oklch(0.71 0.19 24);
   --down-foreground: oklch(0.15 0.02 24);
 
   --track: oklch(0.8 0.15 205);
   --track-dim: oklch(0.62 0.08 205);
   --manned: oklch(0.93 0.02 90);
-  --operator: oklch(0.75 0.19 330);
+  --operator: oklch(0.78 0.18 330);
 }
 
 @layer base {
@@ -138,6 +193,7 @@
 
   html {
     color-scheme: light;
+    font-size: calc(100% * var(--ui-scale));
   }
 
   html.dark {
@@ -145,9 +201,39 @@
   }
 
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground font-sans text-sm antialiased;
     /* Keeps the map flush against a phone's rounded corners / notch. */
     overscroll-behavior: none;
+    text-rendering: optimizeLegibility;
+  }
+
+  /*
+   * Headings take the accent face. Hierarchy then comes from three signals —
+   * family, weight and size — instead of size alone, which is what lets the
+   * scale stay compact enough to fit a dense console without going flat.
+   */
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display tracking-tight;
+    font-weight: 700;
+  }
+
+  /*
+   * Numbers must not shift width as they tick. Every reading in this app
+   * updates in place — RSSI, confidence, altitude, counters — and proportional
+   * figures make a live table visibly jitter.
+   */
+  table,
+  time,
+  output,
+  code,
+  kbd,
+  samp,
+  .font-mono,
+  [class*='font-mono'] {
+    font-variant-numeric: tabular-nums;
   }
 
   /*
@@ -156,6 +242,34 @@
    */
   :focus-visible {
     @apply outline-ring outline-2 outline-offset-2;
+  }
+
+  /* Themed, unobtrusive scrollbars. The default light scrollbar on a dark
+     console is a bright vertical line in peripheral vision at night. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 22%, transparent) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 0.625rem;
+    height: 0.625rem;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in oklch, var(--foreground) 20%, transparent);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklch, var(--foreground) 34%, transparent);
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -168,6 +282,16 @@
       scroll-behavior: auto !important;
     }
   }
+
+  /* The same, forced by preference rather than by the OS. */
+  :root[data-motion='reduced'] *,
+  :root[data-motion='reduced'] *::before,
+  :root[data-motion='reduced'] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @utility sr-only-focusable {
@@ -178,6 +302,36 @@
     @apply not-sr-only fixed top-2 left-2 z-50 rounded-md px-3 py-2;
     @apply bg-popover text-popover-foreground border-border border shadow-lg;
   }
+}
+
+/* Section-label treatment: small, spaced, upper. Used for panel headers. */
+@utility label-caps {
+  @apply text-muted-foreground font-display text-2xs font-semibold tracking-[0.08em] uppercase;
+}
+
+/* Opt-in tabular figures for numerals set in the sans face. */
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Compact density. Only the two paddings that actually dominate vertical
+ * rhythm — table cells and list rows — are touched. A blanket scale would
+ * shrink touch targets, which is the one thing that must not shrink in a
+ * field-use interface.
+ */
+:root[data-density='compact'] {
+  --row-py: 0.25rem;
+}
+
+:root[data-density='compact'] :is(td, th) {
+  padding-top: var(--row-py);
+  padding-bottom: var(--row-py);
+}
+
+:root[data-density='compact'] [data-density-row] {
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
 }
 
 /* MapLibre's own stylesheet, scoped tweaks for dark mode and focus. */
@@ -202,16 +356,23 @@
   color: var(--muted-foreground);
 }
 
-/* The wordmark remains live text: Manrope is bundled locally through @fontsource. */
+/*
+ * The wordmark remains live text: Manrope is bundled locally through
+ * @fontsource. It inherits `currentColor` so the lockup works on the header,
+ * on a light background, and inside a button without three variants.
+ */
 .classg-wordmark {
-  color: #f0f3f5;
-  font-family: var(--font-brand);
-  font-size: 1.125rem;
+  font-family: var(--font-display);
   font-weight: 800;
-  letter-spacing: -0.06em;
+  letter-spacing: -0.055em;
   line-height: 1;
 }
 
 .classg-wordmark__accent {
-  color: #57c8f7;
+  color: var(--brand-accent, var(--color-brand-cyan));
+}
+
+/* Light mode needs a darker cyan to stay legible on near-white. */
+:root:not(.dark) .classg-wordmark__accent {
+  --brand-accent: oklch(0.58 0.13 232);
 }

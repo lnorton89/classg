@@ -28,6 +28,7 @@ import type {
   Track,
   TracksQuery,
   TracksResponse,
+  MonitoringState,
 } from './types'
 
 export const API_BASE: string =
@@ -159,6 +160,17 @@ export function unwrapConfigValue<T>(response: ConfigResponse<T> | T): T {
 export const api = {
   health(): Promise<Health> {
     return request<Health>('/health')
+  },
+
+  monitoring(): Promise<MonitoringState> {
+    return request<MonitoringState>('/monitoring')
+  },
+
+  setMonitoring(enabled: boolean, reason?: string): Promise<MonitoringState> {
+    return request<MonitoringState>('/monitoring', {
+      method: 'PUT',
+      body: JSON.stringify({ enabled, reason }),
+    })
   },
 
   sensors(): Promise<SensorHealth[]> {

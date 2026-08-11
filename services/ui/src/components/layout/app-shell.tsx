@@ -18,6 +18,8 @@ import { SystemStatusPill, StreamStatusPill } from '@/features/health/components
 import { cn } from '@/lib/cn'
 
 import { MockScenarioSwitcher } from './mock-scenario-switcher'
+import { FlightsDrawer } from '@/features/monitoring/flights-drawer'
+import { RecordingIndicator } from '@/features/monitoring/recording-indicator'
 
 const NAV = [
   { to: '/', label: 'Live', icon: MapIcon, exact: true },
@@ -39,6 +41,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link to="/" className="flex shrink-0 items-center gap-2 rounded">
             <ClassGLogo className="flex items-center gap-1.5" />
           </Link>
+
+          <div className="order-last ml-auto flex items-center gap-1 md:order-none">
+            {/* Recording state lives in the shell, not on a settings page:
+                whether the sky is being watched should never take a click to
+                find out. */}
+            <RecordingIndicator />
+            <FlightsDrawer />
+          </div>
 
           <nav
             aria-label="Primary"

@@ -159,6 +159,14 @@ export function applyFrame(queryClient: QueryClientLike, frame: ServerFrame): vo
       break
     }
 
+    case 'monitoring': {
+      // Pushed rather than polled, so pausing on one browser is reflected
+      // immediately on every other. Whether we are recording is not something
+      // two open tabs should disagree about.
+      queryClient.setQueryData(queryKeys.monitoring, frame.monitoring)
+      break
+    }
+
     case 'capture.status': {
       queryClient.setQueryData(queryKeys.capture(frame.capture.capture_id), frame.capture)
       void queryClient.invalidateQueries({ queryKey: queryKeys.captures })

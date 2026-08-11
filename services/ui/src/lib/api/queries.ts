@@ -11,6 +11,7 @@ import type { DetectionsQuery, TracksQuery } from './types'
 export const queryKeys = {
   health: ['health'] as const,
   sensors: ['sensors'] as const,
+  monitoring: ['monitoring'] as const,
   tracks: (query: TracksQuery = {}) => ['tracks', 'list', query] as const,
   track: (trackId: string) => ['tracks', 'detail', trackId] as const,
   trackDetections: (trackId: string) => ['tracks', 'detections', trackId] as const,
@@ -34,6 +35,16 @@ export const healthQuery = () =>
     queryFn: () => api.health(),
     staleTime: 5_000,
     refetchInterval: 15_000,
+  })
+
+export const monitoringQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.monitoring,
+    queryFn: () => api.monitoring(),
+    // Pushed over the socket, but polled slowly as a backstop: if the socket is
+    // down, whether we are recording is exactly the thing not to be wrong about.
+    staleTime: 10_000,
+    refetchInterval: 30_000,
   })
 
 export const sensorsQuery = () =>
