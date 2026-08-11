@@ -40,13 +40,34 @@ export function recordingState(
   return 'recording'
 }
 
+/**
+ * The label says what the RECORDER is doing. Coverage is the health pill's job,
+ * two chips along in the same header.
+ *
+ * An earlier version relabelled this chip "No coverage" when sensors were
+ * unhealthy, which put the identical words in the header twice and said nothing
+ * about whether recording was even on. Tone still carries the warning -- see
+ * RECORDING_TONE -- so the chip never looks reassuring without coverage. The
+ * fix for "this reads as fine when it isn't" was never to duplicate the other
+ * chip's sentence.
+ */
 export const RECORDING_LABEL: Record<RecordingState, string> = {
   recording: 'Recording',
-  // Not "Recording": the switch is on but nothing is arriving, and the label
-  // has to say what is actually true.
-  'no-coverage': 'No coverage',
-  degraded: 'Partial coverage',
+  'no-coverage': 'Recording',
+  degraded: 'Recording',
   paused: 'Paused',
+}
+
+/**
+ * Only a genuinely covered, genuinely recording system earns the green pulse.
+ * Without coverage the chip goes muted rather than red: the red belongs to the
+ * health pill, and two alarms for one fact is how a header stops being read.
+ */
+export const RECORDING_TONE: Record<RecordingState, 'ok' | 'muted' | 'warn'> = {
+  recording: 'ok',
+  'no-coverage': 'muted',
+  degraded: 'muted',
+  paused: 'warn',
 }
 
 export const RECORDING_DESCRIPTION: Record<RecordingState, string> = {

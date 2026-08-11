@@ -6,7 +6,12 @@ import { api } from '@/lib/api/client'
 import { healthQuery, monitoringQuery, queryKeys } from '@/lib/api/queries'
 import type { MonitoringState } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
-import { RECORDING_DESCRIPTION, RECORDING_LABEL, recordingState } from './recording-state'
+import {
+  RECORDING_DESCRIPTION,
+  RECORDING_LABEL,
+  RECORDING_TONE,
+  recordingState,
+} from './recording-state'
 
 /**
  * Always-visible recording state, with the control to change it.
@@ -59,13 +64,12 @@ export function RecordingIndicator({ className }: { className?: string }) {
           // Health tokens, not raw palette colours: `ok`, `warn` and
           // `destructive` are the hues licensed to carry urgency here, and the
           // only ones tuned for both themes.
-          state === 'recording' && 'bg-ok/12 text-ok',
-          // destructive, not warn: claiming to record while nothing can reach
-          // the recorder is worth shouting about, not hinting at.
-          state === 'no-coverage' &&
-            'bg-destructive/15 text-destructive ring-destructive/45 ring-1',
-          (state === 'degraded' || state === 'paused') &&
-            'bg-warn/15 text-warn ring-warn/45 ring-1',
+          RECORDING_TONE[state] === 'ok' && 'bg-ok/12 text-ok',
+          // Muted, not destructive: the header's health pill already carries the
+          // red for absent coverage. Saying it twice trains people to skim past
+          // both.
+          RECORDING_TONE[state] === 'muted' && 'bg-muted text-muted-foreground',
+          RECORDING_TONE[state] === 'warn' && 'bg-warn/15 text-warn ring-warn/45 ring-1',
         )}
         // Announced, because a change here is consequential and a screen-reader
         // user should not have to poll a badge to learn recording stopped.
@@ -78,9 +82,9 @@ export function RecordingIndicator({ className }: { className?: string }) {
             'size-1.5 rounded-full',
             // Only a genuinely recording system gets the live pulse: a pulsing
             // dot reads as "working" and must not appear when nothing is.
-            state === 'recording' && 'bg-ok animate-pulse',
-            state === 'no-coverage' && 'bg-destructive',
-            (state === 'degraded' || state === 'paused') && 'bg-warn',
+            RECORDING_TONE[state] === 'ok' && 'bg-ok animate-pulse',
+            RECORDING_TONE[state] === 'muted' && 'bg-muted-foreground/60',
+            RECORDING_TONE[state] === 'warn' && 'bg-warn',
           )}
         />
         {RECORDING_LABEL[state]}

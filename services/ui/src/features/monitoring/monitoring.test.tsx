@@ -6,7 +6,7 @@ import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { RecordingIndicator } from './recording-indicator'
-import { recordingState } from './recording-state'
+import { RECORDING_LABEL, RECORDING_TONE, recordingState } from './recording-state'
 
 const API = '*/api/v1'
 
@@ -126,5 +126,32 @@ describe('recordingState', () => {
   it('does not raise a false alarm when health is unknown', () => {
     // A failed health request must not be reported as lost coverage.
     expect(recordingState(on, undefined)).toBe('recording')
+  })
+})
+
+describe('the recording chip label', () => {
+  // The header carries two chips: this one for the recorder, the health pill
+  // for coverage. An earlier fix relabelled this chip "No coverage" whenever
+  // sensors were unhealthy, so the header showed the identical phrase twice and
+  // stopped saying whether recording was even on.
+  it('never borrows the health pill wording', () => {
+    for (const label of Object.values(RECORDING_LABEL)) {
+      expect(label).not.toMatch(/coverage/i)
+    }
+  })
+
+  it('says what the recorder is doing, not what the sensors are doing', () => {
+    expect(RECORDING_LABEL['no-coverage']).toBe('Recording')
+    expect(RECORDING_LABEL.degraded).toBe('Recording')
+    expect(RECORDING_LABEL.paused).toBe('Paused')
+  })
+
+  it('withholds the reassuring tone unless there is real coverage', () => {
+    // Tone is what keeps the honest label from reading as "all fine": only a
+    // covered, recording system gets the green pulse.
+    expect(RECORDING_TONE.recording).toBe('ok')
+    expect(RECORDING_TONE['no-coverage']).not.toBe('ok')
+    expect(RECORDING_TONE.degraded).not.toBe('ok')
+    expect(RECORDING_TONE.paused).toBe('warn')
   })
 })
