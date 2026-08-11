@@ -218,7 +218,11 @@ class TestFailures:
         assert pub.heartbeats and pub.heartbeats[-1]["healthy"] is False
 
     def test_a_failed_channel_hop_costs_one_dwell_not_the_capture(self, monkeypatch):
+        # The interface is still present -- one bad hop must not end the capture.
+        # An unbroken run of them is a different case, covered by
+        # TestAdapterDisappears.
         monkeypatch.setattr(capture, "set_channel", lambda iface, ch: False)
+        monkeypatch.setattr(capture, "interface_exists", lambda iface: True)
         stats, _, _, _ = run_once(FakeRadio([drone_frame()]))
         assert stats.channel_errors == 1
         assert stats.dwells == 1, "the loop must keep going"
@@ -329,3 +333,71 @@ class TestRawReadPath:
         _, pub, pipeline, _ = run_once(radio)
         assert pipeline.stats.class_a >= 1
         assert any(d["detection_class"] == "A" for d in pub.published)
+
+
+class TestAdapterDisappears:
+    """The failure that actually happened on hardware: usbip dropped the
+    adapter mid-capture, every channel hop returned ENODEV, and the loop
+    logged a warning per dwell and carried on for ever -- a sensor that was
+    dead but looked alive, which is the exact thing ADR-0003 forbids."""
+
+    def _run(self, monkeypatch, iface_exists: bool):
+        monkeypatch.setattr(capture, "set_channel", lambda iface, ch: False)
+        monkeypatch.setattr(capture, "interface_exists", lambda iface: iface_exists)
+        pub = RecordingPublisher()
+        with pytest.raises(capture.CaptureError) as excinfo:
+            capture.run_capture(
+                iface="wlan-test",
+                hopper=make_hopper(),
+                pipeline=Pipeline(sensor_id="wifi-test"),
+                publisher=pub,
+                heartbeat_s=0.0,
+                socket_factory=lambda _iface: FakeRadio([]),
+            )
+        return excinfo.value, pub
+
+    def test_vanished_interface_aborts_immediately(self, monkeypatch):
+        err, pub = self._run(monkeypatch, iface_exists=False)
+        assert "disappeared mid-capture" in str(err)
+        assert "usbipd attach" in str(err), "must name the fix, not just the symptom"
+        # And the bus is told, so /health shows a broken sensor not a quiet sky.
+        assert pub.heartbeats and pub.heartbeats[-1]["healthy"] is False
+
+    def test_present_but_unusable_radio_aborts_after_a_bounded_run(self, monkeypatch):
+        err, _ = self._run(monkeypatch, iface_exists=True)
+        assert "consecutive channel" in str(err)
+
+    def test_an_occasional_failed_hop_does_not_abort(self, monkeypatch):
+        """A few failures are normal; only an unbroken run means the radio is gone."""
+        calls = {"n": 0}
+
+        def flaky(iface: str, ch: int) -> bool:
+            calls["n"] += 1
+            return calls["n"] % 3 != 0  # every third hop fails
+
+        monkeypatch.setattr(capture, "set_channel", flaky)
+        monkeypatch.setattr(capture, "interface_exists", lambda iface: True)
+
+        hopper = make_hopper()
+        pipeline = Pipeline(sensor_id="wifi-test")
+        pub = RecordingPublisher()
+        dwells = {"n": 0}
+        original = hopper.record_dwell
+
+        def counting(channel: int, ms: float) -> None:
+            dwells["n"] += 1
+            original(channel, ms)
+
+        hopper.record_dwell = counting  # type: ignore[method-assign]
+
+        stats = capture.run_capture(
+            iface="wlan-test",
+            hopper=hopper,
+            pipeline=pipeline,
+            publisher=pub,
+            heartbeat_s=0.0,
+            should_run=lambda: dwells["n"] < 12,
+            socket_factory=lambda _iface: FakeRadio([]),
+        )
+        assert stats.channel_errors >= 3, "some hops should have failed"
+        assert stats.dwells >= 12, "but the capture must keep going"
