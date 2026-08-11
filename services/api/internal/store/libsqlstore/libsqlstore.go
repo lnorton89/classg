@@ -137,9 +137,12 @@ var schemaSQL string
 // sufficient -- deliberately not a general-purpose SQL parser.
 func splitStatements(sql string) []string {
 	var out []string
-	for _, raw := range strings.Split(sql, ";") {
-		stmt := strings.TrimSpace(stripSQLComments(raw))
-		if stmt != "" {
+	// Comments are stripped BEFORE splitting, not after. A semicolon inside a
+	// comment -- and there is one, in schema.sql's own header prose -- would
+	// otherwise end a "statement" mid-sentence and leave the remaining words to
+	// be executed as SQL. That is exactly how this broke the first time.
+	for _, raw := range strings.Split(stripSQLComments(sql), ";") {
+		if stmt := strings.TrimSpace(raw); stmt != "" {
 			out = append(out, stmt)
 		}
 	}
