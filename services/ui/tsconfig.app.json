@@ -5,7 +5,11 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "types": ["vite/client"],
+    // Setting "types" at all disables auto-inclusion of every other @types
+    // package, so anything providing a *global* namespace has to be listed.
+    // "geojson" is what defines the GeoJSON.* types used by the map feature;
+    // without it src/features/map/{geo,style}.ts fail with TS2503.
+    "types": ["vite/client", "geojson"],
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
