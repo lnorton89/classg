@@ -93,13 +93,25 @@ func Open(ctx context.Context, opts Options) (*Store, error) {
 func (s *Store) Close() error { return s.closeDriver() }
 
 func (s *Store) migrate(ctx context.Context) error {
-	// WAL is requested rather than required: a libSQL embedded replica manages
-	// its own journalling and may refuse. Local files -- which is every
-	// deployment without Turso credentials -- accept it.
-	if _, err := s.db.ExecContext(ctx, "PRAGMA journal_mode=WAL"); err != nil {
+	// These PRAGMAs RETURN A ROW -- journal_mode reports the resulting mode and
+	// busy_timeout echoes the value. Running them through Exec always failed
+	// with "Execute returned rows", so WAL was never actually enabled and the
+	// warning was mistaken for libSQL declining it. Query, and check the answer
+	// rather than assuming it.
+	//
+	// WAL is still requested rather than required: a libSQL embedded replica
+	// manages its own journalling and may legitimately refuse. Local files --
+	// every deployment without Turso credentials -- accept it.
+	var mode string
+	if err := s.db.QueryRowContext(ctx, "PRAGMA journal_mode=WAL").Scan(&mode); err != nil {
 		slog.Warn("could not enable WAL", "err", err)
+	} else if !strings.EqualFold(mode, "wal") {
+		slog.Info("journal mode is not WAL", "mode", mode,
+			"note", "expected for an embedded replica, which journals its own way")
 	}
-	if _, err := s.db.ExecContext(ctx, "PRAGMA busy_timeout=5000"); err != nil {
+
+	var busyTimeout int64
+	if err := s.db.QueryRowContext(ctx, "PRAGMA busy_timeout=5000").Scan(&busyTimeout); err != nil {
 		slog.Warn("could not set busy_timeout", "err", err)
 	}
 
@@ -612,3 +624,11 @@ func nullString(s string) any {
 }
 
 var _ store.Store = (*Store)(nil)
+
+// JournalMode reports the database's current journal mode. Exposed so a test
+// can assert WAL is genuinely on rather than trusting a log line.
+func (s *Store) JournalMode(ctx context.Context) (string, error) {
+	var mode string
+	err := s.db.QueryRowContext(ctx, "PRAGMA journal_mode").Scan(&mode)
+	return mode, err
+}

@@ -3,6 +3,7 @@ package libsqlstore_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -93,5 +94,30 @@ func TestOfflineByDefault(t *testing.T) {
 	}
 	if _, err := s.ListTracks(context.Background(), store.TrackQuery{}); err != nil {
 		t.Fatalf("a local-only store must be fully functional: %v", err)
+	}
+}
+
+// TestWALIsActuallyEnabled guards the class of bug where a PRAGMA that returns
+// a row is run through Exec: it fails, the failure is logged as a warning, and
+// the database quietly runs without WAL. The warning read as "libSQL declined
+// it" rather than "we called it wrong".
+func TestWALIsActuallyEnabled(t *testing.T) {
+	if !libsqlstore.Supported {
+		t.Skip("libSQL is unavailable in this build")
+	}
+	s, err := libsqlstore.Open(context.Background(), libsqlstore.Options{
+		Path: filepath.Join(t.TempDir(), "classg.db"),
+	})
+	if err != nil {
+		t.Fatalf("opening libSQL store: %v", err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	mode, err := s.JournalMode(context.Background())
+	if err != nil {
+		t.Fatalf("reading journal_mode: %v", err)
+	}
+	if !strings.EqualFold(mode, "wal") {
+		t.Fatalf("journal_mode = %q, want wal for a local file database", mode)
 	}
 }

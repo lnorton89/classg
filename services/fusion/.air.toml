@@ -5,7 +5,8 @@ tmp_dir = ".air"
 
 [build]
   cmd = "go build -o ./.air/classg-fusion ./cmd/classg-fusion"
-  bin = "./.air/classg-fusion"
+  # `entrypoint` replaces the deprecated `bin` (air >= 1.62).
+  entrypoint = "./.air/classg-fusion"
   include_ext = ["go"]
   exclude_dir = [".air", "testdata"]
   exclude_regex = ["_test\\.go"]

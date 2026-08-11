@@ -108,6 +108,11 @@ services:
       VITE_API_TARGET: http://api:8081
       # Enables Vite's polling watcher -- see the note at the top of this file.
       CLASSG_WATCH_POLL: "true"
+      # npm's upgrade nag and funding banner are the only noise in this
+      # container's logs; a dev stack should show Vite output and nothing else.
+      NPM_CONFIG_UPDATE_NOTIFIER: "false"
+      NPM_CONFIG_FUND: "false"
+      NPM_CONFIG_AUDIT: "false"
     volumes:
       - ..:/src
       - ui-node-modules:/src/services/ui/node_modules
