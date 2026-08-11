@@ -11,6 +11,15 @@ import (
 
 type Querier interface {
 	CountDetections(ctx context.Context, arg CountDetectionsParams) (int64, error)
+	// Reconstructing one track's detections matches on serial OR MAC, because a
+	// track is keyed by MAC until Basic ID arrives and by serial afterwards, and
+	// the same flight has rows from both eras.
+	//
+	// Note the shape: each side of the OR is guarded by its own NOT NULL check, so
+	// a track with only a MAC does not accidentally match every row whose serial is
+	// NULL -- which, early in a flight, is most of them. The caller returns early
+	// when a track has neither.
+	CountTrackDetections(ctx context.Context, arg CountTrackDetectionsParams) (int64, error)
 	CountTracks(ctx context.Context, arg CountTracksParams) (int64, error)
 	// Powers /health's detections_5m, which is how a quiet sky is told apart from
 	// a broken sensor.
@@ -23,13 +32,18 @@ type Querier interface {
 	ListCaptures(ctx context.Context) ([]string, error)
 	ListDetections(ctx context.Context, arg ListDetectionsParams) ([]ListDetectionsRow, error)
 	ListSensors(ctx context.Context) ([]Sensor, error)
+	ListTrackDetections(ctx context.Context, arg ListTrackDetectionsParams) ([]ListTrackDetectionsRow, error)
 	// Keyset paging on (last_seen DESC, track_id DESC), matching idx_tracks_page.
 	// Offset paging would silently skip rows on a table being appended to.
 	ListTracks(ctx context.Context, arg ListTracksParams) ([]ListTracksRow, error)
 	PurgeDetections(ctx context.Context, ts string) (int64, error)
 	PurgeTracks(ctx context.Context, lastSeen string) (int64, error)
 	PutCapture(ctx context.Context, arg PutCaptureParams) error
-	PutCaptureReport(ctx context.Context, arg PutCaptureReportParams) error
+	// doc is rewritten alongside the report because the analysis summary lives in
+	// the capture document too; writing only one of the pair would leave a capture
+	// whose summary and report disagree. :execrows so a missing capture_id is
+	// reported as not-found rather than passing silently.
+	PutCaptureReport(ctx context.Context, arg PutCaptureReportParams) (int64, error)
 	PutConfig(ctx context.Context, arg PutConfigParams) error
 	UpsertSensor(ctx context.Context, arg UpsertSensorParams) error
 	// Every statement the store runs. sqlc type-checks each one against
@@ -42,6 +56,16 @@ type Querier interface {
 	// that can be verified at build time and have no string-building to get wrong.
 	// At a Pi's data volumes -- weeks of detections, not billions -- the trade is
 	// firmly worth it.
+	//
+	// Set filters ("state IN (...)") pass a JSON array as ONE parameter and expand
+	// it with json_each, rather than using sqlc.slice(). That is not a style
+	// preference. sqlc numbers parameters explicitly (?1, ?2, ...) as soon as a
+	// query uses named parameters, but sqlc.slice() expands to bare `?`, which
+	// SQLite numbers as "one past the highest so far". The two schemes only agree
+	// when the slice happens to hold exactly one element; at zero or two the
+	// parameters after it silently shift and a confidence float ends up compared
+	// against a timestamp. A JSON array is a single parameter of fixed position, so
+	// the numbering cannot drift, and NULL still means "no filter".
 	UpsertTrack(ctx context.Context, arg UpsertTrackParams) error
 }
 
