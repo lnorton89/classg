@@ -119,6 +119,15 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      # Generated SQL must match the .sql files it came from. Without this an
+      # edited query with stale generated code compiles fine and quietly does
+      # the old thing.
+      - name: sqlc up to date
+        uses: sqlc-dev/setup-sqlc@v4
+        with:
+          sqlc-version: "1.31.1"
+      - run: sqlc diff
+
       - name: Test
         run: go test -count=1 ./...
 

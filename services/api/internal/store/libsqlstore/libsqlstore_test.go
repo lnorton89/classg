@@ -121,3 +121,23 @@ func TestWALIsActuallyEnabled(t *testing.T) {
 		t.Fatalf("journal_mode = %q, want wal for a local file database", mode)
 	}
 }
+
+// TestSchemaAppliesCleanly guards the split-on-semicolon migration: a schema
+// change that produces an unrunnable statement must fail here, not on a Pi.
+func TestSchemaAppliesCleanly(t *testing.T) {
+	if !libsqlstore.Supported {
+		t.Skip("libSQL is unavailable in this build")
+	}
+	// Open twice: the second run proves every statement is idempotent, which is
+	// what makes startup migration safe on an existing database.
+	path := filepath.Join(t.TempDir(), "classg.db")
+	for i := range 2 {
+		s, err := libsqlstore.Open(context.Background(), libsqlstore.Options{Path: path})
+		if err != nil {
+			t.Fatalf("open %d: %v", i+1, err)
+		}
+		if err := s.Close(); err != nil {
+			t.Fatalf("close %d: %v", i+1, err)
+		}
+	}
+}
