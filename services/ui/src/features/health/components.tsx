@@ -5,6 +5,7 @@ import {
   AntennaIcon,
   CircleCheckIcon,
   CircleSlashIcon,
+  CloudIcon,
   PlugZapIcon,
   RadioIcon,
   TriangleAlertIcon,
@@ -29,6 +30,10 @@ const SENSOR_ICONS: Record<SensorKind, typeof WifiIcon> = {
   wifi: WifiIcon,
   sdr: RadioIcon,
   ble: AntennaIcon,
+  // A cloud, not an antenna. A `net` source is somebody else's receiver reached
+  // over the uplink, and an operator reading this page needs to see at a glance
+  // that it proves nothing about what *this* unit can hear.
+  net: CloudIcon,
 }
 
 const STATUS_LABEL: Record<SystemStatus, string> = {
@@ -143,11 +148,16 @@ export function SkyStateBanner({
   className?: string
   action?: ReactNode
 }) {
+  // Opaque, with severity carried by a left accent bar rather than a wash.
+  // This banner sits ON TOP OF THE MAP on the Live route, and a 12-18% tint
+  // over satellite imagery left the detail line -- the sentence saying whether
+  // an empty map is evidence -- unreadable against terrain. The one thing this
+  // component exists to communicate was the thing you could not read.
   const tone = {
-    ok: 'border-ok/35 bg-ok/12',
-    warn: 'border-warn/50 bg-warn/15',
-    down: 'border-down/55 bg-down/18',
-    muted: 'border-border bg-muted/60',
+    ok: 'border-border border-l-4 border-l-ok bg-card',
+    warn: 'border-border border-l-4 border-l-warn bg-card',
+    down: 'border-border border-l-4 border-l-down bg-card',
+    muted: 'border-border border-l-4 border-l-muted-foreground/40 bg-card',
   }[state.tone]
 
   const iconTone = {
@@ -172,7 +182,7 @@ export function SkyStateBanner({
       data-sky-state={state.kind}
       data-absence-is-evidence={state.absenceIsEvidence}
       className={cn(
-        'pointer-events-auto flex items-start gap-3 rounded-lg border px-3 py-2 backdrop-blur-sm',
+        'pointer-events-auto flex items-start gap-3 rounded-lg border px-3 py-2 shadow-lg',
         tone,
         className,
       )}
@@ -180,7 +190,7 @@ export function SkyStateBanner({
       <Icon className={cn('mt-0.5 size-4 shrink-0', iconTone)} aria-hidden />
       <div className="min-w-0 flex-1">
         <p className="text-sm leading-tight font-semibold">{state.title}</p>
-        <p className="text-muted-foreground mt-0.5 text-xs leading-snug">{state.detail}</p>
+        <p className="text-foreground/75 mt-0.5 text-xs leading-snug">{state.detail}</p>
       </div>
       {action}
     </div>
