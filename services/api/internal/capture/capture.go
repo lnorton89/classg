@@ -22,7 +22,6 @@
 package capture
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -304,25 +303,6 @@ func (m *Manager) finish(c model.Capture, state, errMsg string) {
 // Parsing the PCAP header ourselves would avoid a subprocess, but tcpdump is
 // already a hard dependency of this package and it understands every link type
 // a monitor-mode capture might use, including the radiotap variants.
-func countFrames(path string) int {
-	cmd := exec.Command("tcpdump", "-r", path, "-n")
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return 0
-	}
-	if err := cmd.Start(); err != nil {
-		return 0
-	}
-	n := 0
-	sc := bufio.NewScanner(out)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() {
-		n++
-	}
-	_ = cmd.Wait()
-	return n
-}
-
 func (m *Manager) publish(c model.Capture) {
 	if m.opts.OnUpdate != nil {
 		m.opts.OnUpdate(c)

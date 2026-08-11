@@ -133,6 +133,16 @@ func run() error {
 		},
 	})
 
+	// Captures recorded outside the API -- scripts/first-capture.sh, which the
+	// Milestone 0 docs tell operators to use -- have no database record and were
+	// invisible in the list. Adopt them so what the UI shows matches what is on
+	// disk. Idempotent, so a failure here is logged rather than fatal.
+	if n, err := captures.AdoptOrphans(ctx); err != nil {
+		slog.Warn("could not adopt existing captures", "err", err)
+	} else if n > 0 {
+		slog.Info("adopted existing captures", "count", n)
+	}
+
 	srv := httpapi.New(httpapi.Options{
 		Config:   cfg,
 		Store:    st,
