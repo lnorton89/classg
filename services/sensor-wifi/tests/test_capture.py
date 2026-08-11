@@ -10,6 +10,7 @@ idle, and what happens when the radio disappears.
 from __future__ import annotations
 
 import struct
+import time
 from typing import Any
 
 import pytest
@@ -401,3 +402,46 @@ class TestAdapterDisappears:
         )
         assert stats.channel_errors >= 3, "some hops should have failed"
         assert stats.dwells >= 12, "but the capture must keep going"
+
+
+class TestWatchdog:
+    """The wedge this guards against: process alive, adapter present, interface
+    still in monitor mode, and no heartbeat for minutes because a read is stuck
+    in uninterruptible sleep on a USB transport that went away."""
+
+    def test_fires_when_heartbeats_stop(self):
+        from classg_wifi import capture
+
+        wedged: list[int] = []
+        beat = capture._Heartbeat()
+        stop = capture._start_watchdog(
+            beat, timeout_s=0.15, iface="wlan0", on_wedged=wedged.append
+        )
+        try:
+            # Never call beat.mark(): this is the wedged loop.
+            deadline = time.monotonic() + 3.0
+            while not wedged and time.monotonic() < deadline:
+                time.sleep(0.02)
+        finally:
+            stop()
+
+        assert wedged == [1], "a loop that stopped heartbeating must exit"
+
+    def test_stays_quiet_while_heartbeats_continue(self):
+        from classg_wifi import capture
+
+        wedged: list[int] = []
+        beat = capture._Heartbeat()
+        stop = capture._start_watchdog(
+            beat, timeout_s=0.3, iface="wlan0", on_wedged=wedged.append
+        )
+        try:
+            # A quiet sky still heartbeats. Killing here would turn "no drones"
+            # into "no sensor", which is the opposite of the point.
+            for _ in range(15):
+                time.sleep(0.05)
+                beat.mark()
+        finally:
+            stop()
+
+        assert wedged == [], "a heartbeating sensor must not be killed"

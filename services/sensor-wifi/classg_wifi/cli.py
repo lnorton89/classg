@@ -203,6 +203,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             pipeline=pipeline,
             publisher=publisher,
             heartbeat_s=args.heartbeat_s,
+            # A wedged capture loop stops heartbeating; without this the sensor
+            # stays "alive" and blind. 4.5x leaves room for a slow dwell.
+            watchdog_s=args.heartbeat_s * 4.5,
             should_run=lambda: _running,
         )
     except CaptureError as exc:
