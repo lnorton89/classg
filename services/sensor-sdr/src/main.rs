@@ -14,6 +14,8 @@
 // means something genuinely went unused.
 #![allow(dead_code)]
 
+mod detection;
+mod sbs;
 mod source;
 mod sweep;
 
@@ -21,6 +23,21 @@ use source::{RTLSDR_MAX_HZ, RTLSDR_STABLE_SAMPLE_RATE};
 use sweep::{plan_sweep, BAND_PLANS};
 
 fn main() {
+    // Print one schema-shaped detection and exit. This is how the cross-language
+    // contract gets checked for Rust: the CI `schemas` job validates this output
+    // against schemas/detection.schema.json, closing the gap that left this the
+    // only one of the four services whose wire format nothing verified.
+    if std::env::args().any(|a| a == "--emit-sample-detection") {
+        match serde_json::to_string_pretty(&detection::sample_detection()) {
+            Ok(json) => println!("{json}"),
+            Err(err) => {
+                eprintln!("serialising the sample detection failed: {err}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     println!("ClassG sensor-sdr v{}", env!("CARGO_PKG_VERSION"));
     println!(
         "Tuner ceiling: {:.3} GHz | stable sample rate: {:.1} MSPS",
