@@ -114,9 +114,21 @@ func (c *Client) wants(frameType string) bool {
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[*Client]struct{}
+	// onFirstClient fires when the client count goes 0 -> 1, i.e. when the web
+	// app appears. Recording follows the UI being up, by design.
+	onFirstClient func()
 }
 
 func New() *Hub { return &Hub{clients: map[*Client]struct{}{}} }
+
+// OnFirstClient registers a callback fired when the first client connects to an
+// otherwise empty hub. Called without the hub lock held, so the callback may
+// broadcast.
+func (h *Hub) OnFirstClient(fn func()) {
+	h.mu.Lock()
+	h.onFirstClient = fn
+	h.mu.Unlock()
+}
 
 func (h *Hub) Register(topics []string) *Client {
 	c := &Client{
@@ -125,8 +137,15 @@ func (h *Hub) Register(topics []string) *Client {
 	}
 	c.SetTopics(topics)
 	h.mu.Lock()
+	first := len(h.clients) == 0
 	h.clients[c] = struct{}{}
+	fn := h.onFirstClient
 	h.mu.Unlock()
+
+	// Outside the lock: the callback resumes recording, which broadcasts.
+	if first && fn != nil {
+		fn()
+	}
 	return c
 }
 

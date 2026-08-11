@@ -129,3 +129,35 @@ func join(s []string) string {
 	}
 	return out
 }
+
+func TestOnFirstClientFiresOnceForAnEmptyHub(t *testing.T) {
+	// Recording follows the web app being up, so this must fire exactly when
+	// the app appears -- not on every tab, and not never.
+	h := New()
+	var calls int
+	h.OnFirstClient(func() { calls++ })
+
+	a := h.Register(nil)
+	if calls != 1 {
+		t.Fatalf("first client fired %d times, want 1", calls)
+	}
+
+	b := h.Register(nil)
+	if calls != 1 {
+		t.Fatalf("a second concurrent client fired it again (%d)", calls)
+	}
+
+	h.Unregister(a)
+	h.Unregister(b)
+
+	// Emptied and reopened: the app coming back is the app being up again.
+	h.Register(nil)
+	if calls != 2 {
+		t.Fatalf("reconnecting to an empty hub fired %d times, want 2", calls)
+	}
+}
+
+func TestOnFirstClientIsOptional(t *testing.T) {
+	h := New()
+	h.Register(nil) // must not panic without a callback
+}

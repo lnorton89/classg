@@ -13,15 +13,15 @@ import (
 
 const countDetections = `-- name: CountDetections :one
 SELECT COUNT(*) FROM detections
-WHERE (?1      IS NULL OR ts        >= ?1)
-  AND (?2  IS NULL OR sensor_id  = ?2)
-  AND (?3 IS NULL OR detection_class IN (/*SLICE:classes*/?))
+WHERE (CAST(?1 AS TEXT)      IS NULL OR ts        >= ?1)
+  AND (CAST(?2 AS TEXT)  IS NULL OR sensor_id  = ?2)
+  AND (CAST(?3 AS INTEGER) IS NULL OR detection_class IN (/*SLICE:classes*/?))
 `
 
 type CountDetectionsParams struct {
-	Since         interface{}
-	SensorID      interface{}
-	FilterClasses interface{}
+	Since         sql.NullString
+	SensorID      sql.NullString
+	FilterClasses sql.NullInt64
 	Classes       []string
 }
 
@@ -47,15 +47,15 @@ func (q *Queries) CountDetections(ctx context.Context, arg CountDetectionsParams
 
 const countTracks = `-- name: CountTracks :one
 SELECT COUNT(*) FROM tracks
-WHERE (?1          IS NULL OR last_seen  >= ?1)
-  AND (?2 IS NULL OR confidence >= ?2)
-  AND (?3  IS NULL OR state IN (/*SLICE:states*/?))
+WHERE (CAST(?1 AS TEXT)          IS NULL OR last_seen  >= ?1)
+  AND (CAST(?2 AS REAL) IS NULL OR confidence >= ?2)
+  AND (CAST(?3 AS INTEGER)  IS NULL OR state IN (/*SLICE:states*/?))
 `
 
 type CountTracksParams struct {
-	Since         interface{}
-	MinConfidence interface{}
-	FilterStates  interface{}
+	Since         sql.NullString
+	MinConfidence sql.NullFloat64
+	FilterStates  sql.NullInt64
 	States        []string
 }
 
@@ -220,11 +220,11 @@ func (q *Queries) ListCaptures(ctx context.Context) ([]string, error) {
 
 const listDetections = `-- name: ListDetections :many
 SELECT doc, ts, detection_id FROM detections
-WHERE (?2      IS NULL OR ts        >= ?2)
-  AND (?3  IS NULL OR sensor_id  = ?3)
-  AND (?4 IS NULL OR detection_class IN (/*SLICE:classes*/?))
+WHERE (CAST(?2 AS TEXT)      IS NULL OR ts        >= ?2)
+  AND (CAST(?3 AS TEXT)  IS NULL OR sensor_id  = ?3)
+  AND (CAST(?4 AS INTEGER) IS NULL OR detection_class IN (/*SLICE:classes*/?))
   AND (
-        ?6 IS NULL
+        CAST(?6 AS TEXT) IS NULL
         OR ts < ?6
         OR (ts = ?6 AND detection_id < ?7)
       )
@@ -233,11 +233,11 @@ LIMIT ?
 `
 
 type ListDetectionsParams struct {
-	Since         interface{}
-	SensorID      interface{}
-	FilterClasses interface{}
+	Since         sql.NullString
+	SensorID      sql.NullString
+	FilterClasses sql.NullInt64
 	Classes       []string
-	CursorTs      interface{}
+	CursorTs      sql.NullString
 	CursorID      sql.NullString
 	Limit         int64
 }
@@ -324,11 +324,11 @@ func (q *Queries) ListSensors(ctx context.Context) ([]Sensor, error) {
 
 const listTracks = `-- name: ListTracks :many
 SELECT doc, last_seen, track_id FROM tracks
-WHERE (?2          IS NULL OR last_seen  >= ?2)
-  AND (?3 IS NULL OR confidence >= ?3)
-  AND (?4  IS NULL OR state IN (/*SLICE:states*/?))
+WHERE (CAST(?2 AS TEXT)          IS NULL OR last_seen  >= ?2)
+  AND (CAST(?3 AS REAL) IS NULL OR confidence >= ?3)
+  AND (CAST(?4 AS INTEGER)  IS NULL OR state IN (/*SLICE:states*/?))
   AND (
-        ?6 IS NULL
+        CAST(?6 AS TEXT) IS NULL
         OR last_seen < ?6
         OR (last_seen = ?6 AND track_id < ?7)
       )
@@ -337,11 +337,11 @@ LIMIT ?
 `
 
 type ListTracksParams struct {
-	Since         interface{}
-	MinConfidence interface{}
-	FilterStates  interface{}
+	Since         sql.NullString
+	MinConfidence sql.NullFloat64
+	FilterStates  sql.NullInt64
 	States        []string
-	CursorTs      interface{}
+	CursorTs      sql.NullString
 	CursorID      sql.NullString
 	Limit         int64
 }
