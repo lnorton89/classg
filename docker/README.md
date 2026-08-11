@@ -32,7 +32,7 @@ Then open `http://localhost:8080`. The API is also exposed at
 
 ### Satellite basemap cache
 
-The UI proxies public-domain USGS imagery through a persistent Docker cache. To bake the
+The UI proxies Esri World Imagery through a persistent Docker cache. To bake the
 expected operations area into the UI image as well, set a WGS84 bounding box before building:
 
 ```dotenv
@@ -45,6 +45,34 @@ Keep the area tight: tile count grows approximately fourfold per added zoom leve
 fails before downloading if the request exceeds `CLASSG_TILE_PRELOAD_MAX_TILES`. An offline
 build still succeeds; unavailable tiles are fetched and cached later when the stack has
 internet access.
+
+Preload zoom accepts up to 19, but budget for it — seeding the bbox above through z19 is
+roughly 4⁴ ≈ 256× the z15 tile count. The on-demand cache fills the deep levels for wherever
+you actually fly, which is usually the better trade than baking them all in.
+
+#### Changing the imagery source
+
+The default has real pixels to **z19**. Zoom ceilings are per-source and per-location;
+measured at the receiver (46.0400, -122.7673):
+
+| Source | Ceiling | Ground resolution | Licence |
+|---|---|---|---|
+| Esri World Imagery *(default)* | z19 | 0.21 m/px | Free with attribution, [Esri terms](https://www.esri.com/en-us/legal/terms/full-master-agreement) |
+| USGS `ImageryOnly` *(previous)* | z16 | 1.66 m/px | Public domain |
+| Mapbox / MapTiler satellite | z20–22 | ≤0.10 m/px | API key, metered |
+
+Past its ceiling Esri returns a grey *“Map data not yet available”* tile at **HTTP 200** —
+not a 404 — so an over-set ceiling blanks the map instead of blurring it. Three places must
+agree when you switch:
+
+1. `services/ui/nginx.conf` — the `@satellite_tile` upstream and rewrite (production).
+2. `services/ui/vite.config.ts` — the `/tiles/basemap` proxy, or `VITE_SATELLITE_TILE_ORIGIN` (dev).
+3. `services/ui/src/features/map/style.ts` — `BASEMAP_MAX_ZOOM`.
+
+`CLASSG_SATELLITE_TILE_URL` overrides the build-time preloader only; it does not change what
+nginx proxies at runtime. To confirm a candidate's real ceiling before committing to it,
+request tiles directly and watch for the status flip or a suspiciously small, identical
+response body at successive zooms.
 
 ## Windows + custom WSL kernel
 
