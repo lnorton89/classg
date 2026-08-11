@@ -50,6 +50,11 @@ BEACON_FILTER = "type mgt subtype beacon"
 # channel-hop schedule. Read at most this many frames before re-checking time.
 MAX_FRAMES_PER_POLL = 64
 
+# Consecutive failed channel hops before the radio is declared gone. A few
+# failures happen (a busy interface, a DFS channel); an unbroken run of them
+# means the adapter is not there any more.
+MAX_CONSECUTIVE_CHANNEL_ERRORS = 5
+
 
 class CaptureError(RuntimeError):
     """The radio is unusable. Exit non-zero and let the supervisor restart."""
@@ -71,19 +76,28 @@ class CaptureStats:
 
 def set_channel(iface: str, channel: int) -> bool:
     """Retune the adapter. Returns False rather than raising: a single failed
-    hop should cost one dwell, not the whole capture."""
+    hop should cost one dwell, not the whole capture.
+
+    Logs at debug, not warning. A hop that fails because the adapter has gone
+    is about to be reported far more usefully by the caller, and warning here
+    produced one line per dwell forever -- pages of noise saying nothing.
+    """
     try:
         res = subprocess.run(
             ["iw", "dev", iface, "set", "channel", str(channel)],
             capture_output=True, text=True, timeout=5, check=False,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        log.warning("channel %d: %s", channel, exc)
+        log.debug("channel %d: %s", channel, exc)
         return False
     if res.returncode != 0:
-        log.warning("channel %d: %s", channel, res.stderr.strip() or res.returncode)
+        log.debug("channel %d: %s", channel, res.stderr.strip() or res.returncode)
         return False
     return True
+
+
+def interface_exists(iface: str) -> bool:
+    return os.path.exists(f"/sys/class/net/{iface}")
 
 
 def preflight(iface: str) -> None:
@@ -190,13 +204,44 @@ def run_capture(
     sock = socket_factory(iface)
     last_heartbeat = 0.0
     consecutive_read_errors = 0
+    consecutive_channel_errors = 0
 
     log.info("capture starting on %s", iface)
     try:
         while should_run():
             spec = hopper.next_channel()
-            if not set_channel(iface, spec.channel):
+            if set_channel(iface, spec.channel):
+                consecutive_channel_errors = 0
+            else:
                 stats.channel_errors += 1
+                consecutive_channel_errors += 1
+
+                # An adapter that has been unplugged -- or, under WSL, detached
+                # by usbip -- fails every hop. Previously the loop logged a
+                # warning per dwell and carried on for ever: pages of noise from
+                # a sensor that was, in every meaningful sense, dead. That is
+                # precisely the silent failure ADR-0003 exists to prevent, so it
+                # now gives up and lets the supervisor restart it.
+                if not interface_exists(iface):
+                    raise CaptureError(
+                        f"{iface} disappeared mid-capture. Under WSL the adapter "
+                        "detaches when usbip drops it or the VM restarts; "
+                        "reattach from Windows with:  usbipd attach --wsl "
+                        "--busid <BUSID>   (--auto-attach reconnects it "
+                        "automatically), then re-run."
+                    )
+                if consecutive_channel_errors >= MAX_CONSECUTIVE_CHANNEL_ERRORS:
+                    raise CaptureError(
+                        f"{iface}: {consecutive_channel_errors} consecutive channel "
+                        "hops failed while the interface still exists; the radio is "
+                        "not usable. Check `sudo dmesg | tail` and that the "
+                        "interface is still in monitor mode."
+                    )
+                if consecutive_channel_errors == 1:
+                    log.warning(
+                        "channel %d hop failed; will abort after %d consecutive failures",
+                        spec.channel, MAX_CONSECUTIVE_CHANNEL_ERRORS,
+                    )
 
             dwell_s = hopper.dwell_ms() / 1000.0
             dwell_started = time.monotonic()
