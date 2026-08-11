@@ -1,0 +1,25 @@
+# Go hot reload for fusion. Used by the Docker dev stack and by `air` locally.
+
+root = "."
+tmp_dir = ".air"
+
+[build]
+  cmd = "go build -o ./.air/classg-fusion ./cmd/classg-fusion"
+  bin = "./.air/classg-fusion"
+  include_ext = ["go"]
+  exclude_dir = [".air", "testdata"]
+  exclude_regex = ["_test\\.go"]
+  delay = 300
+  stop_on_error = false
+  log = "build-errors.log"
+  # Bind mounts from the Windows filesystem do not deliver inotify events into
+  # the container, so the watcher would never fire. Polling costs a little CPU
+  # and is the only thing that actually works across that boundary.
+  poll = true
+  poll_interval = 500
+
+[misc]
+  clean_on_exit = true
+
+[screen]
+  clear_on_rebuild = false

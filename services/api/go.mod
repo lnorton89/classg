@@ -1,6 +1,6 @@
 module github.com/classg/api
 
-go 1.23
+go 1.26
 
 require (
 	github.com/coder/websocket v1.8.15

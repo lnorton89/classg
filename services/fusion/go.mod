@@ -1,6 +1,6 @@
 module github.com/classg/fusion
 
-go 1.23
+go 1.26
 
 require (
 	github.com/go-zeromq/zmq4 v0.17.0

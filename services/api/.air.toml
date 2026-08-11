@@ -19,6 +19,12 @@ tmp_dir = ".air"
   # Surface build failures in the terminal rather than silently keeping the old
   # binary running -- a stale binary that looks live is the worst outcome here.
   log = "build-errors.log"
+  # Bind mounts from the Windows filesystem do not deliver inotify events into
+  # the container, so the watcher would never fire. Polling costs a little CPU
+  # and is the only thing that actually works across that boundary. Harmless
+  # when running natively.
+  poll = true
+  poll_interval = 500
 
 [misc]
   clean_on_exit = true

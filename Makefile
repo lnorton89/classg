@@ -1,11 +1,13 @@
-.PHONY: help env migrate-env migrate-env-dry setup dev dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
+.PHONY: help env migrate-env migrate-env-dry setup dev dev-logs dev-down dev-restart dev-native dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
 
 DOCKER := bash ./scripts/docker.sh
 
 help:
 	@echo "ClassG - passive drone detection"
 	@echo ""
-	@echo "  make dev        native dev loop: fusion + api + vite, hot reload"
+	@echo "  make dev        dev stack in Docker: hot reload, no image rebuilds"
+	@echo "  make dev-logs   follow the dev stack"
+	@echo "  make dev-down   stop the dev stack"
 	@echo "  make setup      install dependencies for all services"
 	@echo "  make env        create ignored .env from .env.example"
 	@echo "  make migrate-env  update an existing .env to the ADR-0007 tiers"
@@ -53,10 +55,30 @@ test-ui:
 build-ui:
 	cd services/ui && npm run build
 
-# Primary dev loop: fusion + api + vite, native, hot reload, no image rebuilds.
-# Containers are the deployment story; see scripts/dev.sh for why they are the
-# wrong tool for the edit loop.
+# Primary dev loop: the whole stack in Docker with bind mounts and hot reload.
+# No image rebuild is needed to see a code change -- air rebuilds the Go
+# binaries in-container and Vite serves the UI with HMR.
 dev: env
+	$(DOCKER) compose --env-file .env -f docker/docker-compose.dev.yml up -d --build
+	@echo ""
+	@echo "  UI   http://localhost:5173"
+	@echo "  API  http://localhost:8081/api/v1"
+	@echo ""
+	@echo "  make dev-logs   follow all three services"
+	@echo "  make dev-down   stop"
+
+dev-logs:
+	$(DOCKER) compose --env-file .env -f docker/docker-compose.dev.yml logs -f
+
+dev-down:
+	$(DOCKER) compose --env-file .env -f docker/docker-compose.dev.yml down
+
+dev-restart:
+	$(DOCKER) compose --env-file .env -f docker/docker-compose.dev.yml restart
+
+# Same loop without containers. Faster still, but needs Go, Node and air on the
+# host; kept for working on a Pi directly.
+dev-native: env
 	./scripts/dev.sh
 
 dev-ui-only: env
