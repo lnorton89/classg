@@ -52,6 +52,12 @@ export const sensorsQuery = () =>
     queryKey: queryKeys.sensors,
     queryFn: () => api.sensors(),
     staleTime: 10_000,
+    // Polled on the same cadence as health. Without this the sensor cards were
+    // fetched once on mount and then sat there: a sensor could go stale, or
+    // recover, and the panel kept showing whatever was true when the page
+    // loaded -- while the banner above it, which polls health, moved on. That
+    // produced a green "Quiet sky" over a card reading "unhealthy".
+    refetchInterval: 15_000,
   })
 
 /** Active and archived tracks. Fed by the socket; refetched wholesale on reconnect. */
