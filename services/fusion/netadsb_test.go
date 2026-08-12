@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -210,9 +211,12 @@ func TestNetADSBPollReportsUpstreamFailure(t *testing.T) {
 // A feed that dies on a dropped uplink would take the detector's radios with
 // it. ADR-0003 applies here exactly as it does to a sensor.
 func TestNetADSBRunDegradesRatherThanStopping(t *testing.T) {
-	fail := true
+	// The handler runs on httptest's goroutine while the test body flips this
+	// from its own, so a plain bool here is a race the -race build fails on.
+	var fail atomic.Bool
+	fail.Store(true)
 	feed, _ := testFeed(t, func(w http.ResponseWriter, _ *http.Request) {
-		if fail {
+		if fail.Load() {
 			http.Error(w, "upstream down", http.StatusBadGateway)
 			return
 		}
@@ -225,9 +229,8 @@ func TestNetADSBRunDegradesRatherThanStopping(t *testing.T) {
 	defer cancel()
 
 	statuses := make(chan NetADSBStatus, 16)
-	emitted := 0
 	go feed.Run(ctx,
-		func([]byte) { emitted++ },
+		func([]byte) {},
 		func(s NetADSBStatus) {
 			select {
 			case statuses <- s:
@@ -240,7 +243,7 @@ func TestNetADSBRunDegradesRatherThanStopping(t *testing.T) {
 	if first.Healthy || first.LastError == "" {
 		t.Fatalf("first status should be an unhealthy one with a reason: %+v", first)
 	}
-	fail = false
+	fail.Store(false)
 
 	deadline := time.After(2 * time.Second)
 	for {
