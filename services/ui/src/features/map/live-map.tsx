@@ -75,6 +75,33 @@ const FALLBACK_ZOOM = 3.3
  * maplibre-gl itself is split out in vite.config.ts. The shell has to stay
  * interactive on a phone over the Pi's own access point.
  */
+/**
+ * The bounding box an archive actually contains.
+ *
+ * `pmtiles extract` keeps every zoom from 0 up for any tile INTERSECTING the
+ * requested box, and at z4 one tile spans most of a continent. So a local
+ * extract does contain low-zoom tiles -- they just hold whichever giant tiles
+ * happened to overlap, which renders as a rectangle of map floating in a void
+ * with a hard edge around it. Reading the real box lets the map decline to zoom
+ * out that far at all, which is the honest position: do not offer a view the
+ * data cannot fill.
+ */
+async function pmtilesBounds(
+  url: string,
+): Promise<[[number, number], [number, number]] | null> {
+  try {
+    const { PMTiles } = await import('pmtiles')
+    const header = await new PMTiles(new URL(url, window.location.href).toString()).getHeader()
+    return [
+      [header.minLon, header.minLat],
+      [header.maxLon, header.maxLat],
+    ]
+  } catch {
+    // A missing or unreadable header costs the zoom clamp, nothing else.
+    return null
+  }
+}
+
 let pmtilesProtocol: Promise<void> | null = null
 function ensurePMTilesProtocol(): Promise<void> {
   pmtilesProtocol ??= import('pmtiles').then(({ Protocol }) => {
@@ -128,6 +155,11 @@ export function LiveMap({
   // Vector archives cover one cut-out of the world; this tracks whether the
   // current view is inside it. See checkCoverage below.
   const [outsideCoverage, setOutsideCoverage] = useState(false)
+  // The archive's own bounding box, read from its header. Used to stop the
+  // map offering zoom levels the archive cannot fill. See the probe below.
+  const [archiveBounds, setArchiveBounds] = useState<
+    [[number, number], [number, number]] | null
+  >(null)
   const [ready, setReady] = useState(false)
 
   // --- where to centre before any track exists to derive a position from --
@@ -178,7 +210,11 @@ export function LiveMap({
         BASEMAP_VECTOR_URL &&
         (await vectorReachable(BASEMAP_VECTOR_URL, controller.signal))
       ) {
-        if (isPMTilesArchive(BASEMAP_VECTOR_URL)) await ensurePMTilesProtocol()
+        if (isPMTilesArchive(BASEMAP_VECTOR_URL)) {
+          await ensurePMTilesProtocol()
+          const bounds = await pmtilesBounds(BASEMAP_VECTOR_URL)
+          if (bounds && !controller.signal.aborted) setArchiveBounds(bounds)
+        }
         if (!controller.signal.aborted) setBasemap('vector')
         return
       }
@@ -337,6 +373,30 @@ export function LiveMap({
       setOutsideCoverage(drawn === 0)
     }
 
+    /**
+     * Do not let the operator zoom out past what the archive can fill.
+     *
+     * An extract holds low-zoom tiles only because they overlap the requested
+     * box, so zooming out shows a rectangle of map surrounded by void -- which
+     * reads as a broken renderer, not as "you have left the area you cut".
+     * Clamping the floor to the zoom where the archive's own box fits the
+     * viewport means every reachable view is one the data can actually fill.
+     *
+     * cameraForBounds rather than arithmetic because it accounts for the real
+     * container size, which changes with the contacts panel and the phone
+     * layout. Panning stays unrestricted: a detection outside the extract must
+     * always remain reachable, and the coverage notice covers that case.
+     */
+    const clampZoomToArchive = () => {
+      if (!archiveBounds) return
+      const camera = map.cameraForBounds(archiveBounds, { padding: 24 })
+      if (!camera || typeof camera.zoom !== 'number') return
+      const floor = Math.max(0, camera.zoom)
+      map.setMinZoom(floor)
+      if (map.getZoom() < floor) map.setZoom(floor)
+    }
+
+    map.on('load', clampZoomToArchive)
     map.on('load', addOverlays)
     // setStyle() drops custom sources and layers; re-add them every time.
     map.on('styledata', addOverlays)
@@ -363,7 +423,7 @@ export function LiveMap({
       map.remove()
       mapRef.current = null
     }
-  }, [ariaLabel, basemap, theme])
+  }, [ariaLabel, basemap, theme, archiveBounds])
 
   // --- line sources --------------------------------------------------------
   useEffect(() => {
@@ -562,7 +622,10 @@ export function LiveMap({
           detected" long before it reads as "you have panned off the edge of
           the tiles you cut". */}
       {basemap === 'vector' && outsideCoverage ? (
-        <p className="text-muted-foreground bg-background/80 ring-border pointer-events-none absolute right-2 bottom-2 z-10 rounded px-2 py-1 text-2xs ring-1">
+        // bottom-9, not bottom-2: vector mode keeps the attribution control,
+        // which sits bottom-right and is 24px tall. The no-tiles note above can
+        // use bottom-2 because that mode turns attribution off.
+        <p className="text-muted-foreground bg-background/80 ring-border pointer-events-none absolute right-2 bottom-9 z-10 rounded px-2 py-1 text-2xs ring-1">
           Outside basemap coverage — range rings only
         </p>
       ) : null}
