@@ -317,6 +317,13 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: services/api/go.mod
+          # This job builds both Go modules, so the cache key has to cover both
+          # go.sums. Without this the action looks for a dependency file at the
+          # repo root, finds none, and skips the restore -- the job still passes,
+          # so the only symptom is it silently redownloading every dependency.
+          cache-dependency-path: |
+            services/api/go.sum
+            services/fusion/go.sum
 
       - run: go install golang.org/x/vuln/cmd/govulncheck@latest
 
