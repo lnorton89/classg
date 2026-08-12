@@ -64,8 +64,22 @@ type Def struct {
 	// a rate limit is the exception: zero legitimately means "do not throttle",
 	// which is what a self-hosted terrain service wants.
 	AllowZero bool
-	Doc       string
+	// Range bounds a KindInt or KindFloat. Nil means unconstrained.
+	Range *Range
+	Doc   string
 }
+
+// Range is the accepted interval for a numeric setting, inclusive.
+//
+// Worth having rather than leaving the limit to whichever process consumes the
+// value: without it a bound that only the consumer knows about is enforced far
+// too late. A radius above the aggregator's maximum stored happily, reported
+// "Saved", and then made fusion refuse to start on its next restart -- so the
+// operator got a success message and a detector that did not come back, with
+// the reason visible only in a log they had no reason to open.
+type Range struct{ Min, Max float64 }
+
+func (r Range) contains(v float64) bool { return v >= r.Min && v <= r.Max }
 
 // Defs is the complete Tier 2 registry. Anything not here is either Tier 1
 // (bootstrap/secrets, see config.Bootstrap) or not configurable.
@@ -116,8 +130,11 @@ var Defs = []Def{
 	{Key: "fusion.net_adsb_url", Env: "CLASSG_FUSION_NET_ADSB_URL", Kind: KindString,
 		Default: "https://api.adsb.lol", Mutable: true,
 		Doc: "base URL of a /v2/point aggregator (adsb.lol, adsb.fi, airplanes.live)"},
+	// 250 is the aggregator's own ceiling, and fusion refuses to start above
+	// it. Stated here so the refusal happens at the point of entry rather than
+	// at the next restart.
 	{Key: "fusion.net_adsb_radius_nm", Env: "CLASSG_FUSION_NET_ADSB_RADIUS_NM", Kind: KindInt,
-		Default: "25", Mutable: true,
+		Default: "25", Mutable: true, Range: &Range{Min: 1, Max: 250},
 		Doc: "query radius in nautical miles, 250 maximum; larger means more aircraft stored and drawn"},
 	{Key: "fusion.net_adsb_interval", Env: "CLASSG_FUSION_NET_ADSB_INTERVAL", Kind: KindDuration,
 		Default: "10s", Mutable: true,
@@ -136,8 +153,11 @@ var Defs = []Def{
 	{Key: "fusion.terrain_min_interval", Env: "CLASSG_FUSION_TERRAIN_MIN_INTERVAL", Kind: KindDuration,
 		Default: "1s", Mutable: true, AllowZero: true,
 		Doc: "rate limit on elevation lookups; 0 disables it, which is what a self-hosted instance wants"},
+	// The geoid ranges roughly -106 m (Indian Ocean) to +85 m (Iceland), so
+	// anything outside +/-150 is a units mistake -- feet entered as metres, or
+	// an altitude pasted into the wrong field.
 	{Key: "fusion.terrain_geoid_offset_m", Env: "CLASSG_FUSION_TERRAIN_GEOID_OFFSET_M", Kind: KindFloat,
-		Default: "0", Mutable: true,
+		Default: "0", Mutable: true, Range: &Range{Min: -150, Max: 150},
 		Doc: "local geoid undulation in metres. NOT optional in practice: elevation datasets are " +
 			"orthometric and Remote ID altitude is above the WGS-84 ellipsoid, so leaving this 0 " +
 			"does not skip a correction, it applies a wrong one -- about -22 m around Seattle"},
@@ -391,6 +411,9 @@ func parse(d Def, raw string) (any, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%q is not an integer", raw)
 		}
+		if d.Range != nil && !d.Range.contains(float64(v)) {
+			return nil, fmt.Errorf("must be between %g and %g, got %d", d.Range.Min, d.Range.Max, v)
+		}
 		return v, nil
 	case KindFloat:
 		v, err := strconv.ParseFloat(raw, 64)
@@ -399,6 +422,9 @@ func parse(d Def, raw string) (any, error) {
 		}
 		if math.IsNaN(v) || math.IsInf(v, 0) {
 			return nil, fmt.Errorf("%q is not a finite number", raw)
+		}
+		if d.Range != nil && !d.Range.contains(v) {
+			return nil, fmt.Errorf("must be between %g and %g, got %g", d.Range.Min, d.Range.Max, v)
 		}
 		return v, nil
 	case KindDuration:

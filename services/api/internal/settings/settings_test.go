@@ -331,6 +331,39 @@ func TestExternalDataIntegrationsDefaultToOff(t *testing.T) {
 	}
 }
 
+// A bound the consuming process knows about but the registry does not gets
+// enforced at the worst possible moment. Found against the running API: a 500
+// nm radius stored with HTTP 200 and "Saved", and fusion then refused to start
+// on its next restart with the reason only in its own log.
+func TestNumericRangeIsEnforcedAtEntry(t *testing.T) {
+	radius := defByKey()["fusion.net_adsb_radius_nm"]
+	if radius.Range == nil {
+		t.Fatal("the radius has a hard ceiling in fusion; the registry must know it too")
+	}
+	for _, raw := range []string{"1", "25", "250"} {
+		if _, err := parse(radius, raw); err != nil {
+			t.Errorf("parse(%q): %v", raw, err)
+		}
+	}
+	for _, raw := range []string{"0", "-5", "251", "500"} {
+		if _, err := parse(radius, raw); err == nil {
+			t.Errorf("parse(%q) should have been refused", raw)
+		}
+	}
+
+	// The same trap in the other direction: a geoid offset entered in feet.
+	geoid := defByKey()["fusion.terrain_geoid_offset_m"]
+	if _, err := parse(geoid, "-22.5"); err != nil {
+		t.Errorf("a real geoid offset must be accepted: %v", err)
+	}
+	if _, err := parse(geoid, "-72"); err != nil {
+		t.Errorf("-72 m is a real undulation and must be accepted: %v", err)
+	}
+	if _, err := parse(geoid, "-1200"); err == nil {
+		t.Error("a value far outside any real geoid should be refused")
+	}
+}
+
 func TestFloatSetting(t *testing.T) {
 	d := Def{Key: "fusion.terrain_geoid_offset_m", Kind: KindFloat}
 	// Negative is the normal case: most of the world sits below the ellipsoid.
