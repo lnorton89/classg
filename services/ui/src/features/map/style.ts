@@ -65,6 +65,32 @@ export function isPMTilesArchive(url: string): boolean {
   return url.trim().toLowerCase().endsWith('.pmtiles')
 }
 
+/**
+ * Deepest zoom the whole-world companion archive has native tiles for.
+ *
+ * `pmtiles extract` keeps every zoom 0..maxzoom for any tile that *intersects*
+ * the requested bbox, and at z4 one tile spans most of a continent — so a local
+ * extract's low zooms hold a handful of giant part-filled tiles that render as
+ * a rectangle of map floating in a void. Rather than clamp zoom-out (rejected:
+ * it removes a view the operator legitimately wants), the style lays a second,
+ * bboxless world extract underneath. A z6 whole planet is ~43 MB, which the Pi
+ * can afford; z7 would quadruple it for detail the local extract already has.
+ *
+ * Must match `--maxzoom` for the world extract in scripts/fetch-basemap.sh.
+ */
+export const WORLD_MAX_ZOOM = 6
+
+/**
+ * Where the whole-world companion for a local archive lives: by convention,
+ * `basemap.pmtiles` → `basemap-world.pmtiles` next to it. A convention rather
+ * than a second env var so that dropping the file beside the extract is the
+ * whole deployment story; the UI probes for it and degrades to the bare
+ * extract if it is absent.
+ */
+export function worldArchiveUrlFor(archiveUrl: string): string {
+  return `${archiveUrl.trim().slice(0, -'.pmtiles'.length)}-world.pmtiles`
+}
+
 const VECTOR_ATTRIBUTION =
   '<a href="https://protomaps.com" target="_blank">Protomaps</a> © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>'
 
@@ -241,9 +267,103 @@ export function noTilesStyle(theme: 'dark' | 'light'): StyleSpecification {
  *   thing on screen. Same reasoning as the raster style's opacity knock-back.
  *
  * Layer names are the Protomaps basemap v4 schema.
+ *
+ * When `worldArchiveUrl` is given, a second source — the bboxless z0–6 world
+ * extract, see WORLD_MAX_ZOOM — is drawn *underneath* the local layers, so
+ * zooming out shows real geography instead of the extract's floating
+ * rectangle. Three properties keep the seam invisible:
+ *
+ * - Both archives come from the same planet build, so wherever both have a
+ *   native tile for the same zoom the geometry is identical and the overdraw
+ *   changes nothing.
+ * - World earth/water run at every zoom (overzoomed past z6), filling the void
+ *   around the extract at mid zooms too; the local opaque fills simply paint
+ *   over them inside coverage.
+ * - World lines (roads, boundaries) stop at z7. Past that they would be
+ *   overzoomed and visibly offset from the local archive's native geometry —
+ *   a ghost road beside every real one.
  */
-export function vectorStyle(theme: 'dark' | 'light', archiveUrl: string): StyleSpecification {
+export function vectorStyle(
+  theme: 'dark' | 'light',
+  archiveUrl: string,
+  worldArchiveUrl?: string | null,
+): StyleSpecification {
   const p = palette(theme)
+  // Shared between the local and world landuse layers: with different kind
+  // lists the two sources would render different greens for the same ground,
+  // and the extract's edge would show as a tone change instead of nothing.
+  const landuseKinds = [
+    'park',
+    'forest',
+    'wood',
+    'grass',
+    'grassland',
+    'meadow',
+    'scrub',
+    'garden',
+    'farmland',
+    'nature_reserve',
+    'recreation_ground',
+    'golf_course',
+    'cemetery',
+    'wetland',
+  ]
+  const worldSource: StyleSpecification['sources'] = worldArchiveUrl
+    ? {
+        'protomaps-world': {
+          type: 'vector',
+          url: `pmtiles://${worldArchiveUrl}`,
+          attribution: VECTOR_ATTRIBUTION,
+        },
+      }
+    : {}
+  const worldLayers: StyleSpecification['layers'] = worldArchiveUrl
+    ? [
+        {
+          id: 'world-earth',
+          type: 'fill',
+          source: 'protomaps-world',
+          'source-layer': 'earth',
+          paint: { 'fill-color': p.earth },
+        },
+        {
+          id: 'world-landuse',
+          type: 'fill',
+          source: 'protomaps-world',
+          'source-layer': 'landuse',
+          filter: ['in', ['get', 'kind'], ['literal', landuseKinds]],
+          paint: { 'fill-color': p.green },
+        },
+        {
+          id: 'world-water',
+          type: 'fill',
+          source: 'protomaps-world',
+          'source-layer': 'water',
+          paint: { 'fill-color': p.water },
+        },
+        {
+          id: 'world-roads-major',
+          type: 'line',
+          source: 'protomaps-world',
+          'source-layer': 'roads',
+          filter: ['in', ['get', 'kind'], ['literal', ['highway', 'major_road']]],
+          maxzoom: WORLD_MAX_ZOOM + 1,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': p.road,
+            'line-width': ['interpolate', ['exponential', 1.6], ['zoom'], 6, 0.5, 18, 6],
+          },
+        },
+        {
+          id: 'world-boundaries',
+          type: 'line',
+          source: 'protomaps-world',
+          'source-layer': 'boundaries',
+          maxzoom: WORLD_MAX_ZOOM + 1,
+          paint: { 'line-color': p.boundary, 'line-width': 0.8, 'line-dasharray': [3, 2] },
+        },
+      ]
+    : []
   return {
     version: 8,
     sources: {
@@ -252,10 +372,12 @@ export function vectorStyle(theme: 'dark' | 'light', archiveUrl: string): StyleS
         url: `pmtiles://${archiveUrl}`,
         attribution: VECTOR_ATTRIBUTION,
       },
+      ...worldSource,
       rings: { type: 'geojson', data: { type: 'FeatureCollection', features: [] } },
     },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': p.background } },
+      ...worldLayers,
       {
         id: 'earth',
         type: 'fill',
@@ -268,31 +390,9 @@ export function vectorStyle(theme: 'dark' | 'light', archiveUrl: string): StyleS
         type: 'fill',
         source: 'protomaps',
         'source-layer': 'landuse',
-        // Surveyed from a real extract rather than guessed — see the note on
-        // the road layers below.
-        filter: [
-          'in',
-          ['get', 'kind'],
-          [
-            'literal',
-            [
-              'park',
-              'forest',
-              'wood',
-              'grass',
-              'grassland',
-              'meadow',
-              'scrub',
-              'garden',
-              'farmland',
-              'nature_reserve',
-              'recreation_ground',
-              'golf_course',
-              'cemetery',
-              'wetland',
-            ],
-          ],
-        ],
+        // Kinds surveyed from a real extract rather than guessed — see the
+        // note on the road layers below.
+        filter: ['in', ['get', 'kind'], ['literal', landuseKinds]],
         paint: { 'fill-color': p.green },
       },
       {

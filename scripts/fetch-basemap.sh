@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Cut a local Protomaps basemap for the operator UI.
 #
-# One .pmtiles file in services/ui/public/tiles/, served by whatever already
-# serves the app. No tile server, no proxy, no upstream, and -- unlike the
-# satellite raster path -- no third-party imagery baked into an image you might
-# publish. This is the only basemap option that is fully offline.
+# Two .pmtiles files in services/ui/public/tiles/ -- the detailed area extract
+# plus a small whole-world overview the UI layers underneath it -- served by
+# whatever already serves the app. No tile server, no proxy, no upstream, and
+# -- unlike the satellite raster path -- no third-party imagery baked into an
+# image you might publish. This is the only basemap option that is fully
+# offline.
 #
 # Needs the `pmtiles` CLI: https://docs.protomaps.com/pmtiles/cli
 #
@@ -25,7 +27,7 @@
 set -euo pipefail
 
 if [ "$#" -lt 4 ]; then
-    sed -n '2,25p' "$0" | sed 's/^# \?//'
+    sed -n '2,25p' "$0" | sed 's/^# \?//'  # keep the range in step with the header above
     exit 2
 fi
 
@@ -100,8 +102,18 @@ echo "  out:    $OUT"
     --bbox="$MIN_LON,$MIN_LAT,$MAX_LON,$MAX_LAT" \
     --maxzoom="$MAX_ZOOM"
 
+# A bboxed extract keeps every zoom 0..max for any tile that INTERSECTS the
+# box, and at z4 one tile spans most of a continent — so zoomed out, the
+# extract renders as a part-filled rectangle floating in a void. The companion
+# below is a bboxless whole-world cut at z6 (~43 MB) that the UI probes for at
+# `<name>-world.pmtiles` and draws underneath; keep its --maxzoom in step with
+# WORLD_MAX_ZOOM in services/ui/src/features/map/style.ts. Each extra zoom
+# level roughly quadruples the size for detail the local extract already has.
+WORLD_OUT="${CLASSG_BASEMAP_WORLD_OUT:-${OUT%.pmtiles}-world.pmtiles}"
+"$PMTILES" extract "$SOURCE" "$WORLD_OUT" --maxzoom=6
+
 echo
-ls -lh "$OUT"
+ls -lh "$OUT" "$WORLD_OUT"
 cat <<EOF
 
 Point the UI at it:
@@ -111,5 +123,7 @@ Point the UI at it:
 The UI probes the archive before choosing it and falls back to the satellite
 raster, then to range rings, so a missing or truncated file degrades the map
 rather than breaking it. Confirm which one you got from the attribution in the
-bottom-right corner.
+bottom-right corner. The -world companion is probed the same way and simply
+not drawn if it is missing; without it, zooming far out shows the extract as
+a floating rectangle.
 EOF

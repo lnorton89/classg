@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { isPMTilesArchive, noTilesStyle, vectorReachable, vectorStyle } from './style'
+import {
+  isPMTilesArchive,
+  noTilesStyle,
+  vectorReachable,
+  vectorStyle,
+  WORLD_MAX_ZOOM,
+  worldArchiveUrlFor,
+} from './style'
 
 const PMTILES_MAGIC = new TextEncoder().encode('PMTiles')
 
@@ -132,6 +139,67 @@ describe('vectorStyle', () => {
     for (const name of used) {
       expect(present).toContain(name)
     }
+  })
+
+  // The world companion exists because a bboxed extract keeps every low zoom
+  // for any tile that merely intersects the box — rendered alone, that is a
+  // rectangle of map floating in a void once the operator zooms out.
+  describe('world companion archive', () => {
+    it('derives the companion URL by convention, next to the extract', () => {
+      expect(worldArchiveUrlFor('/tiles/basemap.pmtiles')).toBe('/tiles/basemap-world.pmtiles')
+      expect(worldArchiveUrlFor('  /tiles/basemap.pmtiles  ')).toBe(
+        '/tiles/basemap-world.pmtiles',
+      )
+    })
+
+    it('adds a second source drawn underneath the local layers', () => {
+      const style = vectorStyle(
+        'dark',
+        '/tiles/basemap.pmtiles',
+        '/tiles/basemap-world.pmtiles',
+      )
+      expect(style.sources['protomaps-world']).toMatchObject({
+        type: 'vector',
+        url: 'pmtiles:///tiles/basemap-world.pmtiles',
+      })
+      const ids = style.layers.map((layer) => layer.id)
+      // Underneath: void-filling world earth must not paint over local detail.
+      expect(ids.indexOf('world-earth')).toBeGreaterThan(ids.indexOf('bg'))
+      expect(ids.indexOf('world-water')).toBeLessThan(ids.indexOf('earth'))
+    })
+
+    it('lets world fills overzoom but stops world lines at native zooms', () => {
+      // Fills may overzoom because inside coverage the local fills — drawn
+      // later, and `earth` does blanket the land (verified by probing rendered
+      // features in a live map) — paint over them, while outside coverage a
+      // coarse coastline is honest context; capping water would return the
+      // void on any ocean pan past z6. Lines get no such cover: an overzoomed
+      // road or boundary sits visibly offset beside the local archive's native
+      // geometry, so they stop where their real data stops.
+      const style = vectorStyle('dark', '/basemap.pmtiles', '/basemap-world.pmtiles')
+      const byId = new Map(style.layers.map((layer) => [layer.id, layer]))
+      expect(byId.get('world-earth')?.maxzoom).toBeUndefined()
+      expect(byId.get('world-water')?.maxzoom).toBeUndefined()
+      expect(byId.get('world-landuse')?.maxzoom).toBeUndefined()
+      expect(byId.get('world-roads-major')?.maxzoom).toBe(WORLD_MAX_ZOOM + 1)
+      expect(byId.get('world-boundaries')?.maxzoom).toBe(WORLD_MAX_ZOOM + 1)
+    })
+
+    it('is absent when no companion archive was found', () => {
+      const style = vectorStyle('dark', '/basemap.pmtiles')
+      expect(style.sources['protomaps-world']).toBeUndefined()
+      expect(style.layers.some((layer) => layer.id.startsWith('world-'))).toBe(false)
+    })
+
+    it('names only source-layers the archive contains, like the local layers', () => {
+      const present = new Set(['boundaries', 'earth', 'landuse', 'roads', 'water'])
+      const used = vectorStyle('dark', '/basemap.pmtiles', '/basemap-world.pmtiles')
+        .layers.filter((layer) => layer.id.startsWith('world-'))
+        .map((layer) => ('source-layer' in layer ? layer['source-layer'] : undefined))
+      for (const name of used) {
+        expect(present).toContain(name)
+      }
+    })
   })
 
   it('splits roads by the kinds the tiles actually use', () => {
