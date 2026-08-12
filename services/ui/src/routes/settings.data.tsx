@@ -21,7 +21,7 @@ export const Route = createFileRoute('/settings/data')({
  * outbound request, which is a decision worth surfacing on a page of its own
  * rather than four scrolls down someone else's.
  */
-function ExternalDataSettings() {
+export function ExternalDataSettings() {
   return (
     <>
       <Alert tone="info" title="Everything here is optional, and off until you turn it on">

@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query'
 import { describe, expect, it } from 'vitest'
 
-import { applyFrame } from './live-provider'
+import { applyFrame } from './live-frames'
 import { queryKeys } from '@/lib/api/queries'
 import type { Detection, SensorHealth, Track, TracksResponse } from '@/lib/api/types'
 

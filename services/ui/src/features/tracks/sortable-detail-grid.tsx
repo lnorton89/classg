@@ -26,11 +26,10 @@ import { cn } from '@/lib/cn'
 
 import {
   DEFAULT_TRACK_DETAIL_ORDER,
-  normalizeTrackDetailOrder,
+  persistTrackDetailOrder,
+  readStoredTrackDetailOrder,
   type TrackDetailCardId,
 } from './track-detail-order'
-
-const STORAGE_KEY = 'classg.track-detail.card-order.v1'
 
 export interface TrackDetailCard {
   id: TrackDetailCardId
@@ -49,52 +48,8 @@ export interface TrackDetailCard {
   contentClassName?: string
 }
 
-function readStoredOrder(): TrackDetailCardId[] {
-  if (typeof window === 'undefined') return [...DEFAULT_TRACK_DETAIL_ORDER]
-  try {
-    return normalizeTrackDetailOrder(
-      JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? 'null'),
-    )
-  } catch {
-    return [...DEFAULT_TRACK_DETAIL_ORDER]
-  }
-}
-
-function persistOrder(order: TrackDetailCardId[]): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(order))
-  } catch {
-    // Storage can be unavailable in privacy modes; dragging should still work for this session.
-  }
-}
-
-/**
- * Forget a dragged layout, for the Tracks settings category.
- *
- * Only clears storage. The grid reads its order once on mount, so an already
- * open track detail keeps the order it is showing until it remounts — which is
- * the honest behaviour: nothing should rearrange itself under the cursor of
- * someone reading a track.
- */
-export function resetTrackDetailOrder(): void {
-  try {
-    window.localStorage.removeItem(STORAGE_KEY)
-  } catch {
-    /* nothing stored to forget */
-  }
-}
-
-/** Whether a dragged layout is currently stored, so the reset can be disabled. */
-export function hasStoredTrackDetailOrder(): boolean {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY) !== null
-  } catch {
-    return false
-  }
-}
-
 export function SortableTrackDetailGrid({ cards }: { cards: TrackDetailCard[] }) {
-  const [order, setOrder] = useState<TrackDetailCardId[]>(readStoredOrder)
+  const [order, setOrder] = useState<TrackDetailCardId[]>(readStoredTrackDetailOrder)
   const [activeId, setActiveId] = useState<TrackDetailCardId | null>(null)
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -116,7 +71,7 @@ export function SortableTrackDetailGrid({ cards }: { cards: TrackDetailCard[] })
     const overId = event.over.id as TrackDetailCardId
     setOrder((current) => {
       const next = arrayMove(current, current.indexOf(activeId), current.indexOf(overId))
-      persistOrder(next)
+      persistTrackDetailOrder(next)
       return next
     })
   }
@@ -124,7 +79,7 @@ export function SortableTrackDetailGrid({ cards }: { cards: TrackDetailCard[] })
   function resetOrder() {
     const next = [...DEFAULT_TRACK_DETAIL_ORDER]
     setOrder(next)
-    persistOrder(next)
+    persistTrackDetailOrder(next)
   }
 
   return (

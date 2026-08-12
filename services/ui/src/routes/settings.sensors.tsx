@@ -6,7 +6,7 @@ import { SettingsCard, ToggleRow } from '@/features/settings/controls'
 
 export const Route = createFileRoute('/settings/sensors')({ component: SensorSettings })
 
-function SensorSettings() {
+export function SensorSettings() {
   const { preferences, setPreference } = usePreferences()
 
   return (

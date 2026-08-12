@@ -12,10 +12,8 @@
 import { Toast } from '@base-ui/react/toast'
 import { CheckCircle2Icon, InfoIcon, TriangleAlertIcon, XIcon, XCircleIcon } from 'lucide-react'
 
+import { useToast } from '@/components/ui/toast-primitives'
 import { cn } from '@/lib/cn'
-
-export const ToastProvider = Toast.Provider
-export const useToast = Toast.useToastManager
 
 export type ToastTone = 'success' | 'error' | 'warn' | 'info'
 

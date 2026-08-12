@@ -9,7 +9,7 @@ export const Route = createFileRoute('/logs')({
   component: LogsRoute,
 })
 
-function LogsRoute() {
+export function LogsRoute() {
   return (
     <PageContainer className="min-h-0 flex-1">
       <PageHeader

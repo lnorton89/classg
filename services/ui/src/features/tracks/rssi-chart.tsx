@@ -11,23 +11,10 @@
  */
 import { useId } from 'react'
 
-import type { Detection } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 import { useFormat } from '@/app/use-format'
 
-export interface RssiSample {
-  ts: string
-  rssi: number
-}
-
-export function samplesFromDetections(detections: Detection[]): RssiSample[] {
-  return detections
-    .filter(
-      (d): d is Detection & { rf: { rssi_dbm: number } } => typeof d.rf?.rssi_dbm === 'number',
-    )
-    .map((d) => ({ ts: d.ts, rssi: d.rf.rssi_dbm }))
-    .sort((a, b) => Date.parse(a.ts) - Date.parse(b.ts))
-}
+import type { RssiSample } from './rssi-samples'
 
 export function RssiChart({
   samples,

@@ -43,7 +43,7 @@ function asText(setting: SettingValue | undefined): string {
   return ''
 }
 
-export function isLocked(setting: SettingValue | undefined): boolean {
+function isLocked(setting: SettingValue | undefined): boolean {
   return setting?.source === 'env' || setting?.mutable === false
 }
 

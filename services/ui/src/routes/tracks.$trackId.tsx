@@ -20,7 +20,8 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { bearingDegrees, distanceMetres } from '@/features/map/geo'
 import { TrackMap } from '@/features/map/track-map'
 import { ConfidenceBar, EvidenceBreakdown, TrackStateBadge } from '@/features/tracks/evidence'
-import { RssiChart, samplesFromDetections } from '@/features/tracks/rssi-chart'
+import { RssiChart } from '@/features/tracks/rssi-chart'
+import { samplesFromDetections } from '@/features/tracks/rssi-samples'
 import {
   SortableTrackDetailGrid,
   type TrackDetailCard,
@@ -51,7 +52,7 @@ export const Route = createFileRoute('/tracks/$trackId')({
   ),
 })
 
-function TrackDetail() {
+export function TrackDetail() {
   const { trackId } = Route.useParams()
   const { data: track } = useQuery(trackQuery(trackId))
   const { data: detectionsData } = useQuery(trackDetectionsQuery(trackId))

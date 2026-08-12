@@ -20,7 +20,7 @@ export const Route = createFileRoute('/captures/$captureId')({
     context.queryClient.ensureQueryData(captureQuery(params.captureId)),
 })
 
-function CaptureDetail() {
+export function CaptureDetail() {
   const format = useFormat()
   const { captureId } = Route.useParams()
   const queryClient = useQueryClient()

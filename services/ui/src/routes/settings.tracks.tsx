@@ -3,17 +3,17 @@ import { LayoutGridIcon, RotateCcwIcon } from 'lucide-react'
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { useToast } from '@/components/ui/toast'
+import { useToast } from '@/components/ui/toast-primitives'
 import { log } from '@/features/logs/log-store'
 import {
   hasStoredTrackDetailOrder,
   resetTrackDetailOrder,
-} from '@/features/tracks/sortable-detail-grid'
+} from '@/features/tracks/track-detail-order'
 import { SettingRow, SettingsCard } from '@/features/settings/controls'
 
 export const Route = createFileRoute('/settings/tracks')({ component: TrackSettings })
 
-function TrackSettings() {
+export function TrackSettings() {
   const toast = useToast()
   // Read once on mount rather than on every render: this is localStorage, and
   // nothing else in the app writes the key while this page is open.

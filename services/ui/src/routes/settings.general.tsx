@@ -33,7 +33,7 @@ export const Route = createFileRoute('/settings/general')({ component: GeneralSe
  */
 const SAMPLE_TIMESTAMP = new Date(Date.now() - 254_000).toISOString()
 
-function GeneralSettings() {
+export function GeneralSettings() {
   const { preferences, setPreference } = usePreferences()
   const format = useFormat()
 

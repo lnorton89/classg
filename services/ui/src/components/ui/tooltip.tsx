@@ -3,8 +3,6 @@ import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/cn'
 
-export const TooltipProvider = BaseTooltip.Provider
-
 export interface TooltipProps {
   content: ReactNode
   children: ReactNode

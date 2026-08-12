@@ -19,7 +19,7 @@ import {
 } from '@/lib/api/queries'
 import { usePreferences } from '@/app/preferences-context'
 import { useFormat } from '@/app/use-format'
-import { useToast } from '@/components/ui/toast'
+import { useToast } from '@/components/ui/toast-primitives'
 import { log } from '@/features/logs/log-store'
 import { PageContainer } from '@/components/layout/page-container'
 import { PageHeader, SectionHeader } from '@/components/layout/page-header'
@@ -35,7 +35,7 @@ export const Route = createFileRoute('/sensors')({
   },
 })
 
-function SensorsView() {
+export function SensorsView() {
   const queryClient = useQueryClient()
   const { data: health } = useQuery(healthQuery())
   const { data: sensorsData } = useQuery(sensorsQuery())

@@ -18,7 +18,7 @@ export const Route = createFileRoute('/settings/notifications')({
   component: NotificationSettings,
 })
 
-function NotificationSettings() {
+export function NotificationSettings() {
   const { preferences, setPreference } = usePreferences()
   const categories = preferences.notifyCategories
 

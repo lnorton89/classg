@@ -65,7 +65,7 @@ const weightsSchema = z.object({
  * the old `/config` page folded into Settings, the route no longer signals the
  * difference on its own.
  */
-function CalibrationSettings() {
+export function CalibrationSettings() {
   return (
     <>
       <Alert tone="info" title="These settings change the receiver, not your view">

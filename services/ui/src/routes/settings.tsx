@@ -4,7 +4,7 @@ import { RotateCcwIcon, SettingsIcon } from 'lucide-react'
 import { usePreferences } from '@/app/preferences-context'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
-import { useToast } from '@/components/ui/toast'
+import { useToast } from '@/components/ui/toast-primitives'
 import { log } from '@/features/logs/log-store'
 import {
   SCOPE_HINT,
@@ -27,7 +27,7 @@ const SCOPE_ORDER: SettingsScope[] = ['browser', 'receiver']
  * paragraph explaining that it was not the other one. That explaining is what a
  * grouped nav does without prose.
  */
-function SettingsLayout() {
+export function SettingsLayout() {
   return (
     <div className="mx-auto flex w-full max-w-384 flex-col gap-4 p-3 sm:p-4 lg:p-6">
       <PageHeader
