@@ -6,7 +6,7 @@ import { SettingsCard, ToggleRow } from '@/features/settings/controls'
 
 export const Route = createFileRoute('/settings/map')({ component: MapSettings })
 
-export function MapSettings() {
+function MapSettings() {
   const { preferences, setPreference } = usePreferences()
 
   return (

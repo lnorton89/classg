@@ -7,7 +7,7 @@ import { SettingRow, SettingsCard, ToggleRow } from '@/features/settings/control
 
 export const Route = createFileRoute('/settings/logs')({ component: LogSettings })
 
-export function LogSettings() {
+function LogSettings() {
   const { preferences, setPreference } = usePreferences()
 
   return (

@@ -52,7 +52,7 @@ export const Route = createFileRoute('/tracks/$trackId')({
   ),
 })
 
-export function TrackDetail() {
+function TrackDetail() {
   const { trackId } = Route.useParams()
   const { data: track } = useQuery(trackQuery(trackId))
   const { data: detectionsData } = useQuery(trackDetectionsQuery(trackId))

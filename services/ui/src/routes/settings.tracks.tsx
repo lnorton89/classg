@@ -13,7 +13,7 @@ import { SettingRow, SettingsCard } from '@/features/settings/controls'
 
 export const Route = createFileRoute('/settings/tracks')({ component: TrackSettings })
 
-export function TrackSettings() {
+function TrackSettings() {
   const toast = useToast()
   // Read once on mount rather than on every render: this is localStorage, and
   // nothing else in the app writes the key while this page is open.

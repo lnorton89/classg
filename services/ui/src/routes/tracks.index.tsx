@@ -16,7 +16,7 @@ export const Route = createFileRoute('/tracks/')({
   loader: ({ context }) => context.queryClient.ensureQueryData(tracksQuery()),
 })
 
-export function TracksView() {
+function TracksView() {
   const { data } = useQuery(tracksQuery())
   const { data: health } = useQuery(healthQuery())
   const tracks = data?.tracks ?? []

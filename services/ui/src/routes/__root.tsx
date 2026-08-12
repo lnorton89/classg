@@ -16,7 +16,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
   errorComponent: RouteError,
 })
 
-export function RootLayout() {
+function RootLayout() {
   return (
     <AppShell>
       <Outlet />

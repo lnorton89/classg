@@ -35,7 +35,7 @@ export const Route = createFileRoute('/sensors')({
   },
 })
 
-export function SensorsView() {
+function SensorsView() {
   const queryClient = useQueryClient()
   const { data: health } = useQuery(healthQuery())
   const { data: sensorsData } = useQuery(sensorsQuery())

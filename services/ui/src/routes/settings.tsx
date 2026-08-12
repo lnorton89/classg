@@ -27,7 +27,7 @@ const SCOPE_ORDER: SettingsScope[] = ['browser', 'receiver']
  * paragraph explaining that it was not the other one. That explaining is what a
  * grouped nav does without prose.
  */
-export function SettingsLayout() {
+function SettingsLayout() {
   return (
     <div className="mx-auto flex w-full max-w-384 flex-col gap-4 p-3 sm:p-4 lg:p-6">
       <PageHeader

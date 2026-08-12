@@ -8,7 +8,7 @@ import { SettingRow, SettingsCard, ToggleRow } from '@/features/settings/control
 
 export const Route = createFileRoute('/settings/appearance')({ component: AppearanceSettings })
 
-export function AppearanceSettings() {
+function AppearanceSettings() {
   const { preferences, setPreference } = usePreferences()
   const { preference: theme, setPreference: setTheme } = useTheme()
 

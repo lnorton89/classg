@@ -81,12 +81,25 @@ export default tseslint.config(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
-      // TanStack Router route files export a `Route` const alongside components.
-      'react-refresh/only-export-components': [
-        'warn',
-        { allowConstantExport: true, allowExportNames: ['Route'] },
-      ],
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
+  },
+
+  // File-based routes cannot satisfy react-refresh/only-export-components, and
+  // the two ways of trying both cost more than the rule is worth here:
+  //
+  //   - `allowExportNames: ['Route']` makes the rule skip that export entirely,
+  //     so the file reads as "has exports, none are components, defines
+  //     components locally" and it reports those instead. It trades one warning
+  //     for another rather than removing it.
+  //   - Exporting the route's component silences it honestly, but the router's
+  //     own plugin then warns that the export cannot be code-split, and this
+  //     bundle is served by the Pi over its own AP.
+  //
+  // So the rule is off for routes specifically, and on everywhere else.
+  {
+    files: ['src/routes/**/*.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
   },
 
   // Config + scripts run in Node and are not part of the app program.

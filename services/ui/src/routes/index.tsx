@@ -31,7 +31,7 @@ export const Route = createFileRoute('/')({
     ]),
 })
 
-export function LiveView() {
+function LiveView() {
   const { data: tracksData } = useQuery(tracksQuery())
   const { data: health } = useQuery(healthQuery())
   const { data: adsbData } = useQuery(adsbDetectionsQuery())
