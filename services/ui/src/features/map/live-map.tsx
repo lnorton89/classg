@@ -47,6 +47,15 @@ setWorkerUrl(workerUrl)
 const BASE_URL = import.meta.env.BASE_URL
 
 /**
+ * Basemap layers that stand in for "there is map here".
+ *
+ * `earth` alone would be enough on land and wrong at sea, so water counts too.
+ * Roads and landuse are included because a coastal extract can put a viewport
+ * over water that the archive genuinely covers.
+ */
+const BASEMAP_COVERAGE_LAYERS = ['earth', 'water', 'landuse', 'roads-major', 'roads-minor']
+
+/**
  * Centre of the contiguous US at a zoom that keeps it on screen on a normal
  * desktop window. The fallback when nothing — not a configured receiver
  * position, not the operator's own ODID position, not browser geolocation —
@@ -116,6 +125,9 @@ export function LiveMap({
 
   const { theme } = useTheme()
   const [basemap, setBasemap] = useState<BasemapMode | null>(null)
+  // Vector archives cover one cut-out of the world; this tracks whether the
+  // current view is inside it. See checkCoverage below.
+  const [outsideCoverage, setOutsideCoverage] = useState(false)
   const [ready, setReady] = useState(false)
 
   // --- where to centre before any track exists to derive a position from --
@@ -304,10 +316,35 @@ export function LiveMap({
       setReady(true)
     }
 
+    /**
+     * Is any basemap actually drawn where we are looking?
+     *
+     * A `.pmtiles` archive holds one cut-out of the world, so panning or
+     * zooming past its bounding box leaves a hard edge and then nothing —
+     * pixel-identical to a basemap that failed to load, and on this display
+     * uncomfortably close to what "no coverage" looks like. The probe that
+     * chose this style only proved the archive exists, not that it covers
+     * where the aircraft are.
+     *
+     * Asking what is rendered beats reading the source bounds: it stays true
+     * for a hosted style, for a partial archive, and for the ocean.
+     */
+    const checkCoverage = () => {
+      if (basemap !== 'vector') return
+      const drawn = map.queryRenderedFeatures({
+        layers: BASEMAP_COVERAGE_LAYERS.filter((id) => map.getLayer(id)),
+      }).length
+      setOutsideCoverage(drawn === 0)
+    }
+
     map.on('load', addOverlays)
     // setStyle() drops custom sources and layers; re-add them every time.
     map.on('styledata', addOverlays)
     map.on('moveend', drawRings)
+    map.on('moveend', checkCoverage)
+    // `idle` is the one that fires after tiles finish arriving, so a pan into
+    // covered ground clears the notice without waiting for the next gesture.
+    map.on('idle', checkCoverage)
 
     const drones = droneMarkers.current
     const operators = operatorMarkers.current
@@ -496,18 +533,37 @@ export function LiveMap({
         When coverage is broken the map is not just annotated, it is visibly
         disabled: desaturated and hatched. An operator glancing at a phone in
         daylight must not be able to mistake it for a working display.
+
+        Eased from 18% stripes over 60% grayscale, and the stripes widened from
+        10px to 14px. At the old weight the hatch did not annotate the map so
+        much as replace it -- the basemap underneath was unreadable, so a
+        degraded system and a system with no tiles looked identical. The state
+        still has to be unmissable, but it has to leave something to be
+        degraded: hiding the map entirely removes the operator's ability to see
+        where the last known contacts were, which is exactly what they reach for
+        when coverage drops.
       */}
       {coverageBroken ? (
         <div
           aria-hidden
           data-testid="map-coverage-scrim"
-          className="pointer-events-none absolute inset-0 z-10 bg-[repeating-linear-gradient(45deg,transparent_0_10px,color-mix(in_oklch,var(--down)_18%,transparent)_10px_20px)] backdrop-grayscale-[0.6]"
+          className="pointer-events-none absolute inset-0 z-10 bg-[repeating-linear-gradient(45deg,transparent_0_14px,color-mix(in_oklch,var(--down)_10%,transparent)_14px_28px)] backdrop-grayscale-[0.3]"
         />
       ) : null}
 
       {basemap === 'no-tiles' ? (
         <p className="text-muted-foreground bg-background/80 ring-border pointer-events-none absolute right-2 bottom-2 z-10 rounded px-2 py-1 text-2xs ring-1">
           No basemap tiles — range rings only
+        </p>
+      ) : null}
+
+      {/* Named rather than left blank. An area extract simply stops at its
+          bounding box, and a blank map on this console reads as "nothing
+          detected" long before it reads as "you have panned off the edge of
+          the tiles you cut". */}
+      {basemap === 'vector' && outsideCoverage ? (
+        <p className="text-muted-foreground bg-background/80 ring-border pointer-events-none absolute right-2 bottom-2 z-10 rounded px-2 py-1 text-2xs ring-1">
+          Outside basemap coverage — range rings only
         </p>
       ) : null}
     </div>

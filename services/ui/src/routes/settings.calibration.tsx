@@ -175,13 +175,21 @@ function ReceiverPositionEditor() {
               step="any"
               min="-90"
               max="90"
-              placeholder="51.4775"
+              placeholder="decimal degrees"
               value={lat}
               disabled={locked}
               className="mt-1 h-8 w-36"
               onChange={(event) => setDraft({ lat: event.target.value, lon })}
             />
           </div>
+          {/* The format, not an example value. These read "51.4775" and
+              "-0.0014" -- Greenwich, and entirely plausible as a real setting.
+              In a dark theme the grey of a placeholder against the white of a
+              value is a thin thing to hang on, and this is the field that
+              decides where the map centres and where the ADS-B query is
+              anchored. A console this careful about never implying something
+              false about the sky should not show an unset receiver as sitting
+              at the Royal Observatory. */}
           <div>
             <Label htmlFor="receiver-lon">Longitude</Label>
             <Input
@@ -190,14 +198,20 @@ function ReceiverPositionEditor() {
               step="any"
               min="-180"
               max="180"
-              placeholder="-0.0014"
+              placeholder="decimal degrees"
               value={lon}
               disabled={locked}
               className="mt-1 h-8 w-36"
               onChange={(event) => setDraft({ lat, lon: event.target.value })}
             />
           </div>
-          <Button type="button" variant="outline" size="sm" disabled={locked} onClick={useBrowserLocation}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={locked}
+            onClick={useBrowserLocation}
+          >
             <LocateFixedIcon aria-hidden /> Use this browser's location
           </Button>
           <Button type="submit" size="sm" disabled={locked || save.isPending || !dirty}>

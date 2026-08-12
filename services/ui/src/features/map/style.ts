@@ -82,18 +82,34 @@ interface Palette {
   boundary: string
 }
 
+// Basemap tones sit well clear of the background, which the first version of
+// this palette did not.
+//
+// Every value here was within about #12-#2e against a #0d1117 background --
+// technically drawn, effectively invisible, and completely gone once the
+// coverage-broken scrim (a red hatch plus 60% backdrop-grayscale) went over the
+// top. It read as "the tiles failed to load", which is the one thing a basemap
+// must never look like: this display already uses an empty map to mean "nothing
+// detected", so a blank one that actually means "styling too dark" is the same
+// ambiguity the sky-state banner exists to remove.
+//
+// The raster style below records the identical mistake and its correction --
+// "dim enough to read as 'no detail' rather than deliberately recessive". These
+// are the same lesson applied to vector tiles. Still desaturated, so the
+// saturated cyan and magenta of aircraft and operators stay dominant; the point
+// is legible-but-quiet, not absent.
 const DARK: Palette = {
   background: '#0d1117',
   ring: '#1e2a3d',
   ringMajor: '#2c3e59',
   spoke: '#1a2433',
-  earth: '#12181f',
-  water: '#0f1d2b',
-  green: '#141d18',
-  road: '#242c37',
-  roadMinor: '#1a212a',
-  building: '#181f28',
-  boundary: '#2e3947',
+  earth: '#1a222c',
+  water: '#16324a',
+  green: '#1b2a20',
+  road: '#3d4a5c',
+  roadMinor: '#2a3442',
+  building: '#232c37',
+  boundary: '#465569',
 }
 
 const LIGHT: Palette = {

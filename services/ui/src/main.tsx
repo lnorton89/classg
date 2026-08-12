@@ -11,6 +11,7 @@ import { createRoot } from 'react-dom/client'
 import { LiveProvider } from '@/app/live-provider'
 import { PreferencesProvider } from '@/app/preferences'
 import { ThemeProvider } from '@/app/theme'
+import { RoutePending } from '@/components/layout/route-pending'
 import { ToastProvider } from '@/components/ui/toast'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { log } from '@/features/logs/log-store'
@@ -74,6 +75,17 @@ const router = createRouter({
   context: { queryClient },
   defaultPreload: 'intent',
   scrollRestoration: true,
+  // Without a pending component the router renders NOTHING while a loader is
+  // in flight -- no shell, no navigation, just white. Fine on a desk, wrong on
+  // the Pi: the one screen this console must never show by accident is a blank
+  // one, because that is also what a dead sensor looks like.
+  //
+  // 250ms before showing it, held for at least 300ms once shown. Below that a
+  // fast navigation flashes the spinner, which reads as jank rather than
+  // progress; above it the blank period gets long enough to look broken.
+  defaultPendingComponent: RoutePending,
+  defaultPendingMs: 250,
+  defaultPendingMinMs: 300,
 })
 
 declare module '@tanstack/react-router' {

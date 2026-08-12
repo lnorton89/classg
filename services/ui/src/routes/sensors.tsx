@@ -164,11 +164,14 @@ function SensorsView() {
                         }
                       >
                         <RotateCwIcon aria-hidden />
+                        {/* Names the action even when it cannot be taken. The
+                            alert directly above already says "Restart
+                            unavailable" and gives the reason, so repeating it
+                            on the button spent the one place that could say
+                            WHICH sensor on a word the operator had just read. */}
                         {isRestarting
                           ? `Restarting ${sensor.sensor_id}...`
-                          : restartAvailable
-                            ? `Restart ${sensor.sensor_id}`
-                            : 'Restart unavailable'}
+                          : `Restart ${sensor.sensor_id}`}
                       </Button>
                     )}
                     <SensorCaptureControl sensor={sensor} />
