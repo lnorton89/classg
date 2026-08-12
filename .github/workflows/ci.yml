@@ -78,9 +78,7 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: "1.26"
-          # fusion has no external dependencies yet, so there is no go.sum and
-          # the cache step would fail resolving it. Re-enable when deps land.
-          cache: false
+          cache-dependency-path: services/fusion/go.sum
 
       - name: Format check
         run: |
