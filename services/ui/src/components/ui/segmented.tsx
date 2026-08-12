@@ -62,17 +62,34 @@ export function Segmented<T extends string>({
           key={option.value}
           value={option.value}
           className={cn(
-            'flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-2 rounded-md',
+            'flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-md',
             'px-3 py-1.5 text-sm font-medium transition-colors',
             'text-muted-foreground hover:text-foreground',
             'data-pressed:bg-card data-pressed:text-foreground data-pressed:shadow-xs',
             'data-pressed:ring-border data-pressed:ring-1',
-            vertical && 'justify-start text-left',
+            // Deliberately NOT min-w-0 in a row.
+            //
+            // `flex-1` is `flex: 1 1 0%`, so every option starts from a zero
+            // basis and they end up equal -- which is the look this control
+            // wants when it has room. `min-w-0` additionally lets an option
+            // shrink below its own text, and together with the `truncate`
+            // below that failure is silent: the layout still looks deliberate
+            // while the label is gone. On the logs page, where the group is
+            // shrink-to-fit inside a toolbar rather than stretched across a
+            // card, it collapsed all four options to 61px and rendered
+            // "Warnings" as "Wa..." with 1400px of empty space beside it.
+            //
+            // Leaving the automatic minimum in place means an option is never
+            // narrower than its label, and the group's `flex-wrap` handles a
+            // genuinely too-tight row by wrapping -- which is legible, where
+            // clipping is not. Vertical keeps min-w-0: options are full width
+            // there, and hints are long enough to want truncating.
+            vertical && 'min-w-0 justify-start text-left',
             '[&_svg]:size-4 [&_svg]:shrink-0',
           )}
         >
           {option.icon}
-          <span className="flex min-w-0 flex-col">
+          <span className={cn('flex flex-col', vertical && 'min-w-0')}>
             <span className="truncate">{option.label}</span>
             {option.hint ? (
               <span className="text-muted-foreground text-2xs truncate font-normal">
