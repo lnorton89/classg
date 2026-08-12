@@ -133,7 +133,11 @@ export function DocsDocument({ document }: { document: GuideDocument }) {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-3">
+              // grid-cols-1, not a bare `grid`: an implicit auto column sizes to
+              // its widest item's max-content, so a card holding an unwrapped
+              // paragraph pushed this to 754px inside a 327px phone viewport and
+              // took the whole page sideways with it.
+              <div className="grid grid-cols-1 gap-3">
                 {section.items.map((item) => (
                   <Card key={item.title}>
                     <CardHeader>

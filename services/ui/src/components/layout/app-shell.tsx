@@ -94,15 +94,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <ClassGLogo size="lg" showTagline className="hidden xl:inline-flex" />
           </Link>
 
-          <nav
-            aria-label="Primary"
-            className={cn(
-              'border-border bg-card/95 fixed inset-x-0 bottom-0 z-40 flex justify-around',
-              'border-t px-1 py-1 backdrop-blur',
-              'md:static md:ml-3 md:justify-start md:gap-0.5 md:border-t-0 md:bg-transparent',
-              'md:p-0 md:backdrop-blur-none',
-            )}
-          >
+          {/* Desktop only. The mobile bar is a sibling of the header, not a
+              child of it -- see the note on it below. */}
+          <nav aria-label="Primary" className="ml-3 hidden justify-start gap-0.5 md:flex">
             {PRIMARY_NAV.map((item) => (
               <NavLink key={item.to} item={item} />
             ))}
@@ -127,6 +121,25 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </div>
       </header>
+
+      {/*
+        Outside the header on purpose. The header carries `backdrop-blur`, and a
+        backdrop-filter establishes a containing block for fixed descendants --
+        so while this lived inside it, `bottom-0` resolved to the bottom of the
+        header rather than of the viewport, and the bar rendered under the logo
+        with the reserved 64px sitting empty at the foot of every page.
+      */}
+      <nav
+        aria-label="Primary"
+        className={cn(
+          'border-border bg-card/95 fixed inset-x-0 bottom-0 z-40 flex justify-around',
+          'border-t px-1 py-1 backdrop-blur md:hidden',
+        )}
+      >
+        {PRIMARY_NAV.map((item) => (
+          <NavLink key={item.to} item={item} />
+        ))}
+      </nav>
 
       {/* pb-16 clears the fixed mobile nav; md:pb-0 once it moves into the header. */}
       <main id="main" className="flex min-h-0 flex-1 flex-col pb-16 md:pb-0">
