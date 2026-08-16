@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useRouter, useRouterState } from '@tanstack/react-router'
 import {
   BookOpenIcon,
   MapIcon,
@@ -9,7 +9,7 @@ import {
   SlidersHorizontalIcon,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { ClassGLogo } from '@/components/brand/classg-logo'
 import { Button } from '@/components/ui/button'
@@ -102,10 +102,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
 
+          {/* Sits on the logo's row at every width. It used to be `w-full`
+              below xl, which bought a guaranteed second row and then still
+              overflowed on a phone -- six items do not fit 360px -- so the gear
+              wrapped alone onto a THIRD row. Three rows of chrome above a map
+              on the screen with the least room for it. The cluster now shares
+              the brand row, and the width comes from compacting its contents
+              (see the Pause control) rather than from stacking. */}
           <div
             className={cn(
-              'ml-auto flex w-full flex-wrap items-center justify-end gap-1.5',
-              'xl:w-auto xl:shrink-0 xl:flex-nowrap',
+              'ml-auto flex min-w-0 flex-1 items-center justify-end gap-1 sm:gap-1.5',
+              'xl:w-auto xl:flex-none xl:shrink-0 xl:flex-nowrap',
             )}
           >
             <MockScenarioSwitcher />
@@ -219,16 +226,62 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
  * toggles it in one keystroke.
  */
 function SettingsButton() {
+  const router = useRouter()
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const onSettings = pathname === '/settings' || pathname.startsWith('/settings/')
+
+  // Whether this session opened settings from somewhere else, so the gear knows
+  // whether "back" has anywhere to go. A deep link straight to /settings has no
+  // previous page in this app, and `back()` there would leave the console.
+  const openedFromInApp = useRef(false)
+  const previous = useRef(pathname)
+  useEffect(() => {
+    const cameFromApp = !previous.current.startsWith('/settings')
+    if (onSettings && cameFromApp) openedFromInApp.current = true
+    if (!onSettings) openedFromInApp.current = false
+    previous.current = pathname
+  }, [pathname, onSettings])
+
+  // A one-way gear is fine on a desktop, where settings is a page among pages
+  // and the nav is always visible. On a phone it reads as a panel that opened
+  // over everything, so tapping the control that opened it has to be what
+  // shuts it -- otherwise the only way out is the browser's back button, and
+  // people reasonably assume they are stuck.
+  if (onSettings) {
+    return (
+      <Tooltip content="Close settings">
+        <button
+          type="button"
+          aria-label="Close settings"
+          aria-expanded
+          onClick={() => {
+            // Back, not a push to "/": pushing would make the phone's back
+            // button walk straight into settings again, and it also loses
+            // whichever page they were actually reading.
+            if (openedFromInApp.current) router.history.back()
+            else router.history.push('/')
+          }}
+          className={cn(
+            buttonVariants({ variant: 'ghost', size: 'icon' }),
+            'bg-accent text-foreground',
+          )}
+        >
+          <SettingsIcon className="size-4" aria-hidden />
+        </button>
+      </Tooltip>
+    )
+  }
+
   return (
     <Tooltip content="Settings — units, notifications, calibration">
       <Link
         to="/settings"
         aria-label="Settings"
+        aria-expanded={false}
         className={cn(
           buttonVariants({ variant: 'ghost', size: 'icon' }),
           'text-muted-foreground hover:text-foreground',
         )}
-        activeProps={{ className: 'bg-accent text-foreground' }}
       >
         <SettingsIcon className="size-4" aria-hidden />
       </Link>

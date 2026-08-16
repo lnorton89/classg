@@ -37,7 +37,14 @@ export function PageHeader({
       >
         <Icon className="size-5" aria-hidden />
       </span>
-      <div className="min-w-0 flex-1">
+      {/* `grow basis-64` and NOT `flex-1`. `flex-1` sets flex-basis to 0, and a
+          zero-basis item always fits on the line, so `flex-wrap` never fires —
+          the actions keep their full width and the text is squeezed into
+          whatever is left, which on a phone is a column about one word wide.
+          A real basis makes the line genuinely overflow, so the actions wrap
+          underneath; `min-w-0` then lets the text shrink to the space it has
+          instead of pushing the page sideways. */}
+      <div className="min-w-0 grow basis-64">
         <h1 className="font-display text-xl leading-tight font-bold">{title}</h1>
         {description ? (
           <p className="text-muted-foreground mt-1 max-w-3xl text-sm leading-relaxed">
@@ -62,7 +69,9 @@ export function SectionHeader({
   return (
     <div className={cn('flex flex-wrap items-start gap-x-3 gap-y-2', className)}>
       <Icon className="text-muted-foreground mt-0.5 size-4 shrink-0" aria-hidden />
-      <div className="min-w-0 flex-1">
+      {/* Same wrapping trap as PageHeader; smaller floor because section
+          headers sit inside cards, which are narrower than the page. */}
+      <div className="min-w-0 grow basis-56">
         <h2 id={id} className="font-display text-base leading-tight font-semibold">
           {title}
         </h2>

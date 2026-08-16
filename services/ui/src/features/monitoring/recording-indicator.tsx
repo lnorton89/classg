@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { PauseIcon } from 'lucide-react'
 import { useState } from 'react'
 
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api/client'
 import { healthQuery, monitoringQuery, queryKeys } from '@/lib/api/queries'
@@ -57,20 +59,18 @@ export function RecordingIndicator({ className }: { className?: string }) {
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
-      <span
+      {/* The same Badge, height and padding as the stream and system pills
+          beside it. It used to be a rounded-full chip of its own size, which
+          read as a stray element in the cluster once the label was dropped on
+          mobile and only the dot was left.
+          Tone still comes from RECORDING_TONE: `ok`, `warn` and `muted` are the
+          hues licensed to carry urgency here. Muted rather than destructive for
+          paused, because the health pill next to it already carries red for
+          absent coverage, and saying it twice trains people to skim past both. */}
+      <Badge
+        variant={RECORDING_TONE[state]}
         title={RECORDING_DESCRIPTION[state]}
-        className={cn(
-          'flex items-center gap-1.5 rounded-full px-2 py-0.5 text-2xs font-semibold',
-          // Health tokens, not raw palette colours: `ok`, `warn` and
-          // `destructive` are the hues licensed to carry urgency here, and the
-          // only ones tuned for both themes.
-          RECORDING_TONE[state] === 'ok' && 'bg-ok/12 text-ok',
-          // Muted, not destructive: the header's health pill already carries the
-          // red for absent coverage. Saying it twice trains people to skim past
-          // both.
-          RECORDING_TONE[state] === 'muted' && 'bg-muted text-muted-foreground',
-          RECORDING_TONE[state] === 'warn' && 'bg-warn/15 text-warn ring-warn/45 ring-1',
-        )}
+        className="h-7 gap-1.5 px-2"
         // Announced, because a change here is consequential and a screen-reader
         // user should not have to poll a badge to learn recording stopped.
         role="status"
@@ -79,16 +79,21 @@ export function RecordingIndicator({ className }: { className?: string }) {
         <span
           aria-hidden
           className={cn(
-            'size-1.5 rounded-full',
+            // `bg-current` inherits the variant's own colour, so the dot can
+            // never drift out of step with the pill around it.
+            'size-1.5 shrink-0 rounded-full bg-current',
             // Only a genuinely recording system gets the live pulse: a pulsing
             // dot reads as "working" and must not appear when nothing is.
-            RECORDING_TONE[state] === 'ok' && 'bg-ok animate-pulse',
-            RECORDING_TONE[state] === 'muted' && 'bg-muted-foreground/60',
-            RECORDING_TONE[state] === 'warn' && 'bg-warn',
+            RECORDING_TONE[state] === 'ok' && 'animate-pulse',
           )}
         />
-        {RECORDING_LABEL[state]}
-      </span>
+        {/* The dot carries the state on a phone -- pulsing green for recording,
+            flat grey for paused, amber for on-but-blind -- and the word is the
+            widest thing in the header. Hidden visually, never removed: the
+            colour of a 6px dot is not a label, so the text stays in the
+            accessible name and in the `role="status"` announcement. */}
+        <span className="sr-only sm:not-sr-only">{RECORDING_LABEL[state]}</span>
+      </Badge>
 
       {!recording && data.discarded_while_paused > 0 && (
         // A paused system must not be mistakable for a quiet one.
@@ -116,8 +121,20 @@ export function RecordingIndicator({ className }: { className?: string }) {
       ) : recording ? (
         // Confirmed, not a bare toggle: stopping a detector is the one action
         // here whose cost is invisible until you need the data you did not keep.
-        <Button size="sm" variant="ghost" onClick={() => setConfirming(true)}>
-          Pause
+        //
+        // Icon-only on a phone. The word is what pushed the header's status
+        // cluster past 360px and wrapped the gear onto its own row; the label
+        // survives on the accessible name, so nothing is lost to a screen
+        // reader. Resume keeps its word at every width -- a paused system needs
+        // the way back to be obvious, not compact.
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-label="Pause recording"
+          onClick={() => setConfirming(true)}
+        >
+          <PauseIcon className="sm:hidden" aria-hidden />
+          <span className="hidden sm:inline">Pause</span>
         </Button>
       ) : (
         <Button

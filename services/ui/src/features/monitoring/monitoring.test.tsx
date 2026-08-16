@@ -55,7 +55,7 @@ describe('RecordingIndicator', () => {
     const user = userEvent.setup()
     renderIndicator()
 
-    await user.click(await screen.findByRole('button', { name: 'Pause' }))
+    await user.click(await screen.findByRole('button', { name: 'Pause recording' }))
     expect(screen.getByRole('button', { name: 'Stop recording' })).toBeInTheDocument()
     // Still recording: asking is not doing.
     expect(screen.getByText('Recording')).toBeInTheDocument()
@@ -68,7 +68,7 @@ describe('RecordingIndicator', () => {
     const user = userEvent.setup()
     renderIndicator()
 
-    await user.click(await screen.findByRole('button', { name: 'Pause' }))
+    await user.click(await screen.findByRole('button', { name: 'Pause recording' }))
     await user.click(screen.getByRole('button', { name: 'Stop recording' }))
 
     expect(await screen.findByText('Paused')).toBeInTheDocument()
