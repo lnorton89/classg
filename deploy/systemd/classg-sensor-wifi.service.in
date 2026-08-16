@@ -1,0 +1,43 @@
+[Unit]
+Description=ClassG passive Wi-Fi sensor (@IFACE@)
+Documentation=file://@CLASSG_HOME@/docs/architecture/adr/0003-sensor-process-isolation.md
+After=network-online.target
+Wants=network-online.target
+
+# ADR-0003 asks for bounded restarts. A sensor whose adapter has been physically
+# unplugged fails instantly and for ever, and an unbounded Restart=always turns
+# that into a loop that burns CPU while looking like activity. Five failures
+# inside five minutes stops it and leaves the unit in `failed`, which shows up
+# in `systemctl status` and in the dashboard's health pane.
+#
+# systemd 252 (Bookworm) has no RestartSteps/RestartMaxDelaySec, so escalating
+# backoff is not available here; give up visibly instead of backing off blindly.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# AF_PACKET on a monitor-mode interface needs root. ClassG is receive-only --
+# this buys packet capture, never transmission.
+User=root
+WorkingDirectory=@CLASSG_HOME@/services/sensor-wifi
+EnvironmentFile=@CLASSG_HOME@/.env
+
+# Monitor mode survives neither a reboot nor a replug, and moving the adapter
+# between USB ports silently drops the interface back to managed -- observed on
+# this Pi. Re-established on every start rather than assumed.
+ExecStartPre=@CLASSG_HOME@/scripts/setup-monitor.sh @IFACE@
+
+ExecStart=@CLASSG_HOME@/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli run --iface @IFACE@
+
+Restart=always
+RestartSec=5
+
+# The capture loop's own watchdog exits the process when it stops publishing
+# heartbeats. That is only a recovery mechanism if something restarts it --
+# without this unit, the watchdog is just a quieter way to die.
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
