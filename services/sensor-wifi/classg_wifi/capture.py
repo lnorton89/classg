@@ -112,8 +112,9 @@ def preflight(iface: str) -> None:
         available = sorted(os.listdir("/sys/class/net")) if os.path.isdir("/sys/class/net") else []
         raise CaptureError(
             f"interface {iface!r} does not exist (have: {', '.join(available) or 'none'}). "
-            "Under WSL the adapter detaches whenever the VM restarts; reattach it from "
-            "Windows with:  usbipd attach --wsl --busid <BUSID>   then  sudo modprobe mt7921u"
+            "Check the adapter enumerated and its driver bound:  lsusb   then  "
+            "dmesg | grep -i mt7921. A driver that loads without producing an "
+            "interface usually means missing firmware: apt install firmware-misc-nonfree"
         )
 
     if hasattr(os, "geteuid") and os.geteuid() != 0:
@@ -264,19 +265,18 @@ def run_capture(
                 stats.channel_errors += 1
                 consecutive_channel_errors += 1
 
-                # An adapter that has been unplugged -- or, under WSL, detached
-                # by usbip -- fails every hop. Previously the loop logged a
-                # warning per dwell and carried on for ever: pages of noise from
-                # a sensor that was, in every meaningful sense, dead. That is
-                # precisely the silent failure ADR-0003 exists to prevent, so it
-                # now gives up and lets the supervisor restart it.
+                # An adapter that has been unplugged fails every hop. Previously
+                # the loop logged a warning per dwell and carried on for ever:
+                # pages of noise from a sensor that was, in every meaningful
+                # sense, dead. That is precisely the silent failure ADR-0003
+                # exists to prevent, so it now gives up and lets the supervisor
+                # restart it.
                 if not interface_exists(iface):
                     raise CaptureError(
-                        f"{iface} disappeared mid-capture. Under WSL the adapter "
-                        "detaches when usbip drops it or the VM restarts; "
-                        "reattach from Windows with:  usbipd attach --wsl "
-                        "--busid <BUSID>   (--auto-attach reconnects it "
-                        "automatically), then re-run."
+                        f"{iface} disappeared mid-capture. The adapter was "
+                        "unplugged, or its USB link dropped -- a brownout will "
+                        "do it. Check  lsusb  and  dmesg  for a USB reset, then "
+                        "re-run."
                     )
                 if consecutive_channel_errors >= MAX_CONSECUTIVE_CHANNEL_ERRORS:
                     raise CaptureError(
@@ -322,6 +322,19 @@ def run_capture(
                         if detection["detection_class"] in ("A", "B"):
                             saw_drone_this_dwell = True
                     if time.monotonic() >= deadline:
+                        break
+
+                    # The capture socket is BLOCKING, and select() above only
+                    # promised that *one* frame was ready. Calling _recv() again
+                    # without re-checking readiness parks the loop in recv until
+                    # the next frame arrives -- which on a quiet channel is
+                    # seconds away. The dwell deadline is checked after a read,
+                    # never during one, so the loop sails past it, no heartbeat
+                    # goes out, and the 45s watchdog kills a sensor whose radio
+                    # was working the whole time. Observed on channel 1 with the
+                    # ALFA: 12 beacons, then a wedge and a watchdog exit.
+                    more, _, _ = select.select([sock], [], [], 0)
+                    if not more:
                         break
 
                 if stats.read_errors and stats.read_errors != consecutive_read_errors:
@@ -393,9 +406,9 @@ def _start_watchdog(
 
     Every bounded wait in the loop -- select(), the `iw` subprocess -- has a
     timeout, so in principle it cannot hang. In practice it does: when the USB
-    transport dies mid-capture (over usbip, `vhci_hcd: seqnum max`), a read or
-    an `iw` call can land in uninterruptible sleep, where a timeout cannot reach
-    it. Observed once for nearly five minutes: process alive, adapter still
+    transport dies mid-capture, a read or an `iw` call can land in
+    uninterruptible sleep, where a timeout cannot reach it. Observed once for
+    nearly five minutes: process alive, adapter still
     listed, interface still in monitor mode, and not one frame or heartbeat.
 
     That is the worst failure this system has, because everything looks fine.

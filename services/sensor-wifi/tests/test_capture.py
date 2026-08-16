@@ -286,12 +286,12 @@ class TestPreflight:
     """Three different causes previously produced one scapy error that named
     monitor mode and root as possibilities without checking either."""
 
-    def test_missing_interface_names_the_usbip_reattach(self, monkeypatch):
+    def test_missing_interface_names_how_to_check_the_adapter(self, monkeypatch):
         monkeypatch.setattr(capture.os.path, "exists", lambda p: False)
         monkeypatch.setattr(capture.os.path, "isdir", lambda p: False)
         with pytest.raises(capture.CaptureError) as excinfo:
             capture.preflight("wlan9")
-        assert "usbipd attach" in str(excinfo.value)
+        assert "lsusb" in str(excinfo.value)
 
     def test_managed_mode_names_the_fix(self, monkeypatch):
         monkeypatch.setattr(capture.os.path, "exists", lambda p: True)
@@ -336,11 +336,47 @@ class TestRawReadPath:
         assert any(d["detection_class"] == "A" for d in pub.published)
 
 
+class TestDrainStopsAtWhatSelectPromised:
+    """The capture socket is blocking, and select() only ever promises that ONE
+    frame is ready. Draining further without re-checking readiness parks the
+    loop inside recv() until the next frame arrives -- seconds away on a quiet
+    channel. The dwell deadline is only checked *between* reads, never during
+    one, so the loop overruns the dwell, stops emitting heartbeats, and the
+    watchdog kills a sensor whose radio was working fine.
+
+    Seen on hardware: channel 1, 12 beacons, then a wedge and a watchdog exit
+    with no USB error and the interface still in monitor mode.
+    """
+
+    def test_does_not_read_past_a_drained_socket(self, monkeypatch):
+        # One frame arrives, then the channel goes quiet: the first dwell poll
+        # is readable, the drain re-check (timeout == 0) is not, and no further
+        # frame shows up before the dwell expires.
+        polls = {"n": 0}
+
+        def one_frame_then_quiet(r, w, x, timeout):
+            if timeout == 0:
+                return [], [], []
+            polls["n"] += 1
+            return (r, [], []) if polls["n"] == 1 else ([], [], [])
+
+        monkeypatch.setattr(capture.select, "select", one_frame_then_quiet)
+
+        radio = RawRadio([drone_frame()])
+        _, _, pipeline, _ = run_once(radio)
+
+        assert pipeline.stats.beacons >= 1, "the one available frame was missed"
+        assert radio.reads == 1, (
+            "read past what select() promised; on a blocking socket that is a "
+            "wedge, not merely a wasted syscall"
+        )
+
+
 class TestAdapterDisappears:
-    """The failure that actually happened on hardware: usbip dropped the
-    adapter mid-capture, every channel hop returned ENODEV, and the loop
-    logged a warning per dwell and carried on for ever -- a sensor that was
-    dead but looked alive, which is the exact thing ADR-0003 forbids."""
+    """The failure that actually happened on hardware: the adapter dropped
+    mid-capture, every channel hop returned ENODEV, and the loop logged a
+    warning per dwell and carried on for ever -- a sensor that was dead but
+    looked alive, which is the exact thing ADR-0003 forbids."""
 
     def _run(self, monkeypatch, iface_exists: bool):
         monkeypatch.setattr(capture, "set_channel", lambda iface, ch: False)
@@ -360,7 +396,7 @@ class TestAdapterDisappears:
     def test_vanished_interface_aborts_immediately(self, monkeypatch):
         err, pub = self._run(monkeypatch, iface_exists=False)
         assert "disappeared mid-capture" in str(err)
-        assert "usbipd attach" in str(err), "must name the fix, not just the symptom"
+        assert "lsusb" in str(err), "must name the fix, not just the symptom"
         # And the bus is told, so /health shows a broken sensor not a quiet sky.
         assert pub.heartbeats and pub.heartbeats[-1]["healthy"] is False
 
