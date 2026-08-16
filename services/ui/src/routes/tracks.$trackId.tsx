@@ -26,6 +26,7 @@ import {
   SortableTrackDetailGrid,
   type TrackDetailCard,
 } from '@/features/tracks/sortable-detail-grid'
+import { ShareTrack } from '@/features/tracks/share-track'
 import { ApiError } from '@/lib/api/client'
 import { trackDetectionsQuery, trackQuery } from '@/lib/api/queries'
 import type { Position } from '@/lib/api/types'
@@ -328,6 +329,10 @@ function TrackDetail() {
           <span>{track.detection_count} detections</span>
           <span>Last seen {format.when(track.last_seen)}</span>
           <span>Peak RSSI {peakRssi}</span>
+        </div>
+
+        <div className="mt-3">
+          <ShareTrack track={track} rssiSamples={rssiSamples} />
         </div>
       </header>
 
