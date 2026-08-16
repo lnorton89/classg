@@ -4,6 +4,7 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, loadEnv } from 'vite'
+import { VitePWA } from 'vite-plugin-pwa'
 
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url))
 
@@ -27,6 +28,49 @@ export default defineConfig(({ mode }) => {
       tanstackRouter({ target: 'react', autoCodeSplitting: true }),
       react(),
       tailwindcss(),
+
+      /*
+       * PWA. `injectManifest` rather than `generateSW`: the routing policy in
+       * src/sw.ts is the point of this whole feature (the API is never cached,
+       * and nginx's offline tile placeholder must not be), and generateSW's
+       * config is serialised into a generated file, so it cannot express a
+       * `cacheWillUpdate` predicate. All this plugin does here is hash the build
+       * output into `self.__WB_MANIFEST` and bundle that file.
+       *
+       * `manifest: false` — public/site.webmanifest is hand-maintained and
+       * already linked from index.html; letting the plugin generate a second one
+       * is how the two silently disagree.
+       *
+       * `injectRegister: null` — registration is ours (src/app/register-sw.ts)
+       * so it can be gated on MSW, on a secure context, and on a preference.
+       *
+       * No devOptions: a service worker in dev would race MSW's worker for the
+       * same scope, and whichever won, the other's interception would vanish.
+       */
+      VitePWA({
+        strategies: 'injectManifest',
+        srcDir: 'src',
+        filename: 'sw.ts',
+        manifest: false,
+        injectRegister: null,
+        injectManifest: {
+          globPatterns: ['**/*.{html,css,js,svg,png,ico,woff2,webmanifest}'],
+          globIgnores: [
+            // MSW's worker. It ships in the image because it lives in public/,
+            // but it is a dev fixture and precaching it would pin a stale copy
+            // of somebody else's service worker into our cache.
+            'mockServiceWorker.js',
+            // The pmtiles archives are ~46 MB and are read with range requests;
+            // basemap/** is whatever the optional preload baked in. Neither
+            // belongs in a precache the browser must fetch in full on install.
+            'tiles/**',
+          ],
+          // The maplibre chunk is ~800 kB. Workbox's 2 MB default would drop a
+          // future larger one silently, and a precache missing the map is worse
+          // than no precache at all.
+          maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
+        },
+      }),
     ],
 
     resolve: {

@@ -22,6 +22,7 @@ import { SystemStatusPill, StreamStatusPill } from '@/features/health/components
 import { RecordingIndicator } from '@/features/monitoring/recording-indicator'
 import { TrackAlerts } from '@/features/monitoring/track-alerts'
 import { NotificationsDrawer } from '@/features/notifications/notifications-drawer'
+import { AppUpdateBanner, OfflineBanner } from '@/features/offline/offline-banner'
 import { cn } from '@/lib/cn'
 
 import { CommandPalette } from './command-palette'
@@ -68,7 +69,15 @@ export function AppShell({ children }: { children: ReactNode }) {
         Skip to main content
       </a>
 
-      <header className="border-border bg-card/85 sticky top-0 z-40 border-b backdrop-blur">
+      {/* safe-top/safe-x rather than padding on the row inside: the header's
+          background has to reach under the status bar, only its contents move
+          down. See the safe-area utilities in styles.css. */}
+      <header
+        className={cn(
+          'border-border bg-card/85 sticky top-0 z-40 border-b backdrop-blur',
+          'safe-top safe-x',
+        )}
+      >
         {/*
           One row from xl up, where brand + nav + status all fit. Below that it
           wraps rather than overflowing: none of the status cluster is
@@ -127,6 +136,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             <SettingsButton />
           </div>
         </div>
+
+        {/* Inside the header so they stay put when the page scrolls. A warning
+            that the screen has stopped updating is no use two screens up a
+            track list. Both render nothing in the normal case. */}
+        <OfflineBanner />
+        <AppUpdateBanner />
       </header>
 
       {/*
@@ -139,17 +154,24 @@ export function AppShell({ children }: { children: ReactNode }) {
       <nav
         aria-label="Primary"
         className={cn(
-          'border-border bg-card/95 fixed inset-x-0 bottom-0 z-40 flex justify-around',
-          'border-t px-1 py-1 backdrop-blur md:hidden',
+          'border-border bg-card/95 fixed inset-x-0 bottom-0 z-40',
+          'border-t backdrop-blur md:hidden',
+          // The insets go on the bar, the padding on the row inside it, so the
+          // bar's background still reaches the bottom of the screen behind the
+          // home indicator instead of leaving a strip of map showing.
+          'safe-bottom safe-x',
         )}
       >
-        {PRIMARY_NAV.map((item) => (
-          <NavLink key={item.to} item={item} />
-        ))}
+        <div className="flex justify-around px-1 py-1">
+          {PRIMARY_NAV.map((item) => (
+            <NavLink key={item.to} item={item} />
+          ))}
+        </div>
       </nav>
 
-      {/* pb-16 clears the fixed mobile nav; md:pb-0 once it moves into the header. */}
-      <main id="main" className="flex min-h-0 flex-1 flex-col pb-16 md:pb-0">
+      {/* safe-pb-nav clears the fixed mobile nav and the home indicator under
+          it; it collapses to 0 at md, where the nav moves into the header. */}
+      <main id="main" className="safe-pb-nav flex min-h-0 flex-1 flex-col">
         {children}
       </main>
 

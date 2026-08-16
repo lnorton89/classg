@@ -2,14 +2,35 @@
 <html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover lets the app paint into the notch/home-indicator
+         areas once iOS runs it standalone; without it Safari letterboxes the
+         page in Night-coloured bars that do not match the app's own background.
+         The safe-area insets in styles.css are what keep content out of them. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <!-- Brand Night. Was #09090b, which disagreed with the manifest and with
          brand-identity.md, so the phone chrome was a different dark to the app. -->
     <meta name="theme-color" content="#061827" />
     <meta name="description" content="ClassG passive drone detection console" />
     <meta name="color-scheme" content="dark light" />
+
+    <!-- iOS still ignores the web app manifest. Everything standalone-related
+         has to be repeated here or an installed ClassG launches into Safari
+         chrome instead of full screen. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="ClassG" />
+    <!-- black-translucent, not black: it is what puts the status bar over the
+         app's own background rather than over an opaque strip, which is the
+         only setting that makes viewport-fit=cover worth having. The clock and
+         battery are light-on-dark, which is correct against Night. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/favicon.png" />
+    <link rel="icon" href="/icons/icon-192.png" sizes="192x192" type="image/png" />
+    <!-- 180x180 and opaque: iOS composites transparency onto black and applies
+         its own squircle, so the transparent-cornered `any` icon loses its
+         frame here. See scripts/generate-icons.mjs. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
     <title>ClassG — passive airspace awareness</title>
   </head>

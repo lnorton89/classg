@@ -102,6 +102,20 @@ export default tseslint.config(
     rules: { 'react-refresh/only-export-components': 'off' },
   },
 
+  // The service worker. Excluded from tsconfig.app.json (worker scope, not
+  // window scope), so type-aware linting has to be pointed at its own project
+  // or every rule that needs types reports "file not included in any project".
+  {
+    files: ['src/sw.ts'],
+    languageOptions: {
+      globals: globals.serviceworker,
+      parserOptions: {
+        project: ['./tsconfig.worker.json'],
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+
   // Config + scripts run in Node and are not part of the app program.
   {
     files: ['*.{ts,js}', 'scripts/**/*.mjs'],

@@ -1,0 +1,27 @@
+{
+  // The service worker is the one file in `src` that is not part of the app
+  // program: no DOM, no `window`, and a `self` that is a ServiceWorkerGlobalScope
+  // rather than a Window. Type-checking it against tsconfig.app.json's DOM lib
+  // is how you get a service worker that compiles and then dies on `self.clients`
+  // at runtime, so it gets its own project and is excluded from that one.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": [],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src/sw.ts"]
+}

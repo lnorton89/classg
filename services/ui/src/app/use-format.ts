@@ -186,3 +186,21 @@ export function useTicker(intervalMs = 1000): number {
   }, [intervalMs])
   return tick
 }
+
+/**
+ * `useTicker` for callers that need the clock itself rather than a nudge.
+ *
+ * Reading `Date.now()` in a render body makes the render impure — two renders
+ * of the same props produce different output — which matters here because the
+ * value feeds a decision, not just a label: the offline banner's threshold is
+ * computed from it. Holding the time in state keeps the render a function of
+ * its inputs, and moves "the clock advanced" to where it belongs, an event.
+ */
+export function useNow(intervalMs = 1000): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(id)
+  }, [intervalMs])
+  return now
+}

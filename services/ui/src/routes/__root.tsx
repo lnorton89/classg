@@ -34,27 +34,42 @@ function NotFound() {
   )
 }
 
+/**
+ * Inside `AppShell`, unlike the not-found case, which the router already
+ * renders within it.
+ *
+ * An `errorComponent` on the ROOT route replaces the root's component
+ * outright — so a loader that threw took the header, the navigation, the sensor
+ * status and the offline banner down with it, leaving one red box on an
+ * otherwise empty page and no way to reach another route. The state that
+ * triggers it most often is the API being unreachable, which is precisely when
+ * an operator needs the status cluster and the "this is not the live sky"
+ * banner most, and when "the console is blank" is the worst thing the screen
+ * could say.
+ */
 function RouteError({ error, reset }: { error: Error; reset: () => void }) {
   const isApi = error instanceof ApiError
   return (
-    <div className="p-6">
-      <Alert
-        tone="error"
-        title={isApi ? `API error: ${error.code}` : 'Something went wrong'}
-        action={
-          <Button variant="outline" size="sm" onClick={reset}>
-            Retry
-          </Button>
-        }
-      >
-        <p>{error.message}</p>
-        {isApi && error.status === 0 ? (
-          <p className="mt-1">
-            The API did not respond. On the Pi, check that the <code>classg-api</code> service
-            is running.
-          </p>
-        ) : null}
-      </Alert>
-    </div>
+    <AppShell>
+      <div className="p-6">
+        <Alert
+          tone="error"
+          title={isApi ? `API error: ${error.code}` : 'Something went wrong'}
+          action={
+            <Button variant="outline" size="sm" onClick={reset}>
+              Retry
+            </Button>
+          }
+        >
+          <p>{error.message}</p>
+          {isApi && error.status === 0 ? (
+            <p className="mt-1">
+              The API did not respond. On the Pi, check that the <code>classg-api</code> service
+              is running.
+            </p>
+          ) : null}
+        </Alert>
+      </div>
+    </AppShell>
   )
 }

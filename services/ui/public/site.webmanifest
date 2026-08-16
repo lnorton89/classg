@@ -1,11 +1,68 @@
 {
-  "name": "ClassG",
+  "id": "/",
+  "name": "ClassG — passive airspace awareness",
   "short_name": "ClassG",
-  "description": "Passive drone detection console",
-  "icons": [
-    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
-  ],
+  "description": "Passive, receive-only drone detection console for a Raspberry Pi sensor unit.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
   "theme_color": "#061827",
   "background_color": "#061827",
-  "display": "standalone"
+  "categories": ["utilities", "navigation"],
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Live map",
+      "short_name": "Live",
+      "description": "The map, the sky-state banner and the active tracks",
+      "url": "/"
+    },
+    {
+      "name": "Sensor health",
+      "short_name": "Sensors",
+      "description": "Per-sensor heartbeat, health and reason for any degradation",
+      "url": "/sensors"
+    },
+    {
+      "name": "Tracks",
+      "short_name": "Tracks",
+      "description": "Active and archived tracks",
+      "url": "/tracks"
+    }
+  ]
 }

@@ -15,6 +15,7 @@ import { RoutePending } from '@/components/layout/route-pending'
 import { ToastProvider } from '@/components/ui/toast-primitives'
 import { TooltipProvider } from '@/components/ui/tooltip-provider'
 import { log } from '@/features/logs/log-store'
+import { registerAppServiceWorker } from '@/features/offline/register-sw'
 import { ApiError } from '@/lib/api/client'
 import { USE_MSW } from '@/lib/env'
 import { routeTree } from '@/routeTree.gen'
@@ -95,7 +96,14 @@ declare module '@tanstack/react-router' {
 }
 
 async function start(): Promise<void> {
-  if (USE_MSW) {
+  // Testing USE_MSW alone is not enough to keep MSW out of the build. It is an
+  // exported const from another module, so Rollup cannot prove the branch dead
+  // and emits msw/browser as a real chunk -- 436 kB of dev-only mocking shipped
+  // to the Pi, and now precached onto every phone that installs the PWA.
+  // `import.meta.env.DEV` is substituted with a literal, so naming it here lets
+  // the branch and its dynamic import be eliminated. Same reason the mock
+  // scenario switcher tests it too.
+  if (import.meta.env.DEV && USE_MSW) {
     const { worker } = await import('@/mocks/browser')
     await worker.start({ onUnhandledRequest: 'bypass' })
   }
@@ -120,6 +128,15 @@ async function start(): Promise<void> {
       </ThemeProvider>
     </StrictMode>,
   )
+
+  /*
+   * After the first render, never before: registration competes with the
+   * bundle and the first API calls for the same connection, and on the Pi's AP
+   * that connection is the scarce thing. It is a no-op outside production and
+   * outside a secure context — see register-sw.ts. `useAppUpdate` attaches to
+   * the same registration rather than making a second one.
+   */
+  void registerAppServiceWorker()
 }
 
 void start()

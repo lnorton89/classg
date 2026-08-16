@@ -28,5 +28,7 @@
 
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Worker scope, not window scope. It is checked by tsconfig.worker.json.
+  "exclude": ["src/sw.ts"]
 }
