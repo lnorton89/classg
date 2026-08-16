@@ -109,6 +109,32 @@ export class LiveStream {
     this.setState('closed')
   }
 
+  /**
+   * Retry now, from a clean slate, because the reason for backing off has gone.
+   *
+   * Backoff assumes the far end is unwell and that waiting helps. That is wrong
+   * for the case this exists to fix: a phone browser suspends a backgrounded
+   * tab, the socket dies, and the retries that follow are frozen along with the
+   * page. The user returns to a console holding minutes-old tracks, and the
+   * pending timer may still be up to `maxDelayMs` from firing. Nothing was
+   * wrong with the server; the client was asleep.
+   *
+   * Resetting `attempt` matters as much as the immediate open: without it a
+   * long suspension leaves the backoff at its 30s ceiling, so the NEXT blip
+   * after resume also takes half a minute to recover.
+   *
+   * Safe to call often. An already-open socket is left alone, so a burst of
+   * visibility and online events costs nothing.
+   */
+  resume(): void {
+    if (this.stopped) return
+    if (this.socket?.readyState === WebSocket.OPEN) return
+    if (this.socket?.readyState === WebSocket.CONNECTING) return
+    this.clearTimer()
+    this.attempt = 0
+    this.open()
+  }
+
   send(frame: ClientFrame): void {
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify(frame))
