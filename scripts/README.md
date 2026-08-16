@@ -1,8 +1,8 @@
 # Operational scripts
 
 These Bash helpers support hardware bring-up and passive Wi-Fi capture. Run
-them from the repository root on Linux, a Raspberry Pi, or WSL as indicated;
-most commands that change an adapter's mode require `sudo`.
+them from the repository root on a Raspberry Pi, or any Linux host; most
+commands that change an adapter's mode require `sudo`.
 
 | Script | Purpose |
 |---|---|
@@ -10,7 +10,15 @@ most commands that change an adapter's mode require `sudo`.
 | `setup-monitor.sh [interface] [channel]` | Configure a Wi-Fi adapter for passive monitor mode |
 | `first-capture.sh [interface] [channel\|sweep] [seconds]` | Record and triage the first beacon-only DJI capture |
 | `diagnose-adapter.sh` | Reload and inspect the MT7921U adapter probe sequence |
-| `wsl-build-kernel.sh` | Build a WSL2 kernel with MT7921U support |
+| `pi-dash.sh` | Tiled tmux dashboard: btop, Pi throttle/thermal state, radio link state, API health |
+
+`pi-dash.sh` needs `tmux` and `btop`; everything else it shows it reads from
+`/proc`, `/sys` and `vcgencmd`, so it runs unprivileged. `--install` drops a
+`pidash` wrapper on `PATH` that keeps pointing at this checkout:
+
+```bash
+./scripts/pi-dash.sh --install   # then just: pidash
+```
 
 Three more fetch optional offline reference data. Everything they download is
 third-party, gitignored, and used only to enrich detections that already work

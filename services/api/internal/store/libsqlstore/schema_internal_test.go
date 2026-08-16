@@ -6,7 +6,7 @@ import (
 )
 
 // splitStatements is pure, so unlike the round-trip migration test it runs on
-// every platform -- including a Windows dev box with no libSQL. The bug it
+// every platform -- including a cgo-less build with no libSQL. The bug it
 // guards shipped precisely because the only coverage skipped there and CI was
 // the first thing to notice.
 

@@ -13,8 +13,8 @@ import (
 // Supported reports whether this build can open a libSQL database.
 //
 // go-libsql ships precompiled native libraries for linux and darwin on amd64
-// and arm64 only, and requires cgo. The Pi (linux/arm64) is covered; a Windows
-// development box is not, which is why the store lives behind an interface.
+// and arm64 only, and requires cgo. The Pi (linux/arm64) is covered; a cgo-less
+// build is not, which is why the store lives behind an interface.
 const Supported = true
 
 // open returns the database handle, a teardown function, and whether the

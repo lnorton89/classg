@@ -74,7 +74,7 @@ the SDR's real contribution to drone detection, and it is complementary rather t
 | Chipset | MediaTek MT7921AU (MT7921AUN) |
 | Bands | 2.4 GHz / 5 GHz / 6 GHz (Wi-Fi 6E) |
 | Driver | `mt7921u`, in-kernel since Linux **5.18** |
-| Firmware | Requires `linux-firmware` / `firmware-misc-nonfree` blobs |
+| Firmware | Requires `firmware-misc-nonfree` blobs |
 | Bluetooth | BT 5.2 integrated (see caveats) |
 
 Source: [morrownr/USB-WiFi](https://github.com/morrownr/USB-WiFi/discussions/260),

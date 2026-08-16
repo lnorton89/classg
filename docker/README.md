@@ -113,31 +113,18 @@ It is not the default because it trades photographic detail for drawn shapes, wh
 wrong trade for identifying a landing site and the right one for a unit with no uplink. See
 [docs/ops/07-external-data.md](../docs/ops/07-external-data.md).
 
-## Windows + custom WSL kernel
+## Crossing the container boundary
 
-The custom ClassG kernel is a global WSL setting, so Docker Desktop's WSL 2
-engine may fail to boot under it. Run Docker on the Windows side instead:
+The sensors stay on the host, so the detection bus has to cross into Compose.
+The direction is chosen, not incidental: fusion **listens** on 5556 and Compose
+publishes that port, and the host sensor **connects** outward to it. Fusion then
+relays detections and heartbeats to the API over the private Compose network.
 
-1. In Docker Desktop, clear **Settings → General → Use the WSL 2 based engine**
-   so Docker Desktop uses its Windows-managed Hyper-V Linux VM.
-2. Start Docker Desktop from Windows.
-3. From the ClassG WSL shell, run `make compose-up`.
-
-The first switch from WSL to Hyper-V may require one Windows reboot so the
-privileged Docker service recreates its backend pipes. If `docker version`
-shows a client but no server immediately after the switch, reboot once before
-troubleshooting the project.
-
-`scripts/docker.sh` deliberately selects Windows `docker.exe` when it detects
-WSL. Do not install or start a second Docker daemon inside the custom distro.
-The Compose client still feels native from WSL, but the engine and its kernel
-are owned by Windows.
-
-Compose exposes detection ingress on Windows port 5556. The WSL Wi-Fi sensor
-connects outward to `host.docker.internal:5556`; fusion receives those messages
-and relays detections and heartbeats to the API on the private Compose network.
-This avoids dynamic WSL IP addresses and replaces Linux-only
-`network_mode: host`.
+That is the reverse of the all-native layout, where the sensor binds and fusion
+dials. It has to be, because a container's loopback is not the host's: a sensor
+bound to `127.0.0.1:5556` on the host is invisible from inside fusion's network
+namespace, and giving the whole web tier `network_mode: host` to paper over it
+hands back the isolation that was the reason to containerise it.
 
 Validate the files without starting containers:
 
@@ -145,8 +132,8 @@ Validate the files without starting containers:
 make compose-config
 ```
 
-Start the web tier first, then replay the captured flight from WSL. Replay now
-publishes by default:
+Start the web tier first, then replay a captured flight. Replay publishes by
+default:
 
 ```bash
 make compose-up
@@ -159,15 +146,16 @@ curl http://localhost:8081/api/v1/detections
 Use `--no-publish --print` when you only want the old parser-only console
 output.
 
-For this Windows/WSL layout, `.env` needs:
+With the web tier in Compose, `.env` needs the sensor pointed at the published
+port in connect mode:
 
 ```dotenv
-CLASSG_DETECTION_ENDPOINT=tcp://host.docker.internal:5556
+CLASSG_DETECTION_ENDPOINT=tcp://127.0.0.1:5556
 CLASSG_WIFI_SOCKET_MODE=connect
 ```
 
-Native Linux/Pi deployments keep the committed defaults (`127.0.0.1` and
-`bind`), with fusion configured to `dial`.
+An all-native deployment (`make dev-native`) keeps the committed defaults: the
+sensor binds `127.0.0.1:5556` and fusion dials it.
 
 ## If you really want sensors in containers
 

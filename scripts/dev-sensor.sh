@@ -9,8 +9,8 @@
 # only the second one matters.
 #
 # The sensor runs NATIVELY, not in a container. It needs AF_PACKET on a monitor
-# -mode interface, and under WSL the adapter belongs to the WSL kernel rather
-# than to Docker's VM -- a container cannot see it. See docker/README.md.
+# -mode interface, which belongs to the host kernel rather than to Docker's --
+# a container cannot see it. See docker/README.md.
 #
 # This never fails the stack. A missing adapter is an expected state on a dev
 # box, so it explains itself and exits 0; the UI's health banner then reports
@@ -56,7 +56,7 @@ if ! ip link show "$IFACE" >/dev/null 2>&1; then
 
     if [ "$COUNT" -eq 0 ]; then
         skip "no wireless interface exists (looked for $IFACE)" \
-             "attach the adapter first. Under WSL: usbipd attach --busid <id>, then 'make monitor'."
+             "plug the adapter in, then run 'make monitor'."
     elif [ "$COUNT" -gt 1 ]; then
         # Guessing between two radios could put the sensor on the one that is
         # carrying your network connection.

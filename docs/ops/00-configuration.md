@@ -108,10 +108,10 @@ uses the repository root as its `envDir`. Compose is invoked with `--env-file
 runtime loops land.
 
 `CLASSG_DETECTION_ENDPOINT` and the socket mode variables describe both ends of
-the sensor bus. Native Linux uses a binding sensor and dialing fusion. The
-Windows/WSL Docker layout reverses ownership: fusion listens on Compose's
-published port and the WSL sensor connects to `host.docker.internal`. This avoids
-assuming that container loopback and WSL loopback are the same network.
+the sensor bus. An all-native run uses a binding sensor and a dialing fusion.
+Putting fusion in a container reverses ownership: fusion listens on Compose's
+published port and the host sensor connects outward to it, because a container's
+loopback is not the host's. See [docker/README.md](../../docker/README.md).
 
 ## Development loop
 
@@ -141,14 +141,14 @@ make dev-native     # host processes instead of containers (for a Pi)
 make dev-ui-only    # vite alone against MSW mocks, no Go at all
 ```
 
-**Do not run both at once.** WSL forwards `localhost` to a native process in preference to a
-container publishing the same port, so a native loop silently shadows the containers — the API
-answers, but from the wrong process, with configuration you did not set. `make dev` refuses to
-start when it detects one.
+**Do not run both at once.** They claim the same ports, so whichever starts second either
+fails to bind or leaves you talking to the other loop — an API that answers, but from the
+wrong process, with configuration you did not set. `make dev` refuses to start when it detects
+a native loop.
 
-`make dev` runs the three processes directly rather than in containers. Containers are the
-deployment story; for editing they cost either an image rebuild or a bind mount whose inotify
-events do not reliably cross the Windows/WSL boundary, so file watchers silently miss changes.
+`make dev-native` runs the three processes directly on the host instead of in containers. On a
+Pi that is the faster loop, because an image rebuild costs real time there; the price is
+needing Go, Node, and `air` installed on the machine rather than in an image.
 
 Two details that remove the rebuild step entirely:
 

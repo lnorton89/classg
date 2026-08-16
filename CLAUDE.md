@@ -121,9 +121,6 @@ as a degraded state with an operator-visible reason, not an exception.
   dev-api` sets `CLASSG_UI_DIR=off` for exactly this reason.
 - **The SDR cannot see a DJI.** RTL-SDR V4 tops out at 1.766 GHz; DJI talks on
   2.4/5.8 GHz. No antenna or gain fixes this. Wi-Fi is the DJI sensor.
-- **Windows/WSL Docker.** The engine is Windows-side, on purpose;
-  `scripts/docker.sh` picks `docker.exe` under WSL. Don't start a second daemon
-  inside the distro. See [docker/README.md](docker/README.md).
 - **Basemap zoom ceilings are per-source.** Esri serves a grey placeholder at
   HTTP 200 past z19 rather than a 404, so an over-set `BASEMAP_MAX_ZOOM` blanks
   the map instead of blurring it. Three files must agree — see the docker README.

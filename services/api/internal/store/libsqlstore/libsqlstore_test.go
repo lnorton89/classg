@@ -16,8 +16,8 @@ import (
 
 // TestConformance runs the same suite memstore runs.
 //
-// It skips where go-libsql has no native library (notably a Windows
-// development box), which is exactly why the store sits behind an interface.
+// It skips where go-libsql has no native library (notably a cgo-less
+// build), which is exactly why the store sits behind an interface.
 // CI runs on linux/amd64 with CGO_ENABLED=1, so the SQL is covered there.
 func TestConformance(t *testing.T) {
 	if !libsqlstore.Supported {

@@ -116,7 +116,7 @@ Details, env vars, and the two rules that shaped all of them:
 
 ### Prerequisites
 
-- A Raspberry Pi for a real deployment, or any Linux/WSL box for development
+- A Raspberry Pi for a real deployment, or any Linux box for development
 - [ALFA AWUS036AXML](docs/ops/02-wifi-adapter.md) and/or an [RTL-SDR V4](docs/ops/03-sdr-setup.md) — see [hardware capabilities](docs/research/02-hardware-capabilities.md) for what each one actually buys you
 - Go 1.26+, Python 3.11+, Rust (stable, 2021 edition), Node 22+ — only needed for the services you're touching; Docker for the web tier
 
@@ -159,8 +159,8 @@ npm ci
 npm run dev
 ```
 
-To run the real web stack through Windows Docker while the adapter remains in
-WSL, see [docker/README.md](docker/README.md):
+To run the real web tier in containers while the sensor stays on the host with
+the adapter, see [docker/README.md](docker/README.md):
 
 ```bash
 make compose-up

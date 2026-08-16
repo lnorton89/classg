@@ -13,7 +13,7 @@
 //
 // Pausing gates INGESTION, not the radio. The sensor is a separate process
 // under its own supervisor (ADR-0003), frequently on a different machine from
-// the API -- in the container stack the API cannot signal the WSL sensor at
+// the API -- in the container stack the API cannot signal the host's sensor at
 // all. Discarding detections at the ingest boundary is the one mechanism that
 // works everywhere, and it means resuming is instant rather than waiting for a
 // radio to come back and re-acquire.

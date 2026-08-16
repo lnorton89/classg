@@ -7,9 +7,9 @@
 #
 # Why native rather than Compose:
 #   Containers are the DEPLOYMENT story. For editing, they cost an image rebuild
-#   or a bind-mount whose inotify events do not reliably cross the Windows/WSL
-#   boundary, so watchers silently miss changes. Running the three processes
-#   directly gives sub-second reload and works identically on WSL, Linux and a
+#   or a bind-mount whose inotify events do not always reach the container, so
+#   watchers silently miss changes. Running the three processes directly gives
+#   sub-second reload and works identically on a dev box and a
 #   Pi. Use `make compose-up` when you specifically want to test the container
 #   path.
 #
@@ -107,8 +107,8 @@ echo "ClassG dev loop"
 echo
 
 # Only reclaim ports this run is about to bind. 5556 is deliberately excluded:
-# in the WSL layout the Wi-Fi sensor binds it, and that is a legitimately
-# running process, not a leftover of ours.
+# the Wi-Fi sensor binds it, and that is a legitimately running process, not a
+# leftover of ours.
 [ "$RUN_UI" -eq 1 ]     && reclaim_port 5173 "vite"
 [ "$RUN_API" -eq 1 ]    && reclaim_port 8081 "api"
 [ "$RUN_FUSION" -eq 1 ] && reclaim_port 5557 "fusion tracks"

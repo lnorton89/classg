@@ -13,11 +13,6 @@ tmp_dir = ".air"
   delay = 300
   stop_on_error = false
   log = "build-errors.log"
-  # Bind mounts from the Windows filesystem do not deliver inotify events into
-  # the container, so the watcher would never fire. Polling costs a little CPU
-  # and is the only thing that actually works across that boundary.
-  poll = true
-  poll_interval = 500
 
 [misc]
   clean_on_exit = true

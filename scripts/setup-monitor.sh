@@ -19,9 +19,9 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Load the driver if it is present but not loaded. Under WSL this is the norm:
-# udev does not autoload modules for a usbip-attached device, so the driver sits
-# unloaded and no interface ever appears. No-op if already loaded.
+# Load the driver if it is present but not loaded. udev normally autoloads it on
+# hotplug; this covers the case where it did not, which presents as no interface
+# ever appearing. No-op if already loaded.
 if ! grep -qE "^mt7921u " /proc/modules 2>/dev/null && modinfo mt7921u >/dev/null 2>&1; then
     modprobe mt7921u && sleep 2
 fi
@@ -29,7 +29,7 @@ fi
 if ! ip link show "$IFACE" >/dev/null 2>&1; then
     echo "interface $IFACE not found. Check: lsusb, dmesg | grep -i mt7921" >&2
     echo "If the driver loaded but the adapter never initialised, firmware blobs" >&2
-    echo "are missing: apt install firmware-misc-nonfree linux-firmware" >&2
+    echo "are missing: apt install firmware-misc-nonfree" >&2
     echo "Run ./scripts/check-capture-env.sh for a full diagnosis." >&2
     exit 1
 fi

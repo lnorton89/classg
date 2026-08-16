@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 # Refuse to start the Docker dev stack while a native one is running.
 #
-# Why this exists: WSL's localhost forwarding means a native process bound to
-# 8081 WINS over a container publishing 8081. Both appear healthy, `docker ps`
-# looks right, and every request goes to the native process. The symptom is a
-# working API serving stale code with configuration you did not set -- which is
-# indistinguishable from a broken container until you compare uptime.
-#
-# Cost of that failure once: about an hour.
+# Why this exists: both loops claim the same ports, so bringing up the second
+# one fails at bind time. Docker reports that as "port is already allocated",
+# which names a port and nothing else -- not which process holds it, and not
+# that you started it yourself half an hour ago. This names the processes and
+# how to stop them, which is the part you actually need.
 
 set -uo pipefail
 
@@ -24,9 +22,8 @@ done < <(pgrep -af 'classg-api|classg-fusion|go run \./cmd/classg-|services/ui.*
 if [ "$FOUND" -eq 1 ]; then
     cat <<'EOS'
 
-A native dev loop is already running. It will shadow the containers: WSL
-forwards localhost to the native process, so the API you reach would be that
-one, not the container.
+A native dev loop is already running and holds the ports the containers
+publish, so the stack will fail to bind.
 
 Stop it first:
 

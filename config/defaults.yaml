@@ -17,11 +17,10 @@
 # GET /config reports which of those each effective value came from.
 
 # --- Bus -------------------------------------------------------------------
-# Endpoints describe both ends of the sensor bus. Native Linux uses a binding
-# sensor and a dialing fusion. The Windows/WSL Docker layout reverses ownership:
-# fusion listens on Compose's published port and the WSL sensor connects out to
-# host.docker.internal, because container loopback and WSL loopback are not the
-# same network.
+# Endpoints describe both ends of the sensor bus: a binding sensor and a dialing
+# fusion. Running fusion in Compose reverses that ownership -- fusion listens on
+# the published port and the host's sensor connects out to it -- because a
+# container's loopback is not the host's.
 bus:
   detection_endpoint: tcp://127.0.0.1:5556
   track_endpoint: tcp://127.0.0.1:5557

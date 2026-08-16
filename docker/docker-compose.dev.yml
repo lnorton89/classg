@@ -18,11 +18,6 @@
 #     visible in the container
 #   - Go services run under `air`, which rebuilds in-container on change
 #   - the UI runs the Vite dev server with HMR instead of a built bundle
-#
-# The one thing that makes this work on Windows: POLLING. Bind mounts from the
-# Windows filesystem do not deliver inotify events into a Linux container, so
-# every watcher here polls. Without it the stack starts, looks healthy, and
-# silently never notices a change -- worse than failing outright.
 
 name: classg
 
@@ -49,7 +44,7 @@ services:
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
     ports:
-      # The WSL Wi-Fi sensor publishes here.
+      # The host's Wi-Fi sensor publishes here.
       - "${CLASSG_BUS_PORT:-5556}:5556"
 
   api:
@@ -94,7 +89,7 @@ services:
     container_name: classg-ui
     working_dir: /src/services/ui
     # node_modules lives in a volume, never on the bind mount: the host's copy
-    # is installed for Windows and its native binaries will not run here.
+    # may carry native binaries built for a different platform than this image.
     #
     # The volume outlives the container, so "install once, on first run" was
     # wrong in the way that costs an hour: adding a dependency on the host
@@ -121,8 +116,6 @@ services:
       # Empty means "probe the satellite raster proxy instead", which is the
       # default. See docs/ops/07-external-data.md.
       VITE_BASEMAP_VECTOR_URL: ${VITE_BASEMAP_VECTOR_URL:-}
-      # Enables Vite's polling watcher -- see the note at the top of this file.
-      CLASSG_WATCH_POLL: "true"
       # npm's upgrade nag and funding banner are the only noise in this
       # container's logs; a dev stack should show Vite output and nothing else.
       NPM_CONFIG_UPDATE_NOTIFIER: "false"

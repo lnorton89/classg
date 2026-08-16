@@ -15,7 +15,7 @@ const Supported = false
 //
 // This build has no libSQL: either cgo is off or go-libsql ships no native
 // library for this GOOS/GOARCH. The rest of the package still compiles, so
-// `go vet ./...` and the pure-Go test suites work on a Windows development box.
+// `go vet ./...` and the pure-Go test suites still work in such a build.
 func open(Options) (*sql.DB, func() error, bool, error) {
 	return nil, nil, false, fmt.Errorf(
 		"libSQL storage is unavailable in this build (%s/%s, cgo may be disabled): "+

@@ -4,8 +4,8 @@
 # Why this exists: the capture watchdog exits a wedged process so the sensor
 # reads as absent rather than blind (ADR-0003). That is the right behaviour, but
 # on its own it converts a five-minute wedge into permanent silence -- nothing
-# starts it again. Over one evening the usbip link between Windows and WSL
-# dropped three times; each drop ended recording until someone noticed.
+# starts it again. Over one evening the adapter's USB link dropped three times;
+# each drop ended recording until someone noticed.
 #
 # Deliberately one `sudo` for the whole supervisor rather than one per restart.
 # The sensor needs root for AF_PACKET and `iw` needs it to restore monitor mode,
@@ -13,9 +13,8 @@
 # work until the first drop after the cache went cold, which is precisely when
 # it is needed.
 #
-# It does NOT reattach the USB device. That is a usbipd command on the Windows
-# side, out of reach from here. When the adapter is gone this waits, says so,
-# and picks up by itself once it returns.
+# It does NOT bring back an adapter that is physically absent. When the adapter
+# is gone this waits, says so, and picks up by itself once it returns.
 
 set -uo pipefail
 
@@ -73,7 +72,7 @@ log "supervising $IFACE (pid $$)"
 
 while true; do
     if ! ip link show "$IFACE" >/dev/null 2>&1; then
-        log "$IFACE is gone; waiting for the adapter to come back (usbipd attach on the Windows side)"
+        log "$IFACE is gone; waiting for the adapter to come back"
         nap "$backoff"
         backoff=$(( backoff * 2 )); [ "$backoff" -gt "$MAX_BACKOFF_S" ] && backoff=$MAX_BACKOFF_S
         continue

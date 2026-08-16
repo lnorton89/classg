@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Preflight for the first capture. Run this BEFORE the drone is in the air.
 #
-# Works on a Pi, a live USB, or WSL. Answers one question: can this machine
+# Works on a Pi or any Linux host. Answers one question: can this machine
 # actually capture drone beacons? Every check prints PASS/FAIL/WARN and the
 # script exits non-zero if anything blocking failed.
 #
@@ -21,18 +21,6 @@ section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 section "Environment"
 KREL=$(uname -r)
 echo "  kernel: $KREL"
-if grep -qi microsoft /proc/version 2>/dev/null; then
-    IS_WSL=1
-    # Do not infer stock/custom from a trailing '+': rebuilding an unchanged
-    # tagged tree can legitimately remove it. Test the capability we need.
-    if modinfo mt7921u >/dev/null 2>&1; then
-        pass "running under WSL with mt7921u support"
-    else
-        warn "running under WSL on a kernel without mt7921u. See ./scripts/wsl-build-kernel.sh"
-    fi
-else
-    IS_WSL=0
-fi
 if [ -f /etc/os-release ]; then
     # Standard distro metadata file; it is optional here.
     # shellcheck disable=SC1091
@@ -59,18 +47,12 @@ for m in mt7921u mt7921_common mt76_usb mt76; do
 done
 if [ "$FOUND_MT" -eq 0 ]; then
     fail "no mt76/mt7921u driver for kernel $KREL - the adapter cannot bind, so no wlan interface will appear"
-    if [ "$IS_WSL" -eq 1 ]; then
-        echo "        WSL's stock kernel omits these. Build one: ./scripts/wsl-build-kernel.sh"
-    else
-        echo "        Try: apt install firmware-misc-nonfree linux-firmware, then replug"
-    fi
+    echo "        Try: apt install firmware-misc-nonfree, then replug"
 fi
 
-# Driver present on disk is NOT the same as driver loaded. WSL does not run
-# udev the way a normal distro does, so a hot-plugged (usbip-attached) device
-# does not trigger module autoloading -- the module just sits there unloaded and
-# no interface ever appears. This is the single most likely reason a fully
-# correct setup still shows zero wireless interfaces.
+# Driver present on disk is NOT the same as driver loaded. If udev does not
+# autoload on hotplug, the module sits there unloaded and no interface ever
+# appears -- a fully correct setup showing zero wireless interfaces.
 MT_LOADED=0
 if grep -qE "^(mt7921u|mt7921_common) " /proc/modules 2>/dev/null; then
     pass "mt7921u loaded"
@@ -78,9 +60,6 @@ if grep -qE "^(mt7921u|mt7921_common) " /proc/modules 2>/dev/null; then
 elif [ "$FOUND_MT" -eq 1 ]; then
     fail "mt7921u is present but NOT LOADED - nothing bound the adapter"
     echo "        Fix:  sudo modprobe mt7921u"
-    if [ "$IS_WSL" -eq 1 ]; then
-        echo "        (expected under WSL: no udev autoload on usbip attach)"
-    fi
 fi
 
 section "Firmware"
@@ -102,9 +81,7 @@ if command -v lsusb >/dev/null 2>&1; then
         pass "MT7921AU adapter enumerated ($(lsusb | grep -i '0e8d:7961' | head -1))"
     else
         fail "MT7921AU (0e8d:7961) not enumerated"
-        if [ "$IS_WSL" -eq 1 ]; then
-            echo "        On WSL you must forward it: usbipd attach --wsl --busid <BUSID>"
-        fi
+        echo "        Check the adapter is plugged in, and dmesg for a USB reset"
     fi
     if lsusb | grep -qi "0bda:2838"; then
         pass "RTL-SDR enumerated"

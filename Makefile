@@ -1,6 +1,6 @@
 .PHONY: help env data data-oui data-aircraft migrate-env migrate-env-dry setup sense sqlc sqlc-check dev dev-logs dev-down dev-restart dev-native dev-ui-only test test-wifi test-fusion test-api test-ui test-sdr lint build-ui dev-api dev-ui compose-config compose-up compose-down clean monitor capture
 
-DOCKER := bash ./scripts/docker.sh
+DOCKER := docker
 
 help:
 	@echo "ClassG - passive drone detection"
@@ -16,7 +16,7 @@ help:
 	@echo "  make monitor    put the Wi-Fi adapter into passive monitor mode"
 	@echo "  make sense      run the live sensor (root, monitor mode)"
 	@echo "  make capture    record a beacon PCAP (Milestone 0 ground truth)"
-	@echo "  make compose-up build and start fusion, API, and UI via Windows Docker"
+	@echo "  make compose-up build and start fusion, API, and UI in Docker"
 	@echo ""
 	@echo "  make data       fetch the optional offline reference datasets"
 	@echo "  make data-oui   IEEE OUI registry, for Wi-Fi vendor fingerprinting"

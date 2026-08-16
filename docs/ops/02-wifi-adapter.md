@@ -46,7 +46,7 @@ uname -r
 Install firmware blobs if missing:
 
 ```bash
-sudo apt update && sudo apt install -y firmware-misc-nonfree linux-firmware
+sudo apt update && sudo apt install -y firmware-misc-nonfree
 ```
 
 Plug in and confirm:
@@ -125,7 +125,7 @@ not broadcast Remote ID there. Not worth the regdb fight.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Adapter enumerates, never initialises | Missing firmware | `apt install firmware-misc-nonfree linux-firmware` |
+| Adapter enumerates, never initialises | Missing firmware | `apt install firmware-misc-nonfree` |
 | Monitor mode set, zero frames | NetworkManager took the interface | `airmon-ng check kill` |
 | Adapter dead after a mode change | Active monitor was set | Physical replug; never set active again |
 | Random disappearance under load | USB power brownout | Powered hub, or better PSU; check `dmesg` for USB resets |

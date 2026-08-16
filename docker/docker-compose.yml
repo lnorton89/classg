@@ -1,6 +1,6 @@
-# Web tier only. Sensors run in WSL or on the Linux host. Containers reach the
-# sensor publisher through host.docker.internal and talk to each other over the
-# Compose network.
+# Web tier only. Sensors run on the host, outside Compose. Containers reach the
+# sensor publisher over the host network and talk to each other over the Compose
+# network.
 
 name: classg
 

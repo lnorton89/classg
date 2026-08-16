@@ -37,8 +37,12 @@ sudo apt update && sudo apt install -y \
   libzmq3-dev \
   tcpdump tshark \
   aircrack-ng iw \
-  firmware-misc-nonfree linux-firmware
+  firmware-misc-nonfree
 ```
+
+`linux-firmware` is the Ubuntu name for these blobs and does not exist on
+Raspberry Pi OS. Asking for it aborts the whole line before anything installs,
+which reads as "none of these packages exist".
 
 Toolchains:
 

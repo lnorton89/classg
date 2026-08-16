@@ -316,7 +316,7 @@
       "sections": [
         {
           "title": "Architecture and responsibilities",
-          "description": "They encode known driver, WSL, USB, privilege, and passive-mode failure modes.",
+          "description": "They encode known driver, USB, privilege, and passive-mode failure modes.",
           "items": [
             { "title": "Capture readiness", "body": "Checks required commands, interfaces, monitor mode, driver state, output paths, and service prerequisites.", "path": "scripts/check-capture-env.sh" },
             { "title": "Adapter diagnosis", "body": "Explains enumeration, firmware, driver binding, rfkill, and monitor-mode failures.", "path": "scripts/diagnose-adapter.sh" },

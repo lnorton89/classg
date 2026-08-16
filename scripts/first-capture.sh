@@ -51,8 +51,8 @@ fi
 # --- setup --------------------------------------------------------------------
 echo "== Preparing $IFACE on channel $CHANNEL =="
 
-# WSL does not run udev the way a normal distro does, so a usbip-attached
-# adapter never triggers module autoloading and no interface appears. Harmless
+# If udev did not autoload the driver on hotplug, the module sits unloaded and
+# no interface appears. Harmless
 # to run everywhere -- modprobe on an already-loaded module is a no-op.
 if ! grep -qE "^mt7921u " /proc/modules 2>/dev/null; then
     if modinfo mt7921u >/dev/null 2>&1; then
