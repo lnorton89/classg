@@ -1,0 +1,22 @@
+[Unit]
+Description=ClassG: check for a deployable commit
+Documentation=https://github.com/lnorton89/classg/blob/main/docs/ops/10-continuous-deployment.md
+
+[Timer]
+# Five minutes after boot, then every ten. Ten rather than one: the check is
+# cheap but a deploy is not, and nothing here is urgent enough to justify
+# hammering the GitHub API. Unauthenticated api.github.com allows 60 requests an
+# hour, so this uses 6 of them and leaves room for a human.
+OnBootSec=5min
+OnUnitActiveSec=10min
+
+# Spread the check off the exact minute. Harmless with one unit; correct if
+# there is ever more than one, so they do not all wake together.
+RandomizedDelaySec=60s
+
+# A unit that was powered off through several checks runs once on the next boot
+# rather than not at all.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

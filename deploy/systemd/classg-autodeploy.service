@@ -1,0 +1,30 @@
+[Unit]
+Description=ClassG: deploy main when CI is green
+Documentation=https://github.com/lnorton89/classg/blob/main/docs/ops/10-continuous-deployment.md
+# Needs the network for both GitHub and the local API health check.
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=admin
+WorkingDirectory=/home/admin/classg
+ExecStart=/home/admin/classg/scripts/pi-autodeploy.sh
+
+# A rebuild of the Rust sensor is minutes on a Pi, and a docker build can be
+# longer. This kills a genuinely stuck run rather than bounding a normal one.
+TimeoutStartSec=45min
+
+# Never two at once: the second would fetch mid-rebuild and deploy a tree the
+# first is still writing.
+# (systemd already serialises a oneshot service; this makes the intent explicit
+# to anyone editing it.)
+RemainAfterExit=no
+
+# The script restarts units and runs docker; it needs sudo for the first. Keep
+# that narrow -- see docs/ops/10-continuous-deployment.md for the sudoers line,
+# which grants exactly two systemctl restart commands and nothing else.
+Environment=CLASSG_PI_API=http://127.0.0.1:8081
+
+[Install]
+WantedBy=multi-user.target
