@@ -17,19 +17,26 @@ Everything downstream is built against these captures. Do not skip ahead.
 - [x] `btusb` disabled per the MT7921 Wi-Fi/BT conflict
 - [x] RTL-SDR V4 working with the **rtl-sdr-blog driver fork** (stock librtlsdr will not do) — R828D recognised, 0 samples per million lost
 - [x] `dvb_usb_rtl28xxu` blacklisted
-- [ ] Both radios stable simultaneously for 1 hour — this is the USB power test
+- [x] Both radios stable simultaneously for 1 hour — 2 h 10 min on 2026-08-17, no USB disconnects
 - [x] **Capture DJI power-on → hover → land as PCAP** — `captures/20260810-141223-dji-first-flight.pcap`
 - [x] Manually confirm in Wireshark: IE 221 present, OUI `26:37:12` and/or `FA:0B:BC` — F3411 `fa:0b:bc` present, `26:37:12` absent for this aircraft
 - [x] Record which **channel** the DJI actually beacons on — channel 6, 176 drone beacons
 - [x] Record beacon **interval** — verify the ~1 Hz assumption — 240 ms median, ~4.17 Hz; the 1 Hz assumption was wrong
 - [x] `dump1090` decoding real aircraft — `captures/20260811-113000-adsb-frames-avr.txt`
 
-The USB power test is the one item still open, and it is not a formality. On
-2026-08-16 the AWUS036AXML dropped off the bus after 4 h 11 min alongside the
-SDR, with no undervoltage recorded (`throttled=0x0`) — so a clean disconnect
-rather than the brownout [01-pi-setup](../ops/01-pi-setup.md) warns about.
-Cause unestablished. Run the hour deliberately, with both radios streaming,
-before trusting a field deployment.
+The hour is met; the four-hour question is not. On 2026-08-17 both radios ran
+2 h 10 min together from a 09:51:12 boot — all three units at `NRestarts=0`, zero
+disconnects, over-currents or descriptor-read errors in `dmesg`, `throttled=0x0`
+at 40.4 °C. Both were streaming rather than merely enumerated: the Wi-Fi sensor
+climbed to 11,548 beacons and ADS-B messages kept arriving across the window.
+
+That clears the exit criterion as written, and it does not explain 2026-08-16,
+when the AWUS036AXML dropped off the bus after 4 h 11 min alongside the SDR with
+no undervoltage recorded — a clean disconnect rather than the brownout
+[01-pi-setup](../ops/01-pi-setup.md) warns about. This run stopped well short of
+that mark, so the cause stays unestablished and a soak past 4 h 11 min remains
+the test that would actually settle it. Treat the box above as "the stated hour
+passed", not as "the bus is trusted".
 
 `dump1090` proved the decode path on the previous host; it is **not installed
 on the Pi**, which is the first task of Milestone 2 rather than a gap here.

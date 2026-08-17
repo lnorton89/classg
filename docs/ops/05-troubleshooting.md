@@ -64,6 +64,48 @@ filled in.** Don't debug those against an assumption; measure them against the d
 
 ---
 
+## "Timestamps or uptime look wrong"
+
+| Symptom | Cause |
+|---|---|
+| `uptime_s` far larger than the process has been alive | Fixed — elapsed time was wall-clock arithmetic that counted the boot NTP correction |
+| Detections stamped hours before they happened | Emitted during the window between boot and the first NTP sync |
+| Timestamps in 1969/1970 | Clock never set at all — no RTC, no network, `fake-hwclock` data missing |
+| Every sensor briefly `stale` at once, then recovers | The clock jumped forward; heartbeats stamped before it look old for one interval |
+
+**A Pi has no RTC.** `timedatectl` reports `RTC time: n/a`. It boots with
+whatever `fake-hwclock` saved at last shutdown, systemd starts the sensors
+against that wrong clock, and `systemd-timesyncd` only corrects it once the
+network is up and a time server answers. Measured on the unit on 2026-08-17:
+boot at 09:51:12, sensors started, then
+
+```
+09:52:03 systemd-timesyncd[529]: Initial clock synchronization to Mon 2026-08-17 09:52:03 PDT
+```
+
+a jump of **7 h 51 min**, about fifty seconds after boot. Anything stamped in
+that window carries the stale time permanently.
+
+```bash
+timedatectl                                  # NTPSynchronized, and whether an RTC exists at all
+journalctl -b | grep -iE "clock|synchroniz"  # the jump, with its size and when it landed
+```
+
+The field case is the one that matters. A unit deployed with no uplink never
+reaches a time server, so the correction never arrives and a wrong absolute
+clock is the steady state rather than a first-minute transient.
+
+Detections carry the wall clock, not a monotonic reading: `_now_iso()` in
+`detection.py` and `epoch_ms()` in `clock.rs` both read the system clock, and
+the detection ULID embeds it as its sortable prefix. A correction moves the
+record with it — the forward jump at boot leaves a fictitious multi-hour gap
+between the first detections and everything after, and ULID ordering survives
+only because the jump happens to go forward. If you need correct absolute
+timestamps in the field, fit an RTC module; no amount of software fixes a clock
+with nothing to read.
+
+---
+
 ## "Too many detections / false positives"
 
 Check the **detection class** first. Class C (OUI/SSID fingerprint) is expected to produce
