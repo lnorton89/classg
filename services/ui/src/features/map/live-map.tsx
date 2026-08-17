@@ -90,6 +90,9 @@ export interface LiveMapProps {
   adsb: Detection[]
   selectedTrackId: string | null
   onSelectTrack?: (trackId: string | null) => void
+  /** ICAO address of the selected manned contact. Keyed as the manned markers are. */
+  selectedMannedIcao?: string | null
+  onSelectManned?: (icao: string | null) => void
   /** Dim + hatch the map when what it shows cannot be trusted. */
   coverageBroken: boolean
   className: string
@@ -103,6 +106,8 @@ export function LiveMap({
   adsb,
   selectedTrackId,
   onSelectTrack,
+  selectedMannedIcao = null,
+  onSelectManned,
   coverageBroken,
   className,
   ariaLabel = 'Live airspace map',
@@ -115,6 +120,7 @@ export function LiveMap({
   const operatorMarkers = useRef(new Map<string, Marker>())
   const mannedMarkers = useRef(new Map<string, { marker: Marker; node: HTMLElement }>())
   const onSelectRef = useRef(onSelectTrack)
+  const onSelectMannedRef = useRef(onSelectManned)
   const fittedBoundsRef = useRef<string | null>(null)
   const initialCenterAppliedRef = useRef(false)
   // Marker accessible names are the text equivalent of the canvas, so they
@@ -124,6 +130,10 @@ export function LiveMap({
   useEffect(() => {
     onSelectRef.current = onSelectTrack
   }, [onSelectTrack])
+
+  useEffect(() => {
+    onSelectMannedRef.current = onSelectManned
+  }, [onSelectManned])
 
   const { theme } = useTheme()
   const [basemap, setBasemap] = useState<BasemapMode | null>(null)
@@ -495,6 +505,10 @@ export function LiveMap({
         callsign: detection.adsb?.callsign ?? null,
         headingDeg: detection.kinematics?.track_deg ?? null,
         altFt: detection.adsb?.alt_ft ?? null,
+        selected: icao === selectedMannedIcao,
+        onSelect: onSelectMannedRef.current
+          ? (id: string) => onSelectMannedRef.current?.(id)
+          : undefined,
         format,
       }
       const existing = mannedMarkers.current.get(icao)
@@ -516,7 +530,7 @@ export function LiveMap({
         mannedMarkers.current.delete(icao)
       }
     }
-  }, [adsb, ready, format])
+  }, [adsb, ready, format, selectedMannedIcao])
 
   // --- route/contact fit ---------------------------------------------------
   useEffect(() => {

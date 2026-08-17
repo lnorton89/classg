@@ -149,6 +149,14 @@ export interface MannedMarkerOptions {
   callsign: string | null
   headingDeg: number | null
   altFt: number | null
+  selected: boolean
+  /**
+   * Keyed on ICAO rather than detection id, because that is the aircraft and a
+   * detection is one glimpse of it. The contacts panel keys its manned rows the
+   * same way, which is the whole reason a click on either surface highlights
+   * both.
+   */
+  onSelect?: (icao: string) => void
   format: Formatters
 }
 
@@ -160,7 +168,20 @@ export interface MannedMarkerOptions {
  */
 export function createMannedMarker(options: MannedMarkerOptions): HTMLElement {
   const wrapper = el('div', 'classg-marker classg-marker--manned')
-  const inner = el('div', 'flex flex-col items-center gap-0.5')
+  // A <button> only when there is a handler to run. An interactive element with
+  // nothing behind it is a keyboard stop that does nothing, which is worse than
+  // the plain image this was before — so the inert case stays role="img".
+  let inner: HTMLElement
+  if (options.onSelect) {
+    const button = document.createElement('button')
+    button.type = 'button'
+    inner = button
+  } else {
+    inner = document.createElement('div')
+  }
+  inner.className =
+    'flex flex-col items-center gap-0.5 rounded transition-transform ' +
+    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
   wrapper.append(inner)
 
   const rotator = el('span', 'block text-manned')
@@ -175,10 +196,15 @@ export function createMannedMarker(options: MannedMarkerOptions): HTMLElement {
   inner.append(label)
 
   updateMannedMarker(wrapper, options)
+  if (options.onSelect) {
+    inner.addEventListener('click', () => options.onSelect?.(options.icao))
+  }
   return wrapper
 }
 
 export function updateMannedMarker(node: HTMLElement, options: MannedMarkerOptions): void {
+  const button = node.querySelector('button')
+  const inner = button ?? node.querySelector<HTMLElement>('div')
   const rotator = node.querySelector<HTMLElement>('span.block')
   const label = node.querySelector<HTMLElement>('span.whitespace-nowrap')
   if (!rotator || !label) return
@@ -191,6 +217,13 @@ export function updateMannedMarker(node: HTMLElement, options: MannedMarkerOptio
     trimmedCallsign === undefined || trimmedCallsign === '' ? options.icao : trimmedCallsign
   label.textContent = `MANNED ${name}`
 
+  // Selection reads as size and weight, never as a change of hue. What separates
+  // manned traffic from a drone here is shape, colour and the word MANNED
+  // together; a selected state that recoloured the chevron would spend one of
+  // those three signals on something else entirely.
+  inner?.classList.toggle('scale-125', options.selected)
+  label.classList.toggle('font-bold', options.selected)
+
   const description = [
     'Manned aircraft, ADS-B',
     name,
@@ -199,9 +232,15 @@ export function updateMannedMarker(node: HTMLElement, options: MannedMarkerOptio
       : `altitude ${options.format.altitudeFeet(options.altFt)}`,
     'not a drone',
   ].join(', ')
-  node.setAttribute('role', 'img')
-  node.setAttribute('aria-label', description)
-  node.title = description
+  if (button) {
+    button.setAttribute('aria-pressed', String(options.selected))
+    button.setAttribute('aria-label', `${description}. Show its detail in the contacts list.`)
+    button.title = description
+  } else {
+    node.setAttribute('role', 'img')
+    node.setAttribute('aria-label', description)
+    node.title = description
+  }
 }
 
 export interface OperatorMarkerOptions {

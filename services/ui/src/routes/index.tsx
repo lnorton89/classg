@@ -16,6 +16,7 @@ import { StatTile } from '@/components/ui/stat'
 import { ContactsPanel } from '@/features/map/contacts-panel'
 import { LiveMap } from '@/features/map/live-map'
 import { MapLegend } from '@/features/map/legend'
+import { useContactSelection } from '@/features/map/selection'
 import { SkyStateBanner } from '@/features/health/components'
 import { computeSkyState } from '@/features/health/sky-state'
 import { partitionTracks } from '@/features/tracks/partition'
@@ -37,7 +38,11 @@ function LiveView() {
   const { data: adsbData } = useQuery(adsbDetectionsQuery())
   const { preferences } = usePreferences()
 
-  const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null)
+  // One selection for the whole view — drone or manned, never both. See
+  // features/map/selection.ts for why that exclusion is structural.
+  const { selectedTrackId, selectedMannedIcao, selectTrack, selectManned } =
+    useContactSelection()
+
   const [mobilePane, setMobilePane] = useState<'map' | 'list'>('map')
 
   const tracks = tracksData?.tracks ?? []
@@ -68,7 +73,9 @@ function LiveView() {
           tracks={activeTracks}
           adsb={adsb}
           selectedTrackId={selectedTrackId}
-          onSelectTrack={setSelectedTrackId}
+          onSelectTrack={selectTrack}
+          selectedMannedIcao={selectedMannedIcao}
+          onSelectManned={selectManned}
           coverageBroken={!skyState.absenceIsEvidence}
         />
 
@@ -155,7 +162,9 @@ function LiveView() {
           showClosed={showClosed}
           adsb={adsb}
           selectedTrackId={selectedTrackId}
-          onSelectTrack={setSelectedTrackId}
+          onSelectTrack={selectTrack}
+          selectedMannedIcao={selectedMannedIcao}
+          onSelectManned={selectManned}
           className="min-h-0 flex-1"
         />
       </aside>
