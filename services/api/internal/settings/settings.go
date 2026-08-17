@@ -170,8 +170,14 @@ var Defs = []Def{
 		Default: "168h", Mutable: true, Doc: "how long raw detections are kept"},
 	{Key: "retention.tracks", Env: "CLASSG_RETENTION_TRACKS", Kind: KindDuration,
 		Default: "2160h", Mutable: true, Doc: "how long tracks are kept"},
+	{Key: "retention.telemetry", Env: "CLASSG_RETENTION_TELEMETRY", Kind: KindDuration,
+		Default: "336h", Mutable: true, Doc: "how long recorded host and sensor telemetry is kept"},
 	{Key: "retention.interval", Env: "CLASSG_RETENTION_INTERVAL", Kind: KindDuration,
 		Default: "1h", Mutable: true, Doc: "how often the retention job runs"},
+
+	// --- Telemetry
+	{Key: "telemetry.interval", Env: "CLASSG_TELEMETRY_INTERVAL", Kind: KindDuration,
+		Default: "1m", Mutable: true, Doc: "how often a host and sensor sample is recorded"},
 
 	// --- Capture
 	{Key: "capture.wifi_interface", Env: "CLASSG_WIFI_INTERFACE", Kind: KindString,

@@ -64,7 +64,7 @@ func TestShippedSchemaIsAllStatements(t *testing.T) {
 func TestSchemaDefinesTheExpectedTables(t *testing.T) {
 	// A table dropped from the schema would otherwise surface as a confusing
 	// "no such table" at runtime, on whichever query happened to run first.
-	for _, table := range []string{"tracks", "detections", "sensors", "captures", "config"} {
+	for _, table := range []string{"tracks", "detections", "sensors", "captures", "config", "telemetry"} {
 		if !strings.Contains(schemaSQL, "CREATE TABLE IF NOT EXISTS "+table) {
 			t.Fatalf("schema.sql no longer creates %q", table)
 		}

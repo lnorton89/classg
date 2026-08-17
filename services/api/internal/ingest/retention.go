@@ -18,7 +18,11 @@ type Retention struct {
 	Store      store.Store
 	Detections time.Duration
 	Tracks     time.Duration
-	Interval   time.Duration
+	// Telemetry is kept longer than detections by default: a sample is a few
+	// dozen bytes, and the questions it answers ("has free disk been sliding
+	// for a week") need a week to answer.
+	Telemetry time.Duration
+	Interval  time.Duration
 }
 
 func (r *Retention) Run(ctx context.Context) {
@@ -56,6 +60,13 @@ func (r *Retention) Sweep(ctx context.Context, now time.Time) {
 			slog.Error("purging tracks failed", "err", err)
 		} else if n > 0 {
 			slog.Info("retention: purged tracks", "rows", n, "older_than", r.Tracks)
+		}
+	}
+	if r.Telemetry > 0 {
+		if n, err := r.Store.PurgeTelemetry(ctx, now.Add(-r.Telemetry)); err != nil {
+			slog.Error("purging telemetry failed", "err", err)
+		} else if n > 0 {
+			slog.Info("retention: purged telemetry", "rows", n, "older_than", r.Telemetry)
 		}
 	}
 }

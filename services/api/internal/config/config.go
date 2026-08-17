@@ -94,6 +94,8 @@ type Config struct {
 
 	RetentionDetections time.Duration
 	RetentionTracks     time.Duration
+	RetentionTelemetry  time.Duration
+	TelemetryInterval   time.Duration
 	RetentionInterval   time.Duration
 
 	SensorWifiDir            string
@@ -224,6 +226,8 @@ func Assemble(b *Bootstrap, s *settings.Settings) (*Config, error) {
 
 		RetentionDetections: s.Duration("retention.detections"),
 		RetentionTracks:     s.Duration("retention.tracks"),
+		RetentionTelemetry:  s.Duration("retention.telemetry"),
+		TelemetryInterval:   s.Duration("telemetry.interval"),
 		RetentionInterval:   s.Duration("retention.interval"),
 
 		SensorWifiDir:            s.String("capture.sensor_wifi_dir"),

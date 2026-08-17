@@ -178,3 +178,21 @@ INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?)
 ON CONFLICT(key) DO UPDATE SET
     value      = excluded.value,
     updated_at = excluded.updated_at;
+
+-- name: InsertTelemetry :exec
+-- Ignores a duplicate timestamp rather than failing: two samplers, or a restart
+-- inside one sampling interval, must not take the api down.
+INSERT INTO telemetry (ts, cpu_temp_c, load1, mem_available_kb, disk_free_bytes, doc)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(ts) DO NOTHING;
+
+-- name: ListTelemetry :many
+-- Ascending, because every consumer is a chart and a chart reads left to right.
+SELECT ts, cpu_temp_c, load1, mem_available_kb, disk_free_bytes, doc
+FROM telemetry
+WHERE ts >= ? AND ts <= ?
+ORDER BY ts ASC
+LIMIT ?;
+
+-- name: PurgeTelemetry :execrows
+DELETE FROM telemetry WHERE ts < ?;

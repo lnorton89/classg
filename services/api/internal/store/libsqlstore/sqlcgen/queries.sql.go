@@ -203,6 +203,35 @@ func (q *Queries) InsertDetection(ctx context.Context, arg InsertDetectionParams
 	return err
 }
 
+const insertTelemetry = `-- name: InsertTelemetry :exec
+INSERT INTO telemetry (ts, cpu_temp_c, load1, mem_available_kb, disk_free_bytes, doc)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(ts) DO NOTHING
+`
+
+type InsertTelemetryParams struct {
+	Ts             string
+	CpuTempC       sql.NullFloat64
+	Load1          sql.NullFloat64
+	MemAvailableKb sql.NullInt64
+	DiskFreeBytes  sql.NullInt64
+	Doc            string
+}
+
+// Ignores a duplicate timestamp rather than failing: two samplers, or a restart
+// inside one sampling interval, must not take the api down.
+func (q *Queries) InsertTelemetry(ctx context.Context, arg InsertTelemetryParams) error {
+	_, err := q.db.ExecContext(ctx, insertTelemetry,
+		arg.Ts,
+		arg.CpuTempC,
+		arg.Load1,
+		arg.MemAvailableKb,
+		arg.DiskFreeBytes,
+		arg.Doc,
+	)
+	return err
+}
+
 const listCaptures = `-- name: ListCaptures :many
 SELECT doc FROM captures ORDER BY started_at DESC
 `
@@ -311,6 +340,51 @@ func (q *Queries) ListSensors(ctx context.Context) ([]Sensor, error) {
 			&i.Healthy,
 			&i.Reason,
 			&i.Detail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTelemetry = `-- name: ListTelemetry :many
+SELECT ts, cpu_temp_c, load1, mem_available_kb, disk_free_bytes, doc
+FROM telemetry
+WHERE ts >= ? AND ts <= ?
+ORDER BY ts ASC
+LIMIT ?
+`
+
+type ListTelemetryParams struct {
+	Ts    string
+	Ts_2  string
+	Limit int64
+}
+
+// Ascending, because every consumer is a chart and a chart reads left to right.
+func (q *Queries) ListTelemetry(ctx context.Context, arg ListTelemetryParams) ([]Telemetry, error) {
+	rows, err := q.db.QueryContext(ctx, listTelemetry, arg.Ts, arg.Ts_2, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Telemetry{}
+	for rows.Next() {
+		var i Telemetry
+		if err := rows.Scan(
+			&i.Ts,
+			&i.CpuTempC,
+			&i.Load1,
+			&i.MemAvailableKb,
+			&i.DiskFreeBytes,
+			&i.Doc,
 		); err != nil {
 			return nil, err
 		}
@@ -458,6 +532,18 @@ DELETE FROM detections WHERE ts < ?
 
 func (q *Queries) PurgeDetections(ctx context.Context, ts string) (int64, error) {
 	result, err := q.db.ExecContext(ctx, purgeDetections, ts)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const purgeTelemetry = `-- name: PurgeTelemetry :execrows
+DELETE FROM telemetry WHERE ts < ?
+`
+
+func (q *Queries) PurgeTelemetry(ctx context.Context, ts string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeTelemetry, ts)
 	if err != nil {
 		return 0, err
 	}

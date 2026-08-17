@@ -127,6 +127,38 @@ type SensorRecord struct {
 	Detail        map[string]any
 }
 
+// TelemetrySample is one moment of host and sensor state, recorded on a timer.
+//
+// Every host reading is a pointer because every one of them can be unreadable,
+// and a nil must survive all the way to the chart. Storing 0 for "could not
+// read the CPU temperature" would plot a cold Pi rather than a gap, which is
+// the same lie /system exists to refuse.
+type TelemetrySample struct {
+	TS             time.Time
+	CPUTempC       *float64
+	Load1          *float64
+	MemAvailableKB *int64
+	DiskFreeBytes  *int64
+	UptimeS        *int64
+	Sensors        []TelemetrySensor
+}
+
+// TelemetrySensor is one sensor's state at that moment. Metrics carries only
+// the keys named in internal/sensormetrics.
+type TelemetrySensor struct {
+	SensorID   string             `json:"sensor_id"`
+	SensorKind string             `json:"sensor_kind"`
+	Healthy    bool               `json:"healthy"`
+	Metrics    map[string]float64 `json:"metrics,omitempty"`
+}
+
+// TelemetryQuery bounds a read. Since and Until are inclusive.
+type TelemetryQuery struct {
+	Since time.Time
+	Until time.Time
+	Limit int
+}
+
 // Store is everything the API needs from persistence.
 type Store interface {
 	UpsertTrack(ctx context.Context, t model.Track) error
@@ -152,8 +184,12 @@ type Store interface {
 	GetConfig(ctx context.Context, key string) (json.RawMessage, error)
 	PutConfig(ctx context.Context, key string, value json.RawMessage) error
 
+	InsertTelemetry(ctx context.Context, s TelemetrySample) error
+	ListTelemetry(ctx context.Context, q TelemetryQuery) ([]TelemetrySample, error)
+
 	PurgeDetections(ctx context.Context, before time.Time) (int64, error)
 	PurgeTracks(ctx context.Context, before time.Time) (int64, error)
+	PurgeTelemetry(ctx context.Context, before time.Time) (int64, error)
 
 	Close() error
 }

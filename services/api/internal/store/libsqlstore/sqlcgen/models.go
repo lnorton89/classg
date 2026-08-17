@@ -41,6 +41,15 @@ type Sensor struct {
 	Detail        sql.NullString
 }
 
+type Telemetry struct {
+	Ts             string
+	CpuTempC       sql.NullFloat64
+	Load1          sql.NullFloat64
+	MemAvailableKb sql.NullInt64
+	DiskFreeBytes  sql.NullInt64
+	Doc            string
+}
+
 type Track struct {
 	TrackID        string
 	State          string

@@ -66,3 +66,29 @@ CREATE TABLE IF NOT EXISTS config (
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- Host and sensor readings over time.
+--
+-- /metrics exposes the current values, but nothing on a field unit scrapes it,
+-- so without this there is no history at all -- and the questions an operator
+-- actually has are historical. "Was it throttling when the adapter dropped off
+-- the bus?" cannot be answered by a number that only exists while you are
+-- looking at it.
+--
+-- Same shape as tracks and detections: the chartable host scalars are lifted
+-- into columns, and the whole sample -- including per-sensor counters, whose
+-- set changes as sensors learn new fields -- stays in `doc`.
+--
+-- The scalars are deliberately nullable. A reading the api could not take is
+-- NULL, never 0: a CPU temperature of zero plots as a cold Pi rather than as a
+-- gap, which is the same lie /system refuses to tell.
+CREATE TABLE IF NOT EXISTS telemetry (
+    ts               TEXT PRIMARY KEY,
+    cpu_temp_c       REAL,
+    load1            REAL,
+    mem_available_kb INTEGER,
+    disk_free_bytes  INTEGER,
+    doc              TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_telemetry_ts ON telemetry (ts DESC);

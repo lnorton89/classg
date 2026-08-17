@@ -64,6 +64,7 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("Config", func(t *testing.T) { testConfig(t, newStore) })
 	t.Run("Sensors", func(t *testing.T) { testSensors(t, newStore) })
 	t.Run("OperatorRoundTrip", func(t *testing.T) { testOperatorRoundTrip(t, newStore) })
+	t.Run("Telemetry", func(t *testing.T) { testTelemetry(t, newStore) })
 }
 
 func testTrackRoundTrip(t *testing.T, newStore Factory) {
@@ -484,4 +485,113 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// Telemetry's sharp edge is nullability. Every host reading can be unreadable,
+// and a store that turns a nil into 0 on the way through would put a cold Pi
+// on a chart instead of a gap -- silently, and only on the implementation that
+// did it.
+func testTelemetry(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	temp, load := 46.25, 0.69
+	mem, disk, up := int64(3409708), int64(92687323136), int64(12167)
+
+	full := store.TelemetrySample{
+		TS: base, CPUTempC: &temp, Load1: &load,
+		MemAvailableKB: &mem, DiskFreeBytes: &disk, UptimeS: &up,
+		Sensors: []store.TelemetrySensor{{
+			SensorID: "wifi-0", SensorKind: "wifi", Healthy: true,
+			Metrics: map[string]float64{"beacons": 15886, "listening_fraction": 0.74},
+		}},
+	}
+	// Everything unreadable: the shape a container that cannot see /sys gives.
+	empty := store.TelemetrySample{TS: base.Add(time.Minute)}
+
+	for _, sample := range []store.TelemetrySample{full, empty} {
+		if err := s.InsertTelemetry(ctx, sample); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A restart inside one sampling interval must not fail the api.
+	if err := s.InsertTelemetry(ctx, full); err != nil {
+		t.Fatalf("re-inserting an existing timestamp should be ignored, got %v", err)
+	}
+
+	got, err := s.ListTelemetry(ctx, store.TelemetryQuery{
+		Since: base.Add(-time.Hour), Until: base.Add(time.Hour), Limit: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 samples, got %d", len(got))
+	}
+	if !got[0].TS.Equal(base) {
+		t.Fatalf("samples must come back oldest first: %+v", got[0].TS)
+	}
+
+	if got[0].CPUTempC == nil || *got[0].CPUTempC != temp {
+		t.Fatalf("cpu_temp_c = %v, want %v", got[0].CPUTempC, temp)
+	}
+	if got[0].DiskFreeBytes == nil || *got[0].DiskFreeBytes != disk {
+		t.Fatalf("disk_free_bytes = %v, want %v", got[0].DiskFreeBytes, disk)
+	}
+	if got[0].UptimeS == nil || *got[0].UptimeS != up {
+		t.Fatalf("uptime_s = %v, want %v", got[0].UptimeS, up)
+	}
+	if len(got[0].Sensors) != 1 || got[0].Sensors[0].Metrics["beacons"] != 15886 {
+		t.Fatalf("sensor metrics lost: %+v", got[0].Sensors)
+	}
+
+	// The row that matters: nils must still be nils.
+	for name, v := range map[string]any{
+		"cpu_temp_c": got[1].CPUTempC, "load1": got[1].Load1,
+		"mem_available_kb": got[1].MemAvailableKB, "disk_free_bytes": got[1].DiskFreeBytes,
+		"uptime_s": got[1].UptimeS,
+	} {
+		if !isNilPtr(v) {
+			t.Fatalf("%s came back as %v; an unreadable figure must stay null", name, v)
+		}
+	}
+
+	// Windowing excludes what falls outside it.
+	narrow, err := s.ListTelemetry(ctx, store.TelemetryQuery{
+		Since: base.Add(30 * time.Second), Until: base.Add(time.Hour), Limit: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(narrow) != 1 {
+		t.Fatalf("want 1 sample inside the narrowed window, got %d", len(narrow))
+	}
+
+	n, err := s.PurgeTelemetry(ctx, base.Add(30*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("purged %d rows, want 1", n)
+	}
+	left, err := s.ListTelemetry(ctx, store.TelemetryQuery{
+		Since: base.Add(-time.Hour), Until: base.Add(time.Hour), Limit: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 1 {
+		t.Fatalf("want 1 sample left after the purge, got %d", len(left))
+	}
+}
+
+func isNilPtr(v any) bool {
+	switch p := v.(type) {
+	case *float64:
+		return p == nil
+	case *int64:
+		return p == nil
+	default:
+		return v == nil
+	}
 }

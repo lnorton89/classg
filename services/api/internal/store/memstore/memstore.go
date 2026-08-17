@@ -29,6 +29,7 @@ type Store struct {
 	captures   map[string]model.Capture
 	reports    map[string]json.RawMessage
 	config     map[string]json.RawMessage
+	telemetry  []store.TelemetrySample
 }
 
 func New() *Store {
@@ -349,3 +350,52 @@ func set(vals []string) map[string]bool {
 }
 
 var _ store.Store = (*Store)(nil)
+
+// Telemetry is kept as an ordered slice rather than a map: samples are appended
+// in time order, read as a range, and never looked up individually.
+func (s *Store) InsertTelemetry(_ context.Context, sample store.TelemetrySample) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Same rule as the ON CONFLICT DO NOTHING in SQL: a duplicate timestamp is
+	// a restart inside one sampling interval, not a reason to fail.
+	for _, existing := range s.telemetry {
+		if existing.TS.Equal(sample.TS) {
+			return nil
+		}
+	}
+	s.telemetry = append(s.telemetry, sample)
+	sort.Slice(s.telemetry, func(i, j int) bool { return s.telemetry[i].TS.Before(s.telemetry[j].TS) })
+	return nil
+}
+
+func (s *Store) ListTelemetry(_ context.Context, q store.TelemetryQuery) ([]store.TelemetrySample, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := []store.TelemetrySample{}
+	for _, sample := range s.telemetry {
+		if sample.TS.Before(q.Since) || sample.TS.After(q.Until) {
+			continue
+		}
+		if q.Limit > 0 && len(out) >= q.Limit {
+			break
+		}
+		out = append(out, sample)
+	}
+	return out, nil
+}
+
+func (s *Store) PurgeTelemetry(_ context.Context, before time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	kept := s.telemetry[:0]
+	var n int64
+	for _, sample := range s.telemetry {
+		if sample.TS.Before(before) {
+			n++
+			continue
+		}
+		kept = append(kept, sample)
+	}
+	s.telemetry = kept
+	return n, nil
+}

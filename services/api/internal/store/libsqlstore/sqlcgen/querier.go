@@ -29,14 +29,20 @@ type Querier interface {
 	GetConfig(ctx context.Context, key string) (string, error)
 	GetTrack(ctx context.Context, trackID string) (string, error)
 	InsertDetection(ctx context.Context, arg InsertDetectionParams) error
+	// Ignores a duplicate timestamp rather than failing: two samplers, or a restart
+	// inside one sampling interval, must not take the api down.
+	InsertTelemetry(ctx context.Context, arg InsertTelemetryParams) error
 	ListCaptures(ctx context.Context) ([]string, error)
 	ListDetections(ctx context.Context, arg ListDetectionsParams) ([]ListDetectionsRow, error)
 	ListSensors(ctx context.Context) ([]Sensor, error)
+	// Ascending, because every consumer is a chart and a chart reads left to right.
+	ListTelemetry(ctx context.Context, arg ListTelemetryParams) ([]Telemetry, error)
 	ListTrackDetections(ctx context.Context, arg ListTrackDetectionsParams) ([]ListTrackDetectionsRow, error)
 	// Keyset paging on (last_seen DESC, track_id DESC), matching idx_tracks_page.
 	// Offset paging would silently skip rows on a table being appended to.
 	ListTracks(ctx context.Context, arg ListTracksParams) ([]ListTracksRow, error)
 	PurgeDetections(ctx context.Context, ts string) (int64, error)
+	PurgeTelemetry(ctx context.Context, ts string) (int64, error)
 	PurgeTracks(ctx context.Context, lastSeen string) (int64, error)
 	PutCapture(ctx context.Context, arg PutCaptureParams) error
 	// doc is rewritten alongside the report because the analysis summary lives in

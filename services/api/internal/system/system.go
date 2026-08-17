@@ -91,10 +91,11 @@ type Options struct {
 	// DiskPath is the filesystem worth reporting -- the one detections land
 	// on, not the container's root.
 	DiskPath string
-	// procRoot and sysRoot exist so tests can point at fixtures. Empty means
-	// the real /proc and /sys.
-	procRoot string
-	sysRoot  string
+	// ProcRoot and SysRoot exist so tests can point at fixtures. Empty means
+	// the real /proc and /sys. Exported because the telemetry sampler is a
+	// second caller that needs to simulate a host it cannot read.
+	ProcRoot string
+	SysRoot  string
 }
 
 func Collect(opts Options) Info {
@@ -131,7 +132,7 @@ func collectRuntime(opts Options) Runtime {
 		UIDir:               opts.UIDir,
 		CaptureDir:          opts.CaptureDir,
 		TursoSyncConfigured: strings.TrimSpace(opts.TursoURL) != "",
-		Containerised:       containerised(opts.procRoot),
+		Containerised:       containerised(opts.ProcRoot),
 	}
 }
 
@@ -154,7 +155,7 @@ func collectHost(opts Options) Host {
 
 	// /proc/uptime reads the host's uptime even inside a container, which is
 	// what an operator means by "how long has the Pi been up".
-	if fields, err := readFields(path(opts.procRoot, "/proc", "uptime")); err == nil && len(fields) > 0 {
+	if fields, err := readFields(path(opts.ProcRoot, "/proc", "uptime")); err == nil && len(fields) > 0 {
 		if f, err := strconv.ParseFloat(fields[0], 64); err == nil {
 			v := int64(f)
 			h.UptimeS = &v
@@ -164,7 +165,7 @@ func collectHost(opts Options) Host {
 		h.Unavailable["uptime_s"] = "could not read /proc/uptime"
 	}
 
-	if fields, err := readFields(path(opts.procRoot, "/proc", "loadavg")); err == nil && len(fields) >= 3 {
+	if fields, err := readFields(path(opts.ProcRoot, "/proc", "loadavg")); err == nil && len(fields) >= 3 {
 		h.Load1 = parseFloat(fields[0])
 		h.Load5 = parseFloat(fields[1])
 		h.Load15 = parseFloat(fields[2])
@@ -173,7 +174,7 @@ func collectHost(opts Options) Host {
 		h.Unavailable["load"] = "could not read /proc/loadavg"
 	}
 
-	h.MemTotalKB, h.MemAvailableKB = readMeminfo(path(opts.procRoot, "/proc", "meminfo"))
+	h.MemTotalKB, h.MemAvailableKB = readMeminfo(path(opts.ProcRoot, "/proc", "meminfo"))
 	if h.MemTotalKB == nil {
 		h.Unavailable["memory"] = "could not read /proc/meminfo"
 	}
@@ -181,7 +182,7 @@ func collectHost(opts Options) Host {
 	// Millidegrees in thermal_zone0. Absent on anything that is not a Pi, and
 	// absent in a container that was not given /sys -- both are normal, so
 	// neither is an error.
-	if raw, err := os.ReadFile(path(opts.sysRoot, "/sys", "class/thermal/thermal_zone0/temp")); err == nil {
+	if raw, err := os.ReadFile(path(opts.SysRoot, "/sys", "class/thermal/thermal_zone0/temp")); err == nil {
 		if milli, err := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64); err == nil {
 			c := float64(milli) / 1000
 			h.CPUTempC = &c

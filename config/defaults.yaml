@@ -108,7 +108,14 @@ fusion:
 retention:
   detections: 168h   # 7 days: enough for parser debugging and incident review
   tracks: 2160h      # 90 days: trend and pattern analysis
+  telemetry: 336h    # 14 days: long enough to see disk or thermal drift
   interval: 1h       # how often the retention job runs
+
+# --- Telemetry -------------------------------------------------------------
+# Host and sensor readings recorded on a timer, because nothing scrapes
+# /metrics on a field unit and the useful questions are historical.
+telemetry:
+  interval: 1m       # ~10k rows a week, which is nothing for SQLite
 
 # --- Capture ---------------------------------------------------------------
 # Defaults for operator-initiated captures. The interface is deliberately not

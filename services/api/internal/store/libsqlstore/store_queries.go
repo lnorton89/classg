@@ -486,3 +486,91 @@ func (s *Store) PurgeTracks(ctx context.Context, before time.Time) (int64, error
 }
 
 var _ store.Store = (*Store)(nil)
+
+// telemetryDoc is the part of a sample kept as JSON rather than as columns:
+// the per-sensor set changes whenever a sensor learns a new field, and
+// normalising it would mean a schema change every time.
+type telemetryDoc struct {
+	UptimeS *int64                  `json:"uptime_s,omitempty"`
+	Sensors []store.TelemetrySensor `json:"sensors,omitempty"`
+}
+
+func (s *Store) InsertTelemetry(ctx context.Context, sample store.TelemetrySample) error {
+	doc, err := json.Marshal(telemetryDoc{UptimeS: sample.UptimeS, Sensors: sample.Sensors})
+	if err != nil {
+		return fmt.Errorf("insert telemetry: %w", err)
+	}
+	return s.q.InsertTelemetry(ctx, sqlcgen.InsertTelemetryParams{
+		Ts:             toDB(sample.TS),
+		CpuTempC:       nullFloatOf(sample.CPUTempC),
+		Load1:          nullFloatOf(sample.Load1),
+		MemAvailableKb: nullIntOf(sample.MemAvailableKB),
+		DiskFreeBytes:  nullIntOf(sample.DiskFreeBytes),
+		Doc:            string(doc),
+	})
+}
+
+func (s *Store) ListTelemetry(ctx context.Context, q store.TelemetryQuery) ([]store.TelemetrySample, error) {
+	rows, err := s.q.ListTelemetry(ctx, sqlcgen.ListTelemetryParams{
+		Ts:    toDB(q.Since),
+		Ts_2:  toDB(q.Until),
+		Limit: int64(q.Limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list telemetry: %w", err)
+	}
+	out := make([]store.TelemetrySample, 0, len(rows))
+	for _, row := range rows {
+		sample := store.TelemetrySample{
+			TS:             fromDB(row.Ts),
+			CPUTempC:       floatFromDB(row.CpuTempC),
+			Load1:          floatFromDB(row.Load1),
+			MemAvailableKB: intFromDB(row.MemAvailableKb),
+			DiskFreeBytes:  intFromDB(row.DiskFreeBytes),
+		}
+		var doc telemetryDoc
+		// A sample whose doc will not parse still has usable host columns, and
+		// dropping the row would put a hole in a chart for a reason that has
+		// nothing to do with the reading.
+		if err := json.Unmarshal([]byte(row.Doc), &doc); err == nil {
+			sample.UptimeS = doc.UptimeS
+			sample.Sensors = doc.Sensors
+		}
+		out = append(out, sample)
+	}
+	return out, nil
+}
+
+func (s *Store) PurgeTelemetry(ctx context.Context, before time.Time) (int64, error) {
+	return s.q.PurgeTelemetry(ctx, toDB(before))
+}
+
+func nullFloatOf(v *float64) sql.NullFloat64 {
+	if v == nil {
+		return sql.NullFloat64{}
+	}
+	return sql.NullFloat64{Float64: *v, Valid: true}
+}
+
+func nullIntOf(v *int64) sql.NullInt64 {
+	if v == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: *v, Valid: true}
+}
+
+func floatFromDB(v sql.NullFloat64) *float64 {
+	if !v.Valid {
+		return nil
+	}
+	f := v.Float64
+	return &f
+}
+
+func intFromDB(v sql.NullInt64) *int64 {
+	if !v.Valid {
+		return nil
+	}
+	i := v.Int64
+	return &i
+}

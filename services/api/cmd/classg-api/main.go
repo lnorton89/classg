@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +33,8 @@ import (
 	"github.com/classg/api/internal/store"
 	"github.com/classg/api/internal/store/libsqlstore"
 	"github.com/classg/api/internal/store/memstore"
+	"github.com/classg/api/internal/system"
+	"github.com/classg/api/internal/telemetry"
 )
 
 func main() {
@@ -215,7 +218,24 @@ func run() error {
 		Store:      st,
 		Detections: cfg.RetentionDetections,
 		Tracks:     cfg.RetentionTracks,
+		Telemetry:  cfg.RetentionTelemetry,
 		Interval:   cfg.RetentionInterval,
+	}).Run(ctx)
+	// Records what /metrics only ever exposes live. Nothing scrapes a field
+	// unit, so without this there is no history to look back at.
+	go (&telemetry.Sampler{
+		Store:    st,
+		Registry: registry,
+		System: system.Options{
+			Version:    cfg.Version,
+			Listen:     cfg.Listen,
+			Store:      cfg.Store,
+			UIDir:      cfg.UIDir,
+			CaptureDir: cfg.CaptureDir,
+			TursoURL:   cfg.TursoURL,
+			DiskPath:   filepath.Dir(cfg.DBPath),
+		},
+		Interval: cfg.TelemetryInterval,
 	}).Run(ctx)
 	go (&ingest.StaleTrackCloser{
 		Store: st,

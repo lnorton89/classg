@@ -50,7 +50,7 @@ func TestReadsHostFiguresFromProcAndSys(t *testing.T) {
 		"sys/class/thermal/thermal_zone0/temp": "42842\n",
 	})
 
-	h := collectHost(Options{procRoot: procRoot, sysRoot: sysRoot})
+	h := collectHost(Options{ProcRoot: procRoot, SysRoot: sysRoot})
 
 	if h.UptimeS == nil || *h.UptimeS != 11779 {
 		t.Fatalf("uptime_s = %v, want 11779", h.UptimeS)
@@ -80,7 +80,7 @@ func TestReadsHostFiguresFromProcAndSys(t *testing.T) {
 func TestUnreadableFiguresAreNullWithAReason(t *testing.T) {
 	procRoot, sysRoot := fixtures(t, nil) // empty roots: nothing readable
 
-	h := collectHost(Options{procRoot: procRoot, sysRoot: sysRoot})
+	h := collectHost(Options{ProcRoot: procRoot, SysRoot: sysRoot})
 
 	for name, got := range map[string]any{
 		"uptime_s":         h.UptimeS,
@@ -107,7 +107,7 @@ func TestUnreadableFiguresAreNullWithAReason(t *testing.T) {
 func TestThrottledIsAlwaysReportedUnavailable(t *testing.T) {
 	procRoot, sysRoot := fixtures(t, map[string]string{"uptime": "1 1\n"})
 
-	h := collectHost(Options{procRoot: procRoot, sysRoot: sysRoot})
+	h := collectHost(Options{ProcRoot: procRoot, SysRoot: sysRoot})
 
 	reason := h.Unavailable["throttled"]
 	if reason == "" {
