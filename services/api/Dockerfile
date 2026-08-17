@@ -1,4 +1,4 @@
-FROM golang:1.26-bookworm AS build
+FROM golang:1.26.6-bookworm AS build
 WORKDIR /src/services/api
 
 COPY services/api/go.mod services/api/go.sum ./
@@ -12,7 +12,7 @@ RUN CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o /out/classg-api ./cmd/c
 # Deliberately placed BEFORE the production stage. `docker build` with no
 # --target builds the LAST stage, so putting dev at the end would silently turn
 # every production build into a dev image.
-FROM golang:1.26-bookworm AS dev
+FROM golang:1.26.6-bookworm AS dev
 WORKDIR /src/services/api
 RUN go install github.com/air-verse/air@latest
 # CGO stays on: go-libsql needs it (ADR-0006).
