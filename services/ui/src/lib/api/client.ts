@@ -11,6 +11,14 @@
  */
 import type {
   ApiErrorBody,
+  AuthMe,
+  AuthUser,
+  CreateUserRequest,
+  LoginRequest,
+  SessionsResponse,
+  SetupRequest,
+  UpdateUserRequest,
+  UsersResponse,
   Capture,
   CaptureReport,
   CapturesResponse,
@@ -93,7 +101,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
 
-  const response = await fetch(`${API_BASE}${path}`, { ...init, headers })
+  // credentials explicitly, not by default. Same-origin is what fetch already
+  // does, but the session cookie is now load-bearing and 'omit' — which is what
+  // a cross-origin VITE_API_BASE would silently fall back to — logs every
+  // request out. Stating it means a future base-URL change fails visibly.
+  const response = await fetch(`${API_BASE}${path}`, {
+    credentials: 'same-origin',
+    ...init,
+    headers,
+  })
 
   if (!response.ok) {
     let body: unknown = null
@@ -240,6 +256,70 @@ export const api = {
         cursor: query.cursor,
       })}`,
     )
+  },
+
+  // --- auth ---
+
+  authMe(): Promise<AuthMe> {
+    return request<AuthMe>('/auth/me')
+  },
+
+  login(body: LoginRequest): Promise<AuthMe> {
+    return request<AuthMe>('/auth/login', { method: 'POST', body: JSON.stringify(body) })
+  },
+
+  logout(): Promise<void> {
+    return request<undefined>('/auth/logout', { method: 'POST' })
+  },
+
+  setupFirstAdmin(body: SetupRequest): Promise<AuthMe> {
+    return request<AuthMe>('/auth/setup', { method: 'POST', body: JSON.stringify(body) })
+  },
+
+  changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    return request<undefined>('/auth/password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    })
+  },
+
+  /**
+   * Where to send the browser to start SSO. A full navigation, not a fetch:
+   * the provider redirects back with a code, and an XHR cannot follow that.
+   */
+  ssoStartUrl(returnTo: string): string {
+    return `${API_BASE}/auth/sso/start${buildQuery({ return: returnTo })}`
+  },
+
+  users(): Promise<UsersResponse> {
+    return request<UsersResponse>('/admin/users')
+  },
+
+  createUser(body: CreateUserRequest): Promise<AuthUser> {
+    return request<AuthUser>('/admin/users', { method: 'POST', body: JSON.stringify(body) })
+  },
+
+  updateUser(userId: string, body: UpdateUserRequest): Promise<AuthUser> {
+    return request<AuthUser>(`/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    })
+  },
+
+  deleteUser(userId: string): Promise<void> {
+    return request<undefined>(`/admin/users/${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    })
+  },
+
+  sessions(): Promise<SessionsResponse> {
+    return request<SessionsResponse>('/admin/sessions')
+  },
+
+  revokeSession(sessionId: string): Promise<void> {
+    return request<undefined>(`/admin/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'DELETE',
+    })
   },
 
   spectrumBands(): Promise<SpectrumBandsResponse> {

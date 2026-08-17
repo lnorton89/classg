@@ -23,6 +23,8 @@ import { SystemStatusPill, StreamStatusPill } from '@/features/health/components
 import { RecordingIndicator } from '@/features/monitoring/recording-indicator'
 import { TrackAlerts } from '@/features/monitoring/track-alerts'
 import { NotificationsDrawer } from '@/features/notifications/notifications-drawer'
+import { AccountMenu } from '@/features/auth/account-menu'
+import { AuthGate } from '@/features/auth/auth-gate'
 import { AppUpdateBanner, OfflineBanner } from '@/features/offline/offline-banner'
 import { cn } from '@/lib/cn'
 
@@ -145,6 +147,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             {/* Visible at every width, including mobile: the bottom bar is full
                 at five pages, and settings is the one destination that has to
                 stay reachable without one. */}
+            <AccountMenu />
             <SettingsButton />
           </div>
         </div>
@@ -183,8 +186,12 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* safe-pb-nav clears the fixed mobile nav and the home indicator under
           it; it collapses to 0 at md, where the nav moves into the header. */}
+      {/* AuthGate is inside <main> rather than around the whole shell, so the
+          login and setup screens keep the header, the offline banner and the
+          logo. A bare form on a blank page looks like a different application,
+          and on a field unit that reads as "something is broken". */}
       <main id="main" className="safe-pb-nav flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {children}
+        <AuthGate>{children}</AuthGate>
       </main>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />

@@ -19,6 +19,9 @@ export const queryKeys = {
   trackDetections: (trackId: string) => ['tracks', 'detections', trackId] as const,
   detections: (query: DetectionsQuery = {}) => ['detections', query] as const,
   captures: ['captures'] as const,
+  authMe: ['auth', 'me'] as const,
+  users: ['admin', 'users'] as const,
+  sessions: ['admin', 'sessions'] as const,
   spectrumBands: ['spectrum', 'bands'] as const,
   spectrumSweeps: ['spectrum', 'sweeps'] as const,
   spectrumSweep: (id: string, bins: number) => ['spectrum', 'sweep', id, bins] as const,
@@ -129,6 +132,41 @@ export const adsbDetectionsQuery = () =>
     queryKey: queryKeys.detections({ class: ['D'], limit: 200 }),
     queryFn: () => api.detections({ class: ['D'], limit: 200 }),
     staleTime: Infinity,
+  })
+
+/**
+ * Who is logged in, and whether anyone needs to be.
+ *
+ * The root of the whole app: every route waits on it, because until it answers
+ * there is no way to know whether to draw the app, a login form, or the
+ * first-run setup screen. Refetched on window focus so a session that expired
+ * while the laptop was shut is noticed on the way back rather than at the next
+ * failed action.
+ */
+export const authMeQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.authMe,
+    queryFn: () => api.authMe(),
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+    // Never retried. A 401 is a definite answer, and retrying it three times
+    // just delays the login screen.
+    retry: false,
+  })
+
+export const usersQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.users,
+    queryFn: () => api.users(),
+    staleTime: 10_000,
+  })
+
+export const sessionsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.sessions,
+    queryFn: () => api.sessions(),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
   })
 
 /**

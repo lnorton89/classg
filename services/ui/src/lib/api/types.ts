@@ -500,3 +500,106 @@ export interface SpectrumSweepsResponse {
 export interface StartSweepRequest {
   band: string
 }
+
+// --- Auth -----------------------------------------------------------------
+
+/** Ordered: viewer < operator < admin. */
+export type Role = 'viewer' | 'operator' | 'admin'
+
+// Indexed by plain string, not by Role, so the undefined checks below are real
+// rather than something the compiler proves away. The API is the source of
+// truth for what roles exist, and a client that hard-assumes it knows all of
+// them would treat a future role as valid by accident.
+const ROLE_RANK: Record<string, number | undefined> = {
+  viewer: 1,
+  operator: 2,
+  admin: 3,
+}
+
+/**
+ * Whether `have` satisfies a requirement for `need`.
+ *
+ * An unknown role satisfies nothing. This is the client half of the same rule
+ * the API enforces — used only to decide what to *draw*, never as the actual
+ * gate. Hiding a button is a courtesy; the API refusing the request is the
+ * security.
+ */
+export function roleAtLeast(have: Role | undefined, need: Role): boolean {
+  if (!have) return false
+  const a = ROLE_RANK[have]
+  const b = ROLE_RANK[need]
+  return a !== undefined && b !== undefined && a >= b
+}
+
+export interface AuthUser {
+  user_id: string
+  username: string
+  display_name?: string
+  role: Role
+  disabled: boolean
+  created_at: string
+  updated_at: string
+  last_login_at?: string
+  /** Non-empty on an SSO account. Such an account has no password. */
+  issuer?: string
+  subject?: string
+}
+
+export interface SsoProvider {
+  id: string
+  label: string
+}
+
+export interface AuthMe {
+  authenticated: boolean
+  auth_enabled: boolean
+  setup_required: boolean
+  user?: AuthUser
+  providers?: SsoProvider[]
+}
+
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
+export interface SetupRequest {
+  username: string
+  display_name?: string
+  password: string
+}
+
+export interface CreateUserRequest {
+  username: string
+  display_name?: string
+  password: string
+  role: Role
+}
+
+export interface UpdateUserRequest {
+  role?: Role
+  display_name?: string
+  disabled?: boolean
+  password?: string
+}
+
+export interface UsersResponse {
+  users: AuthUser[]
+}
+
+export interface AuthSession {
+  session_id: string
+  user_id: string
+  username: string
+  created_at: string
+  expires_at: string
+  last_seen: string
+  user_agent?: string
+  ip?: string
+  /** The browser this page is running in. */
+  current: boolean
+}
+
+export interface SessionsResponse {
+  sessions: AuthSession[]
+}
