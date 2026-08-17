@@ -12,17 +12,27 @@ corpus from Milestone 0 is the foundation for everything after it.
 
 Everything downstream is built against these captures. Do not skip ahead.
 
-- [ ] Pi OS install, kernel ≥ 5.18 verified (`uname -r`)
-- [ ] AWUS036AXML enumerates, firmware loads, **passive** monitor mode holds for 1 hour
-- [ ] `btusb` disabled per the MT7921 Wi-Fi/BT conflict
-- [ ] RTL-SDR V4 working with the **rtl-sdr-blog driver fork** (stock librtlsdr will not do)
-- [ ] `dvb_usb_rtl28xxu` blacklisted
+- [x] Pi OS install, kernel ≥ 5.18 verified (`uname -r`) — Bookworm, 6.12.96
+- [x] AWUS036AXML enumerates, firmware loads, **passive** monitor mode holds for 1 hour — held 4 h 11 min on the Pi, 2026-08-16
+- [x] `btusb` disabled per the MT7921 Wi-Fi/BT conflict
+- [x] RTL-SDR V4 working with the **rtl-sdr-blog driver fork** (stock librtlsdr will not do) — R828D recognised, 0 samples per million lost
+- [x] `dvb_usb_rtl28xxu` blacklisted
 - [ ] Both radios stable simultaneously for 1 hour — this is the USB power test
-- [ ] **Capture DJI power-on → hover → land as PCAP**
-- [ ] Manually confirm in Wireshark: IE 221 present, OUI `26:37:12` and/or `FA:0B:BC`
-- [ ] Record which **channel** the DJI actually beacons on
-- [ ] Record beacon **interval** — verify the ~1 Hz assumption
-- [ ] `dump1090` decoding real aircraft
+- [x] **Capture DJI power-on → hover → land as PCAP** — `captures/20260810-141223-dji-first-flight.pcap`
+- [x] Manually confirm in Wireshark: IE 221 present, OUI `26:37:12` and/or `FA:0B:BC` — F3411 `fa:0b:bc` present, `26:37:12` absent for this aircraft
+- [x] Record which **channel** the DJI actually beacons on — channel 6, 176 drone beacons
+- [x] Record beacon **interval** — verify the ~1 Hz assumption — 240 ms median, ~4.17 Hz; the 1 Hz assumption was wrong
+- [x] `dump1090` decoding real aircraft — `captures/20260811-113000-adsb-frames-avr.txt`
+
+The USB power test is the one item still open, and it is not a formality. On
+2026-08-16 the AWUS036AXML dropped off the bus after 4 h 11 min alongside the
+SDR, with no undervoltage recorded (`throttled=0x0`) — so a clean disconnect
+rather than the brownout [01-pi-setup](../ops/01-pi-setup.md) warns about.
+Cause unestablished. Run the hour deliberately, with both radios streaming,
+before trusting a field deployment.
+
+`dump1090` proved the decode path on the previous host; it is **not installed
+on the Pi**, which is the first task of Milestone 2 rather than a gap here.
 
 **Exit criterion:** a PCAP in `captures/` containing verified drone beacons, and a written
 note of the drone's model, firmware version, observed channel, and beacon rate.
@@ -109,12 +119,19 @@ both transports produces exactly **one** track, not two.
 
 ## Milestone 5 — Operational hardening
 
-- [ ] systemd units with bounded restart backoff
+- [x] systemd units with bounded restart backoff — [deploy/systemd](../../deploy/systemd), rendered per checkout
 - [ ] libSQL/Turso storage, retention jobs, **separate operator-location store, never synced**
 - [ ] Prometheus metrics, including hopper efficiency
 - [ ] Offline tile server for field deployment
-- [ ] Docker Compose for the web tier
+- [x] Docker Compose for the web tier — fusion, api and ui, `restart: unless-stopped`
 - [ ] Config validation on startup with clear errors
+
+Bookworm ships systemd 252, which has no `RestartSteps`, so the backoff is
+bounded rather than escalating: five failures inside five minutes and the unit
+stops in `failed`, where `systemctl status` and the dashboard both show it.
+Proven twice on 2026-08-16 — once by killing the process (restarted, one
+`NRestarts`), once by the adapter genuinely vanishing (retried, gave up, and
+the API reported `status: down` with the reason rather than a quiet sky).
 
 ---
 
