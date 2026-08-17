@@ -77,11 +77,57 @@ it is not a transmitter, and the receive-only property of the project is unaffec
 
 ```bash
 sudo apt install -y dump1090-mutability
-dump1090 --interactive --net
+sudo usermod -aG plugdev dump1090      # see below -- it will not work without this
+sudo systemctl restart dump1090-mutability
 ```
 
-Web view at `http://<pi>:8080`. Validate against [adsb.lol](https://adsb.lol) or FlightRadar24
-for the same aircraft before trusting decodes.
+The Debian package installs a service that starts on boot and owns the radio;
+there is no bare `dump1090` binary to run by hand, and starting a second one
+would only fight the first for the device.
+
+**It runs as its own `dump1090` user, which is not in `plugdev`.** The rtl-sdr
+udev rule grants `MODE="0660" GROUP="plugdev"`, so out of the box the service
+starts, reports `usb_open error -3`, and then sits there *running perfectly
+happily with no radio at all* — `systemctl is-active` says `active` and nothing
+else complains. Add the user to the group; do not widen the udev rule to 0666,
+which hands the radio to every local user on the box.
+
+Web view at `http://<pi>/dump1090`, served through lighttpd. **Not port 8080** —
+that is the ClassG UI, and following an 8080 link here shows you the wrong
+application entirely. The JSON underneath is what to check:
+
+```bash
+curl -s http://127.0.0.1/dump1090/data/aircraft.json    # what it can see now
+curl -s http://127.0.0.1/dump1090/data/stats.json       # how well it hears
+```
+
+In `stats.json`, `local.accepted` is what the antenna heard and
+`remote.accepted` is anything fed in over the network — keep them apart when
+judging reception.
+
+**Reception is bursty, so do not diagnose it from one short window.** Six
+minutes can pass with `peak_signal` equal to `noise`, zero aircraft, and no SBS
+output at all, and look exactly like a dead antenna; then an aircraft crosses
+and 120 messages arrive at once. If you want to know whether the antenna is
+connected at all, sweep the FM broadcast band instead — it is strong
+everywhere, and `rtl_power -f 88M:108M:100k -g 30 -i 8 -1 fm.csv` will show
+tens of dB between floor and peaks if the feedline is good.
+
+Validate against [adsb.lol](https://adsb.lol) or FlightRadar24 for the same
+aircraft before trusting decodes.
+
+### Replaying a capture instead of waiting for an aircraft
+
+dump1090 accepts raw AVR frames on port 30001 and emits SBS-1 on 30003, so a
+saved capture exercises the whole decode path with no radio and no traffic:
+
+```bash
+nc 127.0.0.1 30003 > /tmp/sbs.txt &          # listen for decoded output
+nc 127.0.0.1 30001 < captures/<file>-avr.txt # feed the frames in
+```
+
+Expect far fewer SBS lines than input frames — most raw frames fail CRC, which
+is the filter doing its job.
 
 A **filtered 1090 MHz LNA** (~$40) makes the difference between intermittent and reliable
 reception. Highest-value SDR accessory for this project.
