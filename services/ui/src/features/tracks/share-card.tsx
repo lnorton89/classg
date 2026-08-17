@@ -52,7 +52,7 @@ const INNER = CARD_WIDTH - PAD * 2
 
 /** Long identifiers must not run off the card; step the size down instead. */
 function fitSize(text: string, base: number, perChar: number, max: number): number {
-  const estimated = (max / Math.max(1, text.length)) / perChar
+  const estimated = max / Math.max(1, text.length) / perChar
   return Math.max(18, Math.min(base, estimated))
 }
 
@@ -110,17 +110,7 @@ function Mark({ x, y, size }: { x: number; y: number; size: number }) {
   )
 }
 
-function Stat({
-  x,
-  y,
-  label,
-  value,
-}: {
-  x: number
-  y: number
-  label: string
-  value: string
-}) {
+function Stat({ x, y, label, value }: { x: number; y: number; label: string; value: string }) {
   return (
     <>
       <text x={x} y={y} fontFamily={SANS} fontSize="42" fontWeight="800" fill={C.fog}>
@@ -172,14 +162,7 @@ function Row({
       >
         {value}
       </text>
-      <line
-        x1={x}
-        x2={x + width}
-        y1={y + 16}
-        y2={y + 16}
-        stroke={C.edge}
-        strokeWidth="1"
-      />
+      <line x1={x} x2={x + width} y1={y + 16} y2={y + 16} stroke={C.edge} strokeWidth="1" />
     </>
   )
 }
@@ -192,7 +175,13 @@ function Row({
  * calibration record puts a Mini 5 Pro at about -35 dBm at 10 m — so it is
  * labelled in dBm and never converted into a range in metres.
  */
-function SignalPlot({ model, x, y, w, h }: {
+function SignalPlot({
+  model,
+  x,
+  y,
+  w,
+  h,
+}: {
   model: ShareCardModel
   x: number
   y: number
@@ -246,9 +235,7 @@ function SignalPlot({ model, x, y, w, h }: {
           ))}
           <polyline
             points={signal.points
-              .map(
-                (p) => `${(x + p.x * w).toFixed(1)},${(plotTop + p.y * plotH).toFixed(1)}`,
-              )
+              .map((p) => `${(x + p.x * w).toFixed(1)},${(plotTop + p.y * plotH).toFixed(1)}`)
               .join(' ')}
             fill="none"
             stroke={C.cyan}
@@ -256,13 +243,7 @@ function SignalPlot({ model, x, y, w, h }: {
             strokeLinejoin="round"
             strokeLinecap="round"
           />
-          <text
-            x={x}
-            y={y + h - 6}
-            fontFamily={SANS}
-            fontSize="18"
-            fill={C.dim}
-          >
+          <text x={x} y={y + h - 6} fontFamily={SANS} fontSize="18" fill={C.dim}>
             Higher is a stronger signal — a rough proxy for how close it was, not a range.
           </text>
         </>

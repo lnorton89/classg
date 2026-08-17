@@ -105,7 +105,7 @@ export async function renderCardToPngBlob(
  */
 export function cardFilename(title: string, lastSeen: string | null): string {
   const safe = title.replace(/[^a-zA-Z0-9-]+/g, '-').replace(/^-+|-+$/g, '') || 'track'
-  const stamp = lastSeen ? (lastSeen.slice(0, 19).replace(/[:T]/g, '-') || 'unknown') : 'unknown'
+  const stamp = lastSeen ? lastSeen.slice(0, 19).replace(/[:T]/g, '-') || 'unknown' : 'unknown'
   return `classg-${safe}-${stamp}.png`
 }
 

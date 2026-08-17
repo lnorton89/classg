@@ -315,6 +315,13 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: services/api/go.mod
+          # go.mod says `go 1.26`, and without this the action is happy with
+          # whatever 1.26.x the runner image already has. Most of the findings
+          # this job reports are standard-library ones fixed in a patch release,
+          # so a stale toolchain makes it fail on a vulnerability that a current
+          # Go does not have -- as GO-2026-6089 and GO-2026-6090 did, both fixed
+          # in 1.26.6 while the runner sat on 1.26.5.
+          check-latest: true
           # This job builds both Go modules, so the cache key has to cover both
           # go.sums. Without this the action looks for a dependency file at the
           # repo root, finds none, and skips the restore -- the job still passes,

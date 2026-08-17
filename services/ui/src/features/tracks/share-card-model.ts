@@ -196,9 +196,7 @@ function downsample<T>(items: T[], limit: number): T[] {
 }
 
 export function buildPath(history: Position[]): CardPath | null {
-  const points = history.filter(
-    (p) => Number.isFinite(p.lat) && Number.isFinite(p.lon),
-  )
+  const points = history.filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon))
   if (points.length < 2) return null
 
   const sampled = downsample(points, MAX_PATH_POINTS)
@@ -274,12 +272,10 @@ export function buildShareCardModel(
   // The path sketch survives redaction on purpose: it is normalised to its own
   // bounding box with no basemap, north arrow, or origin, so it describes the
   // SHAPE of a flight without placing it anywhere on earth.
-  const coordinates =
-    redacted || !current ? null : formatLatLon(current.lat, current.lon)
+  const coordinates = redacted || !current ? null : formatLatLon(current.lat, current.lon)
 
   return {
-    title:
-      track.identity?.serial ?? track.identity?.macs?.[0] ?? track.track_id,
+    title: track.identity?.serial ?? track.identity?.macs?.[0] ?? track.track_id,
     trackId: track.track_id,
     state: track.state,
     vendor: track.identity?.vendor ?? EMPTY,
