@@ -207,6 +207,29 @@ Full track including `history`. `404` if unknown.
 ### `GET /tracks/{track_id}/detections`
 Detections that fed this track, newest first. Same paging params.
 
+### `GET /tracks/{track_id}/export`
+
+One track's flight path as a downloadable file, so it can be opened in Google Earth, QGIS or a
+spreadsheet rather than only in this UI. Responds with `Content-Disposition: attachment` and a
+filename of `classg-<track_id>.<ext>`.
+
+| `format` | Content-Type | Contents |
+|---|---|---|
+| `geojson` *(default)* | `application/geo+json` | `FeatureCollection`: a `LineString` of the flight path with track metadata in `properties` |
+| `csv` | `text/csv` | One row per position — `track_id, at, lat, lon, alt_geodetic_m, height_agl_m, speed_mps, track_deg` |
+| `kml` | `application/vnd.google-earth.kml+xml` | A `Placemark` `LineString` at `altitudeMode: absolute` |
+
+**Operator location obeys `CLASSG_EXPOSE_OPERATOR_LOCATION` in every format.** An export is a
+file that leaves the unit, so redaction is applied once before any formatter runs rather than
+per format — a gate applied per formatter is a gate somebody forgets on the fourth one.
+
+GeoJSON coordinates are `[lon, lat, alt]`, the reverse of how the rest of this contract writes a
+position. Getting it backwards is the standard way to produce an export that plots in the sea.
+
+Absent measurements are **empty** in CSV, never `0` — a spreadsheet averaging a column of
+altitudes must not be handed sea level for the fixes that never carried one. A track with no
+positions still exports its metadata, because an empty file reads as a failed export.
+
 ---
 
 ## Detections
