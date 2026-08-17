@@ -74,6 +74,34 @@ it counts like any other, so one that worked and then went quiet still degrades 
 empty map with all sensors healthy. This is the single most important thing the interface
 communicates.
 
+### `GET /metrics`
+
+Prometheus exposition of the same `Report` `/health` returns, so the two can never disagree
+about whether a sensor is alive. Deliberately **not** under `/api/v1`: scrapers default to
+`/metrics`, and the error envelope means nothing to one.
+
+```
+classg_status{status="ok"} 1
+classg_uptime_seconds 35727
+classg_sensor_healthy{sensor_id="wifi-0",sensor_kind="wifi"} 1
+classg_sensor_heartbeat_age_seconds{sensor_id="wifi-0",sensor_kind="wifi"} 2
+classg_wifi_listening_fraction{sensor_id="wifi-0"} 0.9312
+classg_sdr_dump1090_connected{sensor_id="sdr-0"} 1
+```
+
+`classg_wifi_listening_fraction` is the roadmap's hopper efficiency: the share of wall clock
+spent receiving rather than retuning.
+
+`classg_sensor_heartbeat_age_seconds` is **absent**, not zero, for a sensor that has never
+reported — zero would read as "heard from just now", which is the inversion `/health` exists
+to prevent.
+
+Sensor `detail` is exported through an **allowlist**, never wholesale. `detail` is whatever a
+sensor chose to publish, `/metrics` is the endpoint most likely to be scraped into somebody
+else's database, and [ADR-0006](adr/0006-operator-location-retention.md) makes the operator's
+position the one field that must never leave the unit by accident. A key that is not named in
+`sensorDetailMetrics` is not exported, and a test enforces it.
+
 ---
 
 ## Tracks

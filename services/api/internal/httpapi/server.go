@@ -90,6 +90,12 @@ func (s *Server) routes() http.Handler {
 
 	h("GET "+BasePath+"/health", s.handleHealth)
 
+	// Not under /api/v1: every scraper in existence defaults to /metrics, and
+	// the contract's error envelope has no meaning to one. A more specific
+	// pattern than "/" wins in ServeMux, so this takes precedence over the web
+	// app without the static handler needing to know.
+	h("GET /metrics", s.handleMetrics)
+
 	h("GET "+BasePath+"/tracks", s.handleListTracks)
 	h("GET "+BasePath+"/tracks/{track_id}", s.handleGetTrack)
 	h("GET "+BasePath+"/tracks/{track_id}/detections", s.handleTrackDetections)

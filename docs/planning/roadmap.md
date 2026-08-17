@@ -151,7 +151,7 @@ both transports produces exactly **one** track, not two.
 
 - [x] systemd units with bounded restart backoff — [deploy/systemd](../../deploy/systemd), rendered per checkout
 - [ ] libSQL/Turso storage, retention jobs, **separate operator-location store, never synced**
-- [ ] Prometheus metrics, including hopper efficiency
+- [x] Prometheus metrics, including hopper efficiency — `GET /metrics`, hand-written exposition off the same report `/health` returns; sensor `detail` exported through an allowlist so ADR-0006 data cannot leak into a scrape
 - [ ] Offline tile server for field deployment
 - [x] Docker Compose for the web tier — fusion, api and ui, `restart: unless-stopped`
 - [ ] Config validation on startup with clear errors
