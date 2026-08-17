@@ -38,6 +38,12 @@ that mark, so the cause stays unestablished and a soak past 4 h 11 min remains
 the test that would actually settle it. Treat the box above as "the stated hour
 passed", not as "the bus is trusted".
 
+[`scripts/usb-soak.sh`](../../scripts/usb-soak.sh) is what to run for that. It
+samples both radios' bus presence *and* a counter that only advances while
+frames arrive, because a radio can stay enumerated with its driver no longer
+delivering — which reads as healthy to `lsusb` and as a quiet sky to an
+operator.
+
 `dump1090` proved the decode path on the previous host; it is **not installed
 on the Pi**, which is the first task of Milestone 2 rather than a gap here.
 

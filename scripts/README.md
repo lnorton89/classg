@@ -10,6 +10,7 @@ commands that change an adapter's mode require `sudo`.
 | `setup-monitor.sh [interface] [channel]` | Configure a Wi-Fi adapter for passive monitor mode |
 | `first-capture.sh [interface] [channel\|sweep] [seconds]` | Record and triage the first beacon-only DJI capture |
 | `diagnose-adapter.sh` | Reload and inspect the MT7921U adapter probe sequence |
+| `usb-soak.sh [interval_s] [logfile]` | Sample both radios until one lets go — for the unexplained 4 h 11 min disconnect |
 
 The Pi dashboard used to live here as `pi-dash.sh`. It is now
 [tools/pi-dash](../tools/pi-dash), a Rust submodule -- one process rendering
