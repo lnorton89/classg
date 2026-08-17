@@ -93,6 +93,18 @@ produced false "verified" reports:
   its zoom ceiling with a placeholder image at HTTP 200. When a change is
   supposed to alter something observable, observe it — hit the endpoint, load
   the page, replay a PCAP.
+- **`prettier --check .` disagrees with CI in a Windows working tree.** It
+  reports a different set of files locally than the `ui` job does, on line
+  endings that `.gitattributes` normalises on commit — so CI never sees them.
+  Both directions bite: it flags files CI is happy with, and running
+  `prettier --write .` to "fix" them churns a pile of unrelated files with
+  line-ending-only changes while the real offenders stay hidden in the noise.
+  Trust the filenames in the failing CI log, fix only those, and confirm the
+  change is real with `git diff --ignore-cr-at-eol`.
+- **A piped check reports the pipe's exit status, not the command's.**
+  `npm test -- --run | tail` exits 0 however the tests went, because that is
+  `tail`'s exit code. Chain those with `&&` and you have a green run that
+  proved nothing. Redirect to a file and test `$?` instead.
 
 When a check is impossible in your environment, say so plainly and say what you
 did instead. "Typecheck passes; I could not test against hardware" is useful.
