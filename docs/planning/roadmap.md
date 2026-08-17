@@ -84,7 +84,7 @@ locked to channel 6 ten seconds in. See
 ## Milestone 2 — ADS-B and airspace context
 *Goal: manned aircraft on the same map; false-positive suppression working.*
 
-- [ ] `sensor-sdr` skeleton in Rust: `SdrSource` trait, `RtlSdrSource` implementation
+- [x] `sensor-sdr` skeleton in Rust: `SdrSource` trait, `RtlSdrSource` implementation — hand-written librtlsdr FFI behind the `rtlsdr` feature; `probe --open` read 16,384 samples at 915 MHz on the unit, 2026-08-17
 - [x] `dump1090` integration → Class D detections — `sensor-sdr adsb`, published over a hand-written ZMTP PUB
 - [x] Fusion: ADS-B correlation and suppression logic for Class E/F — `netadsb.go`, `aircraftdb.go`; Class D is pinned at 0.00 confidence, so it only ever explains a detection away
 - [x] UI: distinct rendering for manned traffic — the "Manned traffic" section of `contacts-panel.tsx`

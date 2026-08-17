@@ -15,9 +15,20 @@ serde_json = "1"
 # mark -- the one thing ADR-0002 forbids. src/zmtp.rs speaks the PUB half of
 # ZMTP 3.0 on std::net instead; the reasoning is in that file's header.
 #
+# No `rtlsdr` crate either. It wraps stock librtlsdr, and the V4 needs the
+# RTL-SDR Blog fork -- see src/rtlsdr.rs, which declares the dozen functions
+# this uses directly rather than depending on a binding that would have to be
+# patched for the fork anyway.
+#
 # Added as the sweep engine lands (Milestone 3):
 #   rustfft   = "6"      FFT for the sweep engine
-#   rtlsdr    = "0.1"    or FFI to the RTL-SDR Blog fork -- NOT stock librtlsdr
+
+[features]
+default = []
+# Links librtlsdr and enables RtlSdrSource. Off by default because the CI
+# `rust` job installs no system packages: with this on, a machine without the
+# library cannot build the crate at all. Pi builds turn it on.
+rtlsdr = []
 
 [profile.release]
 opt-level = 3

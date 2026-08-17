@@ -21,6 +21,11 @@ mod sbs;
 mod source;
 #[allow(dead_code)]
 mod sweep;
+// The real radio, behind a feature because linking librtlsdr would stop the
+// crate building on the CI runner, which installs no system packages.
+#[cfg(feature = "rtlsdr")]
+#[allow(dead_code)]
+mod rtlsdr;
 mod ulid;
 mod zmtp;
 
@@ -52,6 +57,10 @@ fn main() {
         std::process::exit(run_adsb());
     }
 
+    if args.iter().any(|a| a == "probe") {
+        std::process::exit(run_probe(args.iter().any(|a| a == "--open")));
+    }
+
     if args.iter().any(|a| a == "-h" || a == "--help") {
         usage();
         return;
@@ -68,10 +77,104 @@ fn main() {
 fn usage() {
     println!("classg-sensor-sdr {}\n", env!("CARGO_PKG_VERSION"));
     println!("  adsb                      consume dump1090's SBS-1 stream, publish Class D");
+    println!("  probe [--open]            list attached SDRs; --open tunes and reads a burst");
     println!("  --emit-sample-detection   print one schema-shaped detection and exit");
     println!("  (no argument)             print the band plan and the tuner limits");
     println!("\nConfiguration is environment-driven (ADR-0007); `adsb` prints every");
     println!("effective value and where it came from at startup.");
+}
+
+/// Enumerate without opening.
+///
+/// Counting and naming devices touches no USB endpoint, so this answers "is the
+/// radio there" while dump1090 holds it -- which on this unit it always does
+/// (ADR-0008). Opening here instead would fail with a libusb code every time
+/// the system was working correctly.
+#[cfg(feature = "rtlsdr")]
+fn run_probe(open: bool) -> i32 {
+    use source::SdrSource;
+
+    let count = rtlsdr::device_count();
+    if count == 0 {
+        eprintln!("no SDR found.");
+        eprintln!("{}", source::SdrError::DeviceNotFound);
+        return 1;
+    }
+    println!("{count} SDR(s):");
+    for i in 0..count {
+        let name = rtlsdr::device_name(i).unwrap_or_else(|| "<unnamed>".into());
+        println!("  {i}: {name}");
+    }
+    println!(
+        "\ntunable {:.3}-{:.3} GHz. DJI at 2.4/5.8 GHz is above this ceiling and always will be.",
+        source::RTLSDR_MIN_HZ as f64 / 1e9,
+        RTLSDR_MAX_HZ as f64 / 1e9
+    );
+
+    if !open {
+        println!("\n(enumeration only; `probe --open` tunes and reads, and needs the radio)");
+        return 0;
+    }
+
+    // 915 MHz ISM: the band Milestone 3 exists for, and the one where an
+    // unmodified unit is most likely to see something at all.
+    const PROBE_HZ: u64 = 915_000_000;
+
+    let mut sdr = match rtlsdr::RtlSdrSource::open(0) {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!("\n{err}");
+            return 1;
+        }
+    };
+    if let Err(err) = sdr.set_center_freq(PROBE_HZ) {
+        eprintln!("\n{err}");
+        return 1;
+    }
+    // Mid-scale. Enough to see the noise floor move without overloading an
+    // 8-bit ADC, which is the classic way to make weak signals disappear.
+    if let Err(err) = sdr.set_gain(200) {
+        eprintln!("\n{err}");
+        return 1;
+    }
+
+    match sdr.read_samples(16_384) {
+        Ok(buf) => {
+            // Envelope only -- mean power and peak magnitude. Nothing here
+            // demodulates, and nothing here may: see sweep.rs and
+            // docs/research/06-legal-and-ethics.md.
+            let n = buf.iq.len().max(1) as f32;
+            let mean_pow: f32 = buf.iq.iter().map(|c| c.norm_sqr()).sum::<f32>() / n;
+            let peak = buf.iq.iter().map(|c| c.norm()).fold(0.0f32, f32::max);
+            println!(
+                "\nread {} samples at {:.3} MHz, {} sps",
+                buf.iq.len(),
+                buf.center_hz as f64 / 1e6,
+                buf.sample_rate
+            );
+            println!(
+                "mean power {:.1} dBFS, peak magnitude {:.3}",
+                10.0 * mean_pow.max(f32::MIN_POSITIVE).log10(),
+                peak
+            );
+            0
+        }
+        Err(err) => {
+            eprintln!("\n{err}");
+            1
+        }
+    }
+}
+
+#[cfg(not(feature = "rtlsdr"))]
+fn run_probe(_open: bool) -> i32 {
+    eprintln!(
+        "built without the `rtlsdr` feature, so this binary cannot talk to a radio.\n\
+         Rebuild with: cargo build --release --features rtlsdr\n\
+         It is off by default because linking librtlsdr would stop the crate\n\
+         building where that library is absent, CI included."
+    );
+    2
 }
 
 /// Milestone 2: dump1090's SBS-1 stream in, Class D detections on the bus out.

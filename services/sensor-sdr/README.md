@@ -27,6 +27,32 @@ cargo run                  # band plan only; no capture loop selected
 cargo run -- --emit-sample-detection
 ```
 
+## Talking to the radio
+
+`RtlSdrSource` is behind the **`rtlsdr` feature, off by default**. Linking
+librtlsdr would stop the crate building anywhere the library is absent, and the
+CI `rust` job installs no system packages — so the default build stays exactly
+as portable as it was, and a Pi opts in:
+
+```bash
+cargo build --release --features rtlsdr
+./target/release/classg-sensor-sdr probe          # enumerate only
+./target/release/classg-sensor-sdr probe --open   # tune 915 MHz, read a burst
+```
+
+Plain `probe` counts and names devices without touching a USB endpoint, so it
+answers "is the radio there" **while dump1090 holds it** — which on a working
+unit it always does ([ADR-0008](../../docs/architecture/adr/0008-adsb-via-dump1090.md)).
+`--open` needs the radio to itself and will fail with `librtlsdr -6` otherwise;
+that is the correct answer, not a fault.
+
+The binding is hand-written rather than the `rtlsdr` crate, which wraps stock
+librtlsdr — the V4 needs the RTL-SDR Blog fork, and a working `--open` prints
+`RTL-SDR Blog V4 Detected` to prove which library it found. If the linker
+cannot find it, point `RTLSDR_LIB_DIR` at the install prefix; `build.rs`
+otherwise asks `pkg-config` and falls back to `/usr/local/lib`, where the
+fork's own build instructions leave it.
+
 ## ADS-B
 
 This sensor does not demodulate Mode S itself. `dump1090` owns the radio and
