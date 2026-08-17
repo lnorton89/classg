@@ -12,8 +12,13 @@ SBS-1 stream, translates it into schema-conformant Class D detections, mints
 ULIDs, and publishes them on the ClassG bus alongside a heartbeat that fires
 whether or not aircraft are in range.
 
-The sweep engine (Milestone 3) does not. Sweep planning, the `SdrSource`
-abstraction and the noise-floor estimator are tested scaffolding waiting for it;
+**The sweep engine (Milestone 3) measures but does not yet classify.** Retuning
+across a band plan, the transform, per-bin power and the noise floor all run
+against a real radio — see [Sweeping a band](#sweeping-a-band). What is missing
+is the detector: burst cadence against `CONTROL_LINK_RATES_HZ`, clutter
+rejection, and emitting Class E/F. That part needs a transmitter to validate
+against, and this project does not ship a detector nobody has checked.
+
 `cargo run` with no subcommand prints the band plan and the tuner limits and
 returns nonzero.
 
@@ -38,6 +43,7 @@ as portable as it was, and a Pi opts in:
 cargo build --release --features rtlsdr
 ./target/release/classg-sensor-sdr probe          # enumerate only
 ./target/release/classg-sensor-sdr probe --open   # tune 915 MHz, read a burst
+./target/release/classg-sensor-sdr sweep --band ism_915   # measure a whole band
 ```
 
 Plain `probe` counts and names devices without touching a USB endpoint, so it
@@ -120,3 +126,31 @@ rules out. The header comment in that file has the full reasoning and the
 Future capture work must characterize signal envelopes only; it must not
 demodulate control or video payloads. See [ADR-0004](../../docs/architecture/adr/0004-rtlsdr-scope.md)
 and [the legal guidance](../../docs/research/06-legal-and-ethics.md).
+
+## Sweeping a band
+
+`sweep` retunes across a band plan, transforms each slice, and reports where the
+energy is and what the floor under it looks like. Bands come from `BAND_PLANS`:
+`ism_915`, `ism_868`, `ism_433`, `fpv_1g2`.
+
+```
+ism_915 -- 902.000-928.000 MHz in 14 steps
+    902.960 MHz  peak   -65.5 dBFS at   902.341 MHz
+    ...
+noise floor -70.5 dBFS (median), +10 dB threshold -60.5 dBFS
+nothing above threshold in this band right now.
+```
+
+**It measures; it does not classify.** Deciding that a burst train is ELRS rather
+than a smart meter is the detector, it needs a transmitter to validate against,
+and the roadmap is explicit that an unvalidated detector is worse than none. So
+this prints energy and claims nothing about what produced it.
+
+The DC guard is the part worth knowing about. The RTL-SDR is zero-IF, so its own
+local oscillator lands at the tuned frequency and appears as a spike at the
+centre of every slice. The first version of this sweep trusted the raw peak and
+reported a detection at the exact centre of all fourteen steps — the receiver
+detecting itself, fourteen times, about 12 dB over the floor. `peak_excluding_dc`
+skips a three-bin guard, and the step overlap in `plan_sweep` covers the ~16 kHz
+notch that creates. Every synthetic-tone test passed before that fix; only real
+spectrum showed it.

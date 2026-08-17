@@ -131,19 +131,40 @@ Frames captured earlier replay into port 30001 and come back out as SBS on
 
 This is where the SDR earns its place.
 
-- [ ] Sweep engine: retune + FFT + per-bin power over 902–928 MHz
-- [ ] Noise-floor estimation and adaptive thresholding
+- [x] Sweep engine: retune + FFT + per-bin power over 902–928 MHz — `src/spectrum.rs`, `sensor-sdr sweep`
+- [x] Noise-floor estimation and adaptive thresholding — median floor, +10 dB margin, measured at −70.5 dBFS
 - [ ] Burst cadence detection (50/100/200 Hz ELRS signatures)
 - [ ] Clutter rejection: LoRaWAN, Meshtastic, smart meters
-- [ ] 433 MHz and 1.2 GHz FPV band support
+- [x] 433 MHz and 1.2 GHz FPV band support — all four band plans sweep; 433 fits one tune, 1.2 GHz takes 146 steps
 - [ ] Class E/F detections with `signal_features` populated
-- [ ] **Hard constraint check:** no demodulation of payload or video content
+- [x] **Hard constraint check:** no demodulation of payload or video content — the sweep path computes power per bin and nothing else
+
+**The measurement half is built and validated on the unit; the detector is not.**
+Swept live on 2026-08-17 with dump1090 stopped for the radio:
+
+```
+ism_915 -- 902.000-928.000 MHz in 14 steps
+noise floor -70.5 dBFS (median), +10 dB threshold -60.5 dBFS
+nothing above threshold in this band right now.
+```
+
+That last line is the point: a quiet ISM band reads as quiet. The first version
+did not. It reported a peak at *exactly* the centre of all fourteen steps, ~12 dB
+over the floor — fourteen confident detections of the receiver looking at itself.
+The RTL-SDR is zero-IF, so its own local oscillator lands at the tuned frequency
+and appears as a DC spike in every slice. `peak_excluding_dc` skips a 3-bin guard
+(~16 kHz, against the 250 kHz-plus occupancy of anything worth noticing), and the
+step overlap already in `plan_sweep` covers the notch it creates. Found only by
+pointing it at real spectrum — the synthetic-tone tests all passed either way.
 
 **Exit criterion:** an ELRS or Crossfire transmitter produces a Class E detection while
 a comparable-power non-drone 915 MHz emitter (smart meter, Meshtastic node) does not.
 
-⚠️ Needs a test transmitter you do not currently own. An ELRS module or a friend's FPV setup
-is required for validation — an unvalidated detector here is worse than none.
+⚠️ Still needs a test transmitter you do not own. What remains — cadence against
+`CONTROL_LINK_RATES_HZ`, clutter rejection, emitting Class E/F — is the part that
+decides *what* an emission is, and there is no honest way to tune or validate it
+against a band with nothing in it. An ELRS module or a friend's FPV setup unblocks
+it; until then the sweep reports energy and claims nothing about its source.
 
 ---
 

@@ -20,6 +20,8 @@ mod sbs;
 #[allow(dead_code)]
 mod source;
 #[allow(dead_code)]
+mod spectrum;
+#[allow(dead_code)]
 mod sweep;
 // The real radio, behind a feature because linking librtlsdr would stop the
 // crate building on the CI runner, which installs no system packages.
@@ -61,6 +63,16 @@ fn main() {
         std::process::exit(run_probe(args.iter().any(|a| a == "--open")));
     }
 
+    if args.iter().any(|a| a == "sweep") {
+        let band = args
+            .iter()
+            .position(|a| a == "--band")
+            .and_then(|i| args.get(i + 1))
+            .cloned()
+            .unwrap_or_else(|| "ism_915".to_string());
+        std::process::exit(run_sweep(&band));
+    }
+
     if args.iter().any(|a| a == "-h" || a == "--help") {
         usage();
         return;
@@ -78,6 +90,7 @@ fn usage() {
     println!("classg-sensor-sdr {}\n", env!("CARGO_PKG_VERSION"));
     println!("  adsb                      consume dump1090's SBS-1 stream, publish Class D");
     println!("  probe [--open]            list attached SDRs; --open tunes and reads a burst");
+    println!("  sweep [--band NAME]       measure a band's spectrum and noise floor");
     println!("  --emit-sample-detection   print one schema-shaped detection and exit");
     println!("  (no argument)             print the band plan and the tuner limits");
     println!("\nConfiguration is environment-driven (ADR-0007); `adsb` prints every");
@@ -164,6 +177,135 @@ fn run_probe(open: bool) -> i32 {
             1
         }
     }
+}
+
+/// Measure a band: retune across it, transform each slice, report where the
+/// energy is and what the floor under it looks like.
+///
+/// This is the measurement half of Milestone 3 and stops deliberately short of
+/// the detector. Classifying a burst train as ELRS needs a transmitter to
+/// validate against, and the roadmap is explicit that an unvalidated detector
+/// is worse than none -- so this reports what it measured and claims nothing
+/// about what produced it.
+///
+/// Envelope only. See spectrum.rs.
+#[cfg(feature = "rtlsdr")]
+fn run_sweep(band_name: &str) -> i32 {
+    use source::SdrSource;
+
+    let Some(band) = sweep::BAND_PLANS.iter().find(|b| b.name == band_name) else {
+        eprintln!("no band called {band_name:?}. Known bands:");
+        for b in sweep::BAND_PLANS {
+            eprintln!(
+                "  {:<9} {:.3}-{:.3} MHz",
+                b.name,
+                b.start_hz as f64 / 1e6,
+                b.stop_hz as f64 / 1e6
+            );
+        }
+        return 2;
+    };
+
+    // 20% overlap: the outer fifth of the passband rolls off, so abutting steps
+    // exactly would leave a blind notch at every boundary.
+    let steps = sweep::plan_sweep(band, 0.2);
+    println!(
+        "{} -- {:.3}-{:.3} MHz in {} steps",
+        band.name,
+        band.start_hz as f64 / 1e6,
+        band.stop_hz as f64 / 1e6,
+        steps.len()
+    );
+    println!("{}\n", band.note);
+
+    let mut sdr = match rtlsdr::RtlSdrSource::open(0) {
+        Ok(s) => s,
+        Err(err) => {
+            eprintln!("{err}");
+            return 1;
+        }
+    };
+    if let Err(err) = sdr.set_gain(200) {
+        eprintln!("{err}");
+        return 1;
+    }
+
+    const FFT: usize = 1024;
+    // Eight segments per step: enough averaging to stop the floor wandering
+    // several dB between reads, which is what a single transform of noise does.
+    const SAMPLES: usize = FFT * 8;
+
+    let mut floor = sweep::NoiseFloor::new(steps.len() * FFT);
+    let mut peaks: Vec<(f64, f32)> = Vec::with_capacity(steps.len());
+
+    for step in &steps {
+        if let Err(err) = sdr.set_center_freq(step.center_hz) {
+            eprintln!("{err}");
+            return 1;
+        }
+        let buf = match sdr.read_samples(SAMPLES) {
+            Ok(b) => b,
+            Err(err) => {
+                eprintln!("{err}");
+                return 1;
+            }
+        };
+        let Some(spec) = spectrum::power_spectrum(&buf.iq, step.center_hz, buf.sample_rate, FFT)
+        else {
+            eprintln!("short read at {:.3} MHz", step.center_hz as f64 / 1e6);
+            continue;
+        };
+
+        for &db in &spec.bins_db {
+            floor.push(db);
+        }
+        // Excluding DC: the radio's own LO lands at the tuned frequency, and
+        // trusting the raw peak reported a detection at the centre of all
+        // fourteen steps the first time this ran against real spectrum.
+        if let Some((bin, db)) = spec.peak_excluding_dc(spectrum::DC_GUARD_BINS) {
+            peaks.push((spec.bin_hz(bin), db));
+            println!(
+                "  {:>9.3} MHz  peak {:>7.1} dBFS at {:>9.3} MHz",
+                step.center_hz as f64 / 1e6,
+                db,
+                spec.bin_hz(bin) / 1e6
+            );
+        }
+    }
+
+    match (floor.median(), floor.threshold(10.0)) {
+        (Some(median), Some(threshold)) => {
+            println!(
+                "\nnoise floor {median:.1} dBFS (median), +10 dB threshold {threshold:.1} dBFS"
+            );
+            let above: Vec<_> = peaks.iter().filter(|(_, db)| *db > threshold).collect();
+            if above.is_empty() {
+                println!("nothing above threshold in this band right now.");
+            } else {
+                println!("{} step peak(s) above threshold:", above.len());
+                for (hz, db) in above {
+                    println!("  {:>9.3} MHz  {:>7.1} dBFS", hz / 1e6, db);
+                }
+            }
+            println!(
+                "\nEnergy only. Nothing here identifies a transmitter -- cadence analysis\nagainst CONTROL_LINK_RATES_HZ is Milestone 3's detector and needs a test\ntransmitter to validate."
+            );
+            0
+        }
+        _ => {
+            eprintln!("no spectrum measured");
+            1
+        }
+    }
+}
+
+#[cfg(not(feature = "rtlsdr"))]
+fn run_sweep(_band: &str) -> i32 {
+    eprintln!(
+        "built without the `rtlsdr` feature, so this binary cannot talk to a radio.\n\
+         Rebuild with: cargo build --release --features rtlsdr"
+    );
+    2
 }
 
 #[cfg(not(feature = "rtlsdr"))]

@@ -7,6 +7,10 @@ license = "MIT"
 
 [dependencies]
 num-complex = "0.4"
+# The one dependency the sweep engine genuinely needs. Pure Rust, no system
+# library, so the CI `rust` job still builds with no packages installed -- the
+# constraint that ruled out a ZeroMQ crate does not rule this out.
+rustfft = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # No ZeroMQ crate. `zmq` links libzmq and the CI `rust` job installs no system
@@ -19,9 +23,6 @@ serde_json = "1"
 # RTL-SDR Blog fork -- see src/rtlsdr.rs, which declares the dozen functions
 # this uses directly rather than depending on a binding that would have to be
 # patched for the fork anyway.
-#
-# Added as the sweep engine lands (Milestone 3):
-#   rustfft   = "6"      FFT for the sweep engine
 
 [features]
 default = []
