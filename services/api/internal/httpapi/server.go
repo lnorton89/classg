@@ -112,6 +112,8 @@ func (s *Server) routes() http.Handler {
 	h("GET "+BasePath+"/captures/{capture_id}/report", s.handleCaptureReport)
 	h("GET "+BasePath+"/captures/{capture_id}/download", s.handleCaptureDownload)
 
+	h("GET "+BasePath+"/system", s.handleSystem)
+
 	h("GET "+BasePath+"/sensors", s.handleListSensors)
 	h("POST "+BasePath+"/sensors/{sensor_id}/restart", s.handleRestartSensor)
 
