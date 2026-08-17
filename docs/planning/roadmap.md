@@ -30,13 +30,28 @@ disconnects, over-currents or descriptor-read errors in `dmesg`, `throttled=0x0`
 at 40.4 °C. Both were streaming rather than merely enumerated: the Wi-Fi sensor
 climbed to 11,548 beacons and ADS-B messages kept arriving across the window.
 
-That clears the exit criterion as written, and it does not explain 2026-08-16,
-when the AWUS036AXML dropped off the bus after 4 h 11 min alongside the SDR with
-no undervoltage recorded — a clean disconnect rather than the brownout
-[01-pi-setup](../ops/01-pi-setup.md) warns about. This run stopped well short of
-that mark, so the cause stays unestablished and a soak past 4 h 11 min remains
-the test that would actually settle it. Treat the box above as "the stated hour
-passed", not as "the bus is trusted".
+That clears the exit criterion as written. The 2026-08-16 failure — when the
+AWUS036AXML dropped off the bus after 4 h 11 min alongside the SDR with no
+undervoltage recorded, a clean disconnect rather than the brownout
+[01-pi-setup](../ops/01-pi-setup.md) warns about — **did not reproduce.** The
+same session was sampled straight through and past that mark:
+
+```
+up_s   wall      sdr wifi  usb_err  throttled      temp
+14907  13:59:39   1    1      0     throttled=0x0  42.8'C
+15027  14:01:39   1    1      0     throttled=0x0  43.3'C   <- 4 h 11 min
+15268  14:05:40   1    1      0     throttled=0x0  42.8'C
+```
+
+115 samples over the run, no sample missing either radio, no USB disconnects or
+over-currents in `dmesg`, and all three units still at `NRestarts=0`.
+
+**This is not a fix, because nothing was fixed.** One clean pass through the
+window says the failure is not deterministic at 4 h 11 min; it does not
+establish what caused it, and an intermittent bus fault is exactly the kind that
+survives a single good run. Treat it as one datum against a repeat, and run
+[`scripts/usb-soak.sh`](../../scripts/usb-soak.sh) again on the deployment that
+matters.
 
 [`scripts/usb-soak.sh`](../../scripts/usb-soak.sh) is what to run for that. It
 samples both radios' bus presence *and* a counter that only advances while
