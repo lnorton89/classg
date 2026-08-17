@@ -99,6 +99,7 @@ func (s *Server) routes() http.Handler {
 	h("GET "+BasePath+"/tracks", s.handleListTracks)
 	h("GET "+BasePath+"/tracks/{track_id}", s.handleGetTrack)
 	h("GET "+BasePath+"/tracks/{track_id}/detections", s.handleTrackDetections)
+	h("GET "+BasePath+"/tracks/{track_id}/export", s.handleExportTrack)
 
 	h("GET "+BasePath+"/detections", s.handleListDetections)
 
