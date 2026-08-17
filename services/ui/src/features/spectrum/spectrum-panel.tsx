@@ -106,10 +106,7 @@ export function SpectrumPanel() {
             <>
               <div className="flex flex-wrap items-end gap-3">
                 <div className="min-w-48 flex-1">
-                  <label
-                    htmlFor="sweep-band"
-                    className="label-caps mb-1 block"
-                  >
+                  <label htmlFor="sweep-band" className="label-caps mb-1 block">
                     Band
                   </label>
                   <Select

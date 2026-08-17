@@ -70,7 +70,7 @@ what you actually ran. A green result you didn't produce isn't evidence.
 
 | You touched | Run |
 |---|---|
-| `services/ui` | `npm run lint && npm run typecheck && npm test -- --run` |
+| `services/ui` | `npm run format:check && npm run lint && npm run typecheck && npm test -- --run` |
 | `services/api`, `services/fusion` | `go test -count=1 ./...` and `gofmt -l . && go vet ./...` |
 | `services/sensor-wifi` | `python -m pytest` and `ruff check . && mypy classg_wifi` |
 | `services/sensor-sdr` | `cargo test` and `cargo fmt --check && cargo clippy --all-targets -- -D warnings` |
@@ -93,6 +93,10 @@ produced false "verified" reports:
   its zoom ceiling with a placeholder image at HTTP 200. When a change is
   supposed to alter something observable, observe it — hit the endpoint, load
   the page, replay a PCAP.
+- **Lint is not the formatter.** `npm run lint` passing says nothing about
+  `prettier --check`, and the `ui` job runs both. New files are the usual
+  casualty: they lint and typecheck and pass their tests, and CI rejects them on
+  formatting alone. Run `npm run format:check` before you call a UI change done.
 - **`prettier --check .` disagrees with CI in a Windows working tree.** It
   reports a different set of files locally than the `ui` job does, on line
   endings that `.gitattributes` normalises on commit — so CI never sees them.

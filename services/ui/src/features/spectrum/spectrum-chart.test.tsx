@@ -17,7 +17,16 @@ function hoverSurface(container: HTMLElement): HTMLElement {
   const surface = container.querySelector<HTMLElement>('.cursor-crosshair')
   if (!surface) throw new Error('no hover surface rendered')
   surface.getBoundingClientRect = () =>
-    ({ left: 0, top: 0, width: 1000, height: 260, right: 1000, bottom: 260, x: 0, y: 0 }) as DOMRect
+    ({
+      left: 0,
+      top: 0,
+      width: 1000,
+      height: 260,
+      right: 1000,
+      bottom: 260,
+      x: 0,
+      y: 0,
+    }) as DOMRect
   return surface
 }
 
@@ -88,7 +97,11 @@ describe('SpectrumChart', () => {
     // A peak well above the threshold is the case where a UI would be most
     // tempted to say something. It must not: energy is not identity, and the
     // detector that could tell these apart is not in this build.
-    render(<SpectrumChart sweep={sweep([-70, -30, -70], { peak_dbfs: -30, peak_hz: 902_015_000 })} />)
+    render(
+      <SpectrumChart
+        sweep={sweep([-70, -30, -70], { peak_dbfs: -30, peak_hz: 902_015_000 })}
+      />,
+    )
 
     expect(screen.getByText(/energy, not identity/i)).toBeInTheDocument()
     expect(screen.queryByText(/drone detected/i)).not.toBeInTheDocument()

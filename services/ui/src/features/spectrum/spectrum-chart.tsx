@@ -47,9 +47,7 @@ export function SpectrumChart({ sweep }: { sweep: SpectrumSweepDetail }) {
 
   if (!trace || trace.dbfs.length === 0) {
     return (
-      <p className="text-muted-foreground text-xs">
-        This sweep has no measurement to draw.
-      </p>
+      <p className="text-muted-foreground text-xs">This sweep has no measurement to draw.</p>
     )
   }
 
@@ -276,10 +274,9 @@ function Legend({
         <p>
           <span className="text-foreground">{blind.toFixed(1)}% of the band is a gap</span> —{' '}
           {trace.blind} of {trace.dbfs.length} cells. The receiver is zero-IF, so its own
-          oscillator lands at every step centre and those bins are masked; the 20% step
-          overlap covers the rolled-off step edges, not the centres. The line breaks
-          rather than joining across, because a level drawn there would be a frequency
-          nobody measured.
+          oscillator lands at every step centre and those bins are masked; the 20% step overlap
+          covers the rolled-off step edges, not the centres. The line breaks rather than joining
+          across, because a level drawn there would be a frequency nobody measured.
         </p>
       ) : null}
 
@@ -295,8 +292,8 @@ function Legend({
           ? 'Something in this band is above the floor. That is all this says — energy, ' +
             'not identity.'
           : 'Nothing here cleared the threshold at the moment of the sweep.'}{' '}
-        Deciding that a burst train is a control link rather than a smart meter needs
-        cadence analysis this build does not ship, so no line on this chart is a drone.
+        Deciding that a burst train is a control link rather than a smart meter needs cadence
+        analysis this build does not ship, so no line on this chart is a drone.
       </p>
     </div>
   )
