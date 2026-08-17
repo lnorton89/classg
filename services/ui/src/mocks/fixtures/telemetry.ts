@@ -70,16 +70,17 @@ function sampleAt(minute: number): TelemetrySample {
 /**
  * Ascending samples covering [since, until], minute-aligned.
  *
- * Every ~487 minutes the sampler itself "goes down" for 14 minutes and the rows
+ * Every ~293 minutes the sampler itself "goes down" for 14 minutes and the rows
  * are simply absent — distinct from a null field, which is a row the sampler
  * wrote but a reading the api could not take. Charts must show both as gaps.
+ * 293 < 360 on purpose: any 6 h window is guaranteed to contain one outage.
  */
 export function telemetrySamples(sinceMs: number, untilMs: number): TelemetrySample[] {
   const first = Math.ceil(sinceMs / MINUTE_MS)
   const last = Math.floor(untilMs / MINUTE_MS)
   const samples: TelemetrySample[] = []
   for (let minute = first; minute <= last; minute++) {
-    if (minute % 487 >= 300 && minute % 487 < 314) continue
+    if (minute % 293 >= 200 && minute % 293 < 214) continue
     samples.push(sampleAt(minute))
   }
   return samples
