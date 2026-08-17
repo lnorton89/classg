@@ -104,6 +104,45 @@ records that this deployment accepts syncing them, which is a decision about thi
 reason to export whatever a sensor happens to publish. A key that is not named in
 `sensorDetailMetrics` is not exported, and a test enforces it.
 
+### `GET /system`
+
+Backs the UI's **About** panel: what this binary is, how it is configured, and how the Pi
+underneath is doing. Separate from `/health` because `/health` is polled hard and answers one
+question; a `statfs` and a pile of build strings do not belong on that path.
+
+```jsonc
+{
+  "build":   { "version": "0.1.0", "go_version": "go1.26.0", "revision": "…" },
+  "runtime": { "listen": ":8081", "store": "libsql", "ui_dir": "off",
+               "capture_dir": "/captures", "turso_sync_configured": false,
+               "containerised": true },
+  "host": {
+    "uptime_s": 11779, "load1": 0.69, "load5": 1.32, "load15": 1.06,
+    "cpu_count": 4, "cpu_temp_c": 42.842,
+    "mem_total_kb": 3887868, "mem_available_kb": 3408376,
+    "disk_path": "/data", "disk_total_bytes": 125000000000, "disk_free_bytes": 93000000000,
+    "unavailable": {
+      "throttled": "vcgencmd is not available to the api; run `vcgencmd get_throttled` on the Pi"
+    }
+  }
+}
+```
+
+**Every host figure is nullable, and null carries a reason.** A value the api could not read is
+`null` with an entry in `host.unavailable` explaining why — never a zero. `0` °C and an uptime of
+`0` s both render as plausible readings and are both lies, which is the same inversion `/health`
+exists to prevent. A UI must render `null` as "unavailable", not as a dash that looks like data.
+
+`throttled` is **always** in `unavailable`. Undervoltage and thermal throttling live behind
+`vcgencmd`, which needs the binary and `/dev/vcio`; the api image has neither and this kernel
+exposes no sysfs equivalent. It is listed explicitly so a missing throttle flag can never be read
+as "not throttled".
+
+`runtime` is an **allowlist**. An About panel that lists configuration is a well-worn way to
+publish a credential, so Turso is reported as `turso_sync_configured: true|false` — never the URL
+and never the token. `revision` is absent in container builds because `.dockerignore` excludes
+`.git`, so the toolchain has no VCS to stamp.
+
 ---
 
 ## Tracks
