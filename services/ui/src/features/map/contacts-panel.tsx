@@ -83,10 +83,13 @@ export function ContactsPanel({
       </section>
 
       {showClosed ? (
-        <section aria-labelledby="contacts-closed" className="border-border max-h-64 border-t">
+        <section
+          aria-labelledby="contacts-closed"
+          className="border-border flex max-h-64 min-h-0 flex-col border-t"
+        >
           <h2
             id="contacts-closed"
-            className="text-muted-foreground px-3 py-2 text-xs font-semibold tracking-wide uppercase"
+            className="text-muted-foreground shrink-0 px-3 py-2 text-xs font-semibold tracking-wide uppercase"
           >
             Closed tracks ({closedTracks.length})
           </h2>
@@ -95,7 +98,13 @@ export function ContactsPanel({
               No archived tracks. Closed tracks remain available here for review.
             </p>
           ) : (
-            <ul className="divide-border divide-y overflow-y-auto">
+            /*
+             * min-h-0 and flex-1 are what make overflow-y-auto mean anything
+             * here. Without a bounded height the list just grows: the section's
+             * max-h-64 caps the section box while the list overflows straight
+             * past it, dragging the document to 9000px in a 600px viewport.
+             */
+            <ul className="divide-border min-h-0 flex-1 divide-y overflow-y-auto">
               {closedTracks.map((track) => (
                 <li key={track.track_id}>
                   <ClosedTrackRow track={track} format={format} />
@@ -106,10 +115,13 @@ export function ContactsPanel({
         </section>
       ) : null}
 
-      <section aria-labelledby="contacts-manned" className="border-border max-h-64 border-t">
+      <section
+        aria-labelledby="contacts-manned"
+        className="border-border flex max-h-64 min-h-0 flex-col border-t"
+      >
         <h2
           id="contacts-manned"
-          className="text-muted-foreground px-3 py-2 text-xs font-semibold tracking-wide uppercase"
+          className="text-muted-foreground shrink-0 px-3 py-2 text-xs font-semibold tracking-wide uppercase"
         >
           Manned traffic ({adsb.length})
         </h2>
@@ -119,7 +131,7 @@ export function ContactsPanel({
             contributes to a drone&apos;s confidence.
           </p>
         ) : (
-          <ul className="divide-border divide-y overflow-y-auto">
+          <ul className="divide-border min-h-0 flex-1 divide-y overflow-y-auto">
             {adsb.map((detection) => (
               <li key={detection.detection_id} className="flex items-center gap-2 px-3 py-2">
                 <SatelliteDishIcon className="text-manned size-3.5 shrink-0" aria-hidden />
