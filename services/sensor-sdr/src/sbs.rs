@@ -39,8 +39,9 @@ mod field {
     #[allow(dead_code)]
     pub const TRANSMISSION_TYPE: usize = 1;
     pub const ICAO: usize = 4;
-    pub const DATE_LOGGED: usize = 6;
-    pub const TIME_LOGGED: usize = 7;
+    // 6 and 7 are the logged date and time. Deliberately absent: dump1090
+    // writes them with localtime(), and there is no offset in the record to
+    // recover UTC from. See the ts assignment in parse_line.
     pub const CALLSIGN: usize = 10;
     pub const ALTITUDE_FT: usize = 11;
     pub const GROUND_SPEED_KT: usize = 12;
@@ -64,8 +65,9 @@ pub enum ParseError {
 
 /// Translate one SBS-1 line into a detection.
 ///
-/// `now_rfc3339` supplies the timestamp when the record carries no usable one,
-/// so this function stays free of clock access and therefore testable.
+/// `now_rfc3339` is the timestamp, always -- the record's own is local time
+/// with no offset. Passing it in keeps this function free of clock access and
+/// therefore testable.
 pub fn parse_line(line: &str, sensor_id: &str, now_rfc3339: &str) -> Result<Detection, ParseError> {
     let fields: Vec<&str> = line.trim().split(',').map(str::trim).collect();
 
@@ -124,8 +126,24 @@ pub fn parse_line(line: &str, sensor_id: &str, now_rfc3339: &str) -> Result<Dete
     Ok(Detection {
         schema_version: SCHEMA_VERSION,
         detection_id: String::new(), // assigned by the caller, which owns ULID minting
-        ts: timestamp(fields[field::DATE_LOGGED], fields[field::TIME_LOGGED])
-            .unwrap_or_else(|| now_rfc3339.to_string()),
+        // The record's own date and time fields are deliberately NOT used.
+        //
+        // dump1090 formats them with localtime(), so on a Pi in PDT a message
+        // received at 02:38Z is written "2026/08/16,19:38:26". Appending Z to
+        // that -- which this did -- produces a timestamp seven hours in the
+        // past, asserted as UTC.
+        //
+        // Observed on the Pi: detections landed with ts 2026-08-16T19:38:26Z
+        // while the process logged the same event at 2026-08-17T02:38:26Z. The
+        // API's five-minute windows dropped them, and since detection
+        // timestamps are what fusion correlates on, Class D could never have
+        // lined up with a Wi-Fi detection to suppress it -- which is the whole
+        // reason ADS-B is here.
+        //
+        // Receive time is what we can state correctly. The only thing the
+        // record time offered over it was dump1090's own buffering delay,
+        // which is not worth a timezone bug.
+        ts: now_rfc3339.to_string(),
         sensor_id: sensor_id.to_string(),
         sensor_kind: "sdr",
         detection_class: CLASS_ADSB,
@@ -141,25 +159,6 @@ pub fn parse_line(line: &str, sensor_id: &str, now_rfc3339: &str) -> Result<Dete
             ground_speed_kt,
         }),
     })
-}
-
-/// SBS-1 logs `2026/08/11` and `14:23:11.482` in two fields and in local time
-/// with no offset. Converted to the schema's shape only when both are present
-/// and well-formed; a guess about the offset would be worse than falling back to
-/// the receive time, which at least has a known meaning.
-fn timestamp(date: &str, time: &str) -> Option<String> {
-    let d: Vec<&str> = date.split('/').collect();
-    if d.len() != 3 || d[0].len() != 4 || time.len() < 8 {
-        return None;
-    }
-    if !d.iter().all(|p| p.chars().all(|c| c.is_ascii_digit())) {
-        return None;
-    }
-    let mut t = time.to_string();
-    if !t.contains('.') {
-        t.push_str(".000");
-    }
-    Some(format!("{}-{}-{}T{}Z", d[0], d[1], d[2], t))
 }
 
 fn number<T: std::str::FromStr>(raw: &str) -> Option<T> {
@@ -310,13 +309,21 @@ mod tests {
     }
 
     #[test]
-    fn timestamp_uses_the_record_when_it_is_usable() {
+    fn record_local_time_is_never_passed_off_as_utc() {
+        // POSITION_MSG carries 2026/08/11,14:23:11.482. dump1090 writes those
+        // fields with localtime(), so stamping them Z put detections seven
+        // hours in the past on a PDT Pi -- outside every window the API and
+        // fusion correlate over.
         let d = parse_line(POSITION_MSG, "sdr-0", NOW).unwrap();
-        assert_eq!(d.ts, "2026-08-11T14:23:11.482Z");
+        assert_eq!(d.ts, NOW);
+        assert!(
+            !d.ts.starts_with("2026-08-11T14:23:11"),
+            "the record's local time was used as though it were UTC"
+        );
     }
 
     #[test]
-    fn timestamp_falls_back_rather_than_guessing() {
+    fn timestamp_is_the_receive_time_even_when_the_record_has_none() {
         let line = POSITION_MSG.replacen(",2026/08/11,14:23:11.482,", ",,,", 1);
         let d = parse_line(&line, "sdr-0", NOW).unwrap();
         assert_eq!(d.ts, NOW);
