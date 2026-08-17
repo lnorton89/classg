@@ -1,0 +1,3 @@
+[submodule "tools/pi-dash"]
+	path = tools/pi-dash
+	url = https://github.com/lnorton89/pi-dash.git

@@ -10,14 +10,16 @@ commands that change an adapter's mode require `sudo`.
 | `setup-monitor.sh [interface] [channel]` | Configure a Wi-Fi adapter for passive monitor mode |
 | `first-capture.sh [interface] [channel\|sweep] [seconds]` | Record and triage the first beacon-only DJI capture |
 | `diagnose-adapter.sh` | Reload and inspect the MT7921U adapter probe sequence |
-| `pi-dash.sh` | Tiled tmux dashboard: btop, Pi throttle/thermal state, radio link state, API health |
 
-`pi-dash.sh` needs `tmux` and `btop`; everything else it shows it reads from
-`/proc`, `/sys` and `vcgencmd`, so it runs unprivileged. `--install` drops a
-`pidash` wrapper on `PATH` that keeps pointing at this checkout:
+The Pi dashboard used to live here as `pi-dash.sh`. It is now
+[tools/pi-dash](../tools/pi-dash), a Rust submodule -- one process rendering
+its own panes rather than Bash driving tmux around `btop`. It still reads
+`/proc`, `/sys` and `vcgencmd` directly and still runs unprivileged.
 
 ```bash
-./scripts/pi-dash.sh --install   # then just: pidash
+git submodule update --init tools/pi-dash
+cd tools/pi-dash && cargo build --release
+./target/release/pi-dash          # --once for a plain-text dump
 ```
 
 Three more fetch optional offline reference data. Everything they download is
