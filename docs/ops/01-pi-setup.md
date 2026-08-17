@@ -59,6 +59,30 @@ curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt install -y nodejs
 ```
 
+**rustup's PATH edit only reaches login shells.** It installs to `~/.cargo/bin`
+and adds it via `~/.profile`, which a non-login SSH command never reads — so
+`ssh pi 'cargo build'` fails with `command not found` while the same command
+works fine in an interactive session, which looks like a broken toolchain
+rather than a missing profile. Verified on this unit. When scripting against
+the Pi, use `~/.cargo/bin/cargo` or `bash -lc`; the same trap applies to
+anything else that installs by editing `~/.bashrc` or `~/.profile`.
+
+## Docker
+
+The web tier (fusion, api, ui) runs in Compose on the Pi — see
+[09-deployment.md](09-deployment.md) — so the deployment target needs the
+engine and the compose plugin:
+
+```bash
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker "$USER"     # then log out and back in
+docker compose version              # the plugin, not legacy docker-compose
+```
+
+`make compose-up` shells out to `docker compose` (the v2 plugin syntax); the
+standalone python `docker-compose` package in some distro repos is not the
+same thing and ages badly.
+
 ## System tuning
 
 **Disable Wi-Fi power management** — it will silently drop frames in monitor mode:
@@ -81,10 +105,19 @@ sudo sed -i 's/#Storage=auto/Storage=volatile/' /etc/systemd/journald.conf
 timedatectl status     # expect: System clock synchronized: yes
 ```
 
-For field deployment with no network, add a GPS module for time — or accept that timestamps
-drift and that cross-sensor correlation degrades with them.
+The Pi has **no RTC**, so every boot starts on `fake-hwclock`'s stale saved
+time and jumps forward when NTP first answers — measured on this unit as a
+7 h 51 min jump about fifty seconds after boot, with the sensors already
+running. Detections stamped in that window keep the wrong time permanently.
+The full write-up is in
+[05-troubleshooting.md](05-troubleshooting.md#timestamps-or-uptime-look-wrong).
+For field deployment with no network, fit an RTC or GPS module for time — or
+accept that timestamps drift and that cross-sensor correlation degrades with
+them.
 
 ## Next steps
 
 1. [Wi-Fi adapter setup](02-wifi-adapter.md) — **read before plugging it in**
 2. [SDR setup](03-sdr-setup.md) — the V4 needs a specific driver fork
+3. [Deployment](09-deployment.md) — install the stack, run it under systemd
+   and Compose, and update it in place

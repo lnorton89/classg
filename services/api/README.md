@@ -1,16 +1,26 @@
 # api (Go) — Milestone 1
 
-REST + WebSocket front end for `fusion`, with local libSQL persistence and the
-built Vite application served as a single-page app.
+REST + WebSocket front end for `fusion`, with local libSQL persistence. It can
+serve the built Vite application as a single-page app from `CLASSG_UI_DIR`;
+both the dev loop and the deployed Compose layout set that `off` — Vite serves
+the UI in dev, nginx in deployment — precisely so a stale `dist/` can never
+shadow the code you are editing.
 
 ## Surface
+
+The normative list is [the API contract](../../docs/architecture/api-contract.md);
+highlights:
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/v1/tracks` | Active tracks |
 | `GET /api/v1/tracks/{id}` | One track with history |
+| `GET /api/v1/tracks/{id}/export` | Flight path as GeoJSON, CSV, or KML |
 | `GET /api/v1/detections?since=` | Recent detections (debugging) |
 | `GET /api/v1/health` | Per-sensor and fusion health |
+| `GET /api/v1/system` | Build, runtime config, host readings (the About panel) |
+| `GET /api/v1/telemetry` | Recorded host/sensor history |
+| `GET /metrics` | Prometheus exposition of the same health report |
 | `WS /api/v1/stream` | Live track, detection, capture, and health updates |
 
 ## Run locally

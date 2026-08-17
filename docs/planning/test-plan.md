@@ -136,7 +136,8 @@ Achievable without extra hardware:
 - All parser unit tests and property tests
 - Every emitted message validates against `schemas/*.schema.json` — in all four languages
 - Replay the capture corpus end to end; assert detection counts match a recorded baseline
-- Lint/format: `ruff` + `mypy`, `go vet` + `staticcheck`, `clippy`, `eslint`
+- Lint/format: `ruff` + `mypy --strict`, `gofmt` + `go vet`, `rustfmt` + `clippy`,
+  `eslint` + `prettier` + `tsc`, `shellcheck` — mirrored locally by `make lint`
 
 Corpus replay is the regression net. Once real captures exist, any parser change that alters
 detection counts on known-good data fails the build.

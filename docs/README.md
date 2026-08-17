@@ -40,6 +40,7 @@ If you read three documents, read these:
 | [0006](architecture/adr/0006-storage-turso-libsql.md) | libSQL (Turso) storage, local-first with optional sync |
 | [0007](architecture/adr/0007-configuration-tiers.md) | Bootstrap env / database settings / YAML seed |
 | [0008](architecture/adr/0008-adsb-via-dump1090.md) | dump1090 owns the radio; fusion consumes its decoded output |
+| [0009](architecture/adr/0009-networked-sensor-array.md) | Networked sensor array, and what it can honestly locate |
 
 ## Planning
 
@@ -61,3 +62,4 @@ If you read three documents, read these:
 | [06 — First capture](ops/06-first-capture.md) | Capture a DJI powering up and get a ground-truth PCAP |
 | [07 — External data](ops/07-external-data.md) | Five optional feeds, all off by default, none of them gating detection |
 | [08 — Cloud sessions](ops/08-cloud-tailscale.md) | Reach the Pi over Tailscale from Claude Code on the web |
+| [09 — Deployment](ops/09-deployment.md) | Install, run, and update the stack on a real unit: Compose web tier, systemd sensors |

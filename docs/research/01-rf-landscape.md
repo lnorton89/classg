@@ -117,7 +117,7 @@ highest-leverage tuning decision in the whole system.
 | BT4 legacy adv | 2402 / 2426 / 2480 MHz | ~1 Hz |
 | BT5 Coded PHY | Primary adv channels + secondary data channels | ~1 Hz |
 
-**The dwell-time problem — measured, and smaller than assumed.**
+### The dwell-time problem — measured, and smaller than assumed
 
 The design was built on "beacons arrive at roughly 1 Hz", taken from the standard's *minimum*
 rate. The first real capture says otherwise:

@@ -18,7 +18,9 @@ Containerising the sensors is usually more friction than it's worth:
 - systemd already gives exactly what the sensors need: supervision, restart backoff, and
   `ExecStartPre=` for monitor-mode setup.
 
-So: `docker-compose.yml` covers the web tier. Sensors get systemd units.
+So: `docker-compose.yml` covers the web tier. Sensors get systemd units —
+templates and installer in [deploy/systemd](../deploy/systemd), full procedure
+in [docs/ops/09-deployment.md](../docs/ops/09-deployment.md).
 
 ## Web tier
 

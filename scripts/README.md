@@ -23,6 +23,10 @@ cd tools/pi-dash && cargo build --release
 ./target/release/pi-dash          # --once for a plain-text dump
 ```
 
+The rest — `dev.sh`, `dev-preflight.sh`, `dev-sensor.sh`, `sensor-supervise.sh`,
+`migrate-env.sh` — are plumbing for `make dev` / `make dev-native` /
+`make migrate-env` and are not meant to be run directly.
+
 Three more fetch optional offline reference data. Everything they download is
 third-party, gitignored, and used only to enrich detections that already work
 without it — see [docs/ops/07-external-data.md](../docs/ops/07-external-data.md).

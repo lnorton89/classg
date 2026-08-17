@@ -184,9 +184,13 @@ requires `--privileged` or careful device mapping, plus host network mode for mo
 interfaces. Containerising sensors is often more friction than it is worth; see
 [docker/README.md](../../docker/README.md).
 
-**Recommended layout on the Pi:**
-- Sensors and fusion as **systemd units** on the host, with direct hardware access
-- API, UI, and storage in **containers**
+**Deployed layout on the Pi:**
+- Sensors as **systemd units** on the host, with direct hardware access
+  ([deploy/systemd](../../deploy/systemd))
+- Fusion, API, and UI in **containers**, with fusion listening on the published
+  bus port and the host sensors connecting outward to it
 
 That split puts containers where they help (dependency isolation for the web stack) and keeps
-them away from where they hurt (USB device and network-namespace handling).
+them away from where they hurt (USB device and network-namespace handling). Fusion has no
+hardware coupling, so it lives with the web tier rather than on the host. Install, run, and
+update procedure: [docs/ops/09-deployment.md](../ops/09-deployment.md).

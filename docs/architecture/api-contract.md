@@ -12,7 +12,8 @@ Base URL: `http://<host>:8081/api/v1`
    on the other, and anything one can do, the other can do.
 2. **The API is the only writer.** Clients never touch the ZMQ bus, the database, or config
    files directly.
-3. **Operator location is opt-in.** See [privacy](#privacy-non-negotiable).
+3. **Operator location exposure is controlled in one place** — included by default for this
+   deployment, removable everywhere with one flag. See [data handling](#data-handling).
 4. **Nothing here transmits RF.** Control endpoints start and stop *receive-only* processes.
 
 ---

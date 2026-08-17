@@ -102,10 +102,10 @@ Precedence is consistent:
 3. Otherwise, services find the nearest `.env` by walking toward the repository root.
 4. Built-in defaults are the final fallback.
 
-The API, fusion executable, and Wi-Fi CLI implement this loading directly. Vite
-uses the repository root as its `envDir`. Compose is invoked with `--env-file
-.env` by `make compose-up`. SDR and BLE variables remain reserved until their
-runtime loops land.
+The API, fusion executable, the Wi-Fi CLI, and the SDR sensor's `adsb` loop
+implement this loading directly. Vite uses the repository root as its `envDir`.
+Compose is invoked with `--env-file .env` by `make compose-up`. BLE variables
+remain reserved until that sensor's runtime loop lands (Milestone 4).
 
 `CLASSG_DETECTION_ENDPOINT` and the socket mode variables describe both ends of
 the sensor bus. An all-native run uses a binding sensor and a dialing fusion.

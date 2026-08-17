@@ -78,8 +78,11 @@ iw dev wlan1 info      # expect: type monitor, channel 6 (2437 MHz)
 
 ### Persist across reboots
 
-`scripts/setup-monitor.sh` handles this idempotently. Wire it into the sensor's systemd unit
-as `ExecStartPre=` so monitor mode is re-established after a replug or restart.
+`scripts/setup-monitor.sh` handles this idempotently. The shipped systemd unit
+([deploy/systemd](../../deploy/systemd), installed per [09-deployment.md](09-deployment.md))
+already runs it as `ExecStartPre=`, so monitor mode is re-established on every start —
+it survives neither a reboot nor a replug, and moving the adapter between USB ports
+silently drops the interface back to managed.
 
 ---
 

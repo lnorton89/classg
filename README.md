@@ -169,6 +169,9 @@ cd services/sensor-wifi
   ../../captures/20260810-141223-dji-first-flight.pcap
 ```
 
+For a real unit — sensors under systemd, web tier in Compose, and how to update
+it in place — follow [docs/ops/09-deployment.md](docs/ops/09-deployment.md).
+
 ### Run the tests
 
 ```bash
@@ -198,6 +201,8 @@ classg/
 ├── config/             Seed defaults for Tier 2 settings
 ├── captures/           PCAP / IQ corpus (gitignored, see captures/README.md)
 ├── scripts/            Bring-up, data-fetch, and diagnostic helpers
+├── deploy/             systemd unit templates + installer for the on-host sensors
+├── tools/              pi-dash terminal dashboard (Rust submodule)
 └── docker/             Compose for the web tier; see docs/ops for USB caveats
 ```
 
@@ -218,10 +223,12 @@ beyond this README, make them:
 
 ## Project status
 
-Milestone 0 hardware bring-up remains the current validation work. The Milestone 1 software
-foundation is implemented, but it is not considered complete until it passes the real-flight
-exit criterion against the capture corpus.
-See [docs/planning/roadmap.md](docs/planning/roadmap.md).
+Milestones 0–2 are complete: hardware bring-up is done, Wi-Fi detection was verified end to
+end against a live DJI flight (2026-08-10), and ADS-B airspace context is decoding live
+aircraft on the unit. The Milestone 5 hardening items — systemd units, persistent storage
+with retention, metrics, Compose — have landed. Milestones 3 (sub-2 GHz control links) and
+4 (Bluetooth Remote ID) are open; both need hardware not yet on hand.
+See [docs/planning/roadmap.md](docs/planning/roadmap.md) for exit criteria and evidence.
 
 ---
 

@@ -5,8 +5,13 @@ It accepts immutable `Detection` payloads, associates them with a track by
 identity, records evidence and position history, and advances each track
 through `TENTATIVE`, `CONFIRMED`, `COASTING`, and `CLOSED`.
 
-It intentionally has no `main` package. The API owns the runtime integration;
-this package owns the deterministic correlation rules.
+The library owns the deterministic correlation rules; the runtime wrapper is
+`cmd/classg-fusion`, which subscribes to the detection bus, republishes tracks
+and relays heartbeats, configured entirely from the environment
+([ADR-0007](../../docs/architecture/adr/0007-configuration-tiers.md) — fusion
+reads env, not the settings database). In deployment it runs as the
+`classg-fusion` container and listens on the published bus port so host
+sensors can dial in; see [docker/README.md](../../docker/README.md).
 
 ## Development
 

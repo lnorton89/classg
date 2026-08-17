@@ -153,7 +153,7 @@ standing.
 
 ## Procedure
 
-Full detail in [test-plan.md](../planning/test-plan.md#layer-2-dji-calibration).
+Full detail in [test-plan.md](../planning/test-plan.md#layer-2--dji-calibration-the-one-job-only-your-drone-can-do).
 
 | # | Test | Procedure | Field | Result |
 |---|---|---|---|---|

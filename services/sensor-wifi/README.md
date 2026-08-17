@@ -26,9 +26,13 @@ python3 -m venv .venv
 .venv/bin/python -m classg_wifi.cli analyze ../../captures/capture.pcap
 ```
 
-`run` currently publishes an unhealthy heartbeat and exits only after shutdown:
-the live raw-socket capture loop has not landed yet. Use `capture`, `replay`,
-and `analyze` for the working Milestone 0/1 path.
+`run` is the live sensor: raw-socket capture on a monitor-mode interface,
+weighted channel hopping, and detections plus heartbeats published on the bus.
+It needs root (AF_PACKET) and monitor mode already set — from the repo root,
+`make monitor` then `make sense`. Deployed units run it under systemd instead
+([docs/ops/09-deployment.md](../../docs/ops/09-deployment.md)); note the socket
+mode defaults to `bind`, which is right all-native and wrong when fusion is in
+Compose — set `CLASSG_WIFI_SOCKET_MODE=connect` there.
 
 Before a real capture, run [`../../scripts/check-capture-env.sh`](../../scripts/check-capture-env.sh)
 and follow [the first-capture guide](../../docs/ops/06-first-capture.md). Capture

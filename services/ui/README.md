@@ -1,7 +1,9 @@
 # ui (Vite + MapLibre) — Milestone 1
 
-Implemented as a static React application. The Go API serves `dist/` in deployment; in
-development, Mock Service Worker supplies deterministic API and WebSocket scenarios.
+Implemented as a static React application. In the deployed Compose layout nginx serves the
+built `dist/` (the api container runs with `CLASSG_UI_DIR=off`); the Go API can also serve it
+directly via `CLASSG_UI_DIR` for a single-binary setup. In development, Vite serves the app
+and Mock Service Worker supplies deterministic API and WebSocket scenarios.
 
 ```bash
 npm ci
@@ -17,9 +19,9 @@ and sensors. See `docs/ops/00-configuration.md`.
 ## Why MapLibre
 
 Offline tiles. A field-deployed Pi has no internet, and a drone-detection map that needs a
-tile CDN is useless exactly when you'd want it. MapLibre + a self-hosted TileServer handles
-this; the approach is borrowed from
-[RemoteIDReceiver](https://github.com/cyber-defence-campus/RemoteIDReceiver).
+tile CDN is useless exactly when you'd want it. MapLibre reads a local PMTiles archive or the
+container's own tile cache with no tile server at all; the offline-first approach is borrowed
+from [RemoteIDReceiver](https://github.com/cyber-defence-campus/RemoteIDReceiver).
 
 The container uses Esri World Imagery as a satellite basemap. It serves build-seeded tiles
 first, fetches missing tiles while online, and retains runtime downloads in the
@@ -58,7 +60,10 @@ system's log — the sensors and API keep their own on the Pi and those are the 
 **Settings** — display preferences, stored in this browser: unit system (metric / aviation /
 imperial), coordinate format, time zone and clock, text size, density, audible new-track
 alert, screen wake lock. Distinct from **Config**, which changes the instrument itself
-(channel dwell, fusion weights) on the server for every client.
+(channel dwell, fusion weights) on the server for every client. Settings → **About** renders
+`GET /api/v1/system` — build, runtime configuration, host readings — and charts the recorded
+history from `GET /api/v1/telemetry`; a reading the API could not take renders as
+"unavailable" with its reason, never as a zero.
 
 ## Type
 
