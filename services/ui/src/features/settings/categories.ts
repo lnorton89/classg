@@ -18,6 +18,7 @@ import {
   CloudDownloadIcon,
   EyeIcon,
   GaugeIcon,
+  InfoIcon,
   MapIcon,
   RadarIcon,
   RulerIcon,
@@ -102,6 +103,15 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     label: 'External data',
     icon: CloudDownloadIcon,
     hint: 'ADS-B, terrain, registries',
+    scope: 'receiver',
+  },
+  // Reads the Pi rather than this browser, so it belongs with the receiver
+  // group even though it changes nothing.
+  {
+    to: '/settings/about',
+    label: 'About',
+    icon: InfoIcon,
+    hint: 'Build, configuration, host',
     scope: 'receiver',
   },
 ]

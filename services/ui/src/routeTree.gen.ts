@@ -20,6 +20,7 @@ import { Route as CapturesCaptureIdRouteImport } from './routes/captures.$captur
 import { Route as DocsIndexRouteImport } from './routes/docs.index'
 import { Route as DocsDocIdRouteImport } from './routes/docs.$docId'
 import { Route as SettingsIndexRouteImport } from './routes/settings.index'
+import { Route as SettingsAboutRouteImport } from './routes/settings.about'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as SettingsCalibrationRouteImport } from './routes/settings.calibration'
 import { Route as SettingsDataRouteImport } from './routes/settings.data'
@@ -87,6 +88,11 @@ const SettingsIndexRoute = SettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsAboutRoute = SettingsAboutRouteImport.update({
+  id: '/about',
+  path: '/about',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsAppearanceRoute = SettingsAppearanceRouteImport.update({
   id: '/appearance',
   path: '/appearance',
@@ -152,6 +158,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRouteWithChildren
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
+  '/settings/about': typeof SettingsAboutRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/calibration': typeof SettingsCalibrationRoute
   '/settings/data': typeof SettingsDataRoute
@@ -174,6 +181,7 @@ export interface FileRoutesByTo {
   '/sensors': typeof SensorsRoute
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
+  '/settings/about': typeof SettingsAboutRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/calibration': typeof SettingsCalibrationRoute
   '/settings/data': typeof SettingsDataRoute
@@ -199,6 +207,7 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRouteWithChildren
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
+  '/settings/about': typeof SettingsAboutRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/calibration': typeof SettingsCalibrationRoute
   '/settings/data': typeof SettingsDataRoute
@@ -225,6 +234,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/captures/$captureId'
     | '/docs/$docId'
+    | '/settings/about'
     | '/settings/appearance'
     | '/settings/calibration'
     | '/settings/data'
@@ -247,6 +257,7 @@ export interface FileRouteTypes {
     | '/sensors'
     | '/captures/$captureId'
     | '/docs/$docId'
+    | '/settings/about'
     | '/settings/appearance'
     | '/settings/calibration'
     | '/settings/data'
@@ -271,6 +282,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/captures/$captureId'
     | '/docs/$docId'
+    | '/settings/about'
     | '/settings/appearance'
     | '/settings/calibration'
     | '/settings/data'
@@ -379,6 +391,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsIndexRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/about': {
+      id: '/settings/about'
+      path: '/about'
+      fullPath: '/settings/about'
+      preLoaderRoute: typeof SettingsAboutRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/appearance': {
       id: '/settings/appearance'
       path: '/appearance'
@@ -472,6 +491,7 @@ const DocsRouteChildren: DocsRouteChildren = {
 const DocsRouteWithChildren = DocsRoute._addFileChildren(DocsRouteChildren)
 
 interface SettingsRouteChildren {
+  SettingsAboutRoute: typeof SettingsAboutRoute
   SettingsAppearanceRoute: typeof SettingsAppearanceRoute
   SettingsCalibrationRoute: typeof SettingsCalibrationRoute
   SettingsDataRoute: typeof SettingsDataRoute
@@ -485,6 +505,7 @@ interface SettingsRouteChildren {
 }
 
 const SettingsRouteChildren: SettingsRouteChildren = {
+  SettingsAboutRoute: SettingsAboutRoute,
   SettingsAppearanceRoute: SettingsAppearanceRoute,
   SettingsCalibrationRoute: SettingsCalibrationRoute,
   SettingsDataRoute: SettingsDataRoute,

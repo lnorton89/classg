@@ -10,6 +10,7 @@ import type { DetectionsQuery, TracksQuery } from './types'
 
 export const queryKeys = {
   health: ['health'] as const,
+  system: ['system'] as const,
   sensors: ['sensors'] as const,
   monitoring: ['monitoring'] as const,
   tracks: (query: TracksQuery = {}) => ['tracks', 'list', query] as const,
@@ -36,6 +37,21 @@ export const healthQuery = () =>
     queryFn: () => api.health(),
     staleTime: 5_000,
     refetchInterval: 15_000,
+  })
+
+/**
+ * Host figures move; build and runtime do not. The interval is what makes the
+ * About panel a live view of the Pi rather than a snapshot of whenever it was
+ * opened -- CPU temperature and load are the two an operator watches while
+ * deciding whether the unit is coping. Slower than health because nothing here
+ * decides whether the sky is quiet.
+ */
+export const systemQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.system,
+    queryFn: () => api.system(),
+    staleTime: 10_000,
+    refetchInterval: 30_000,
   })
 
 export const monitoringQuery = () =>

@@ -75,6 +75,56 @@ export interface Health {
 }
 
 // ---------------------------------------------------------------------------
+// System — GET /system, behind the About panel
+// ---------------------------------------------------------------------------
+
+export interface SystemBuild {
+  version: string
+  go_version: string
+  /** Absent in container builds: .dockerignore excludes .git, so nothing stamps it. */
+  revision?: string
+  revision_dirty?: boolean
+  built_at?: string
+}
+
+/** An allowlist on the API side. Turso is a boolean, never its URL or token. */
+export interface SystemRuntime {
+  listen: string
+  store: string
+  ui_dir: string
+  capture_dir: string
+  turso_sync_configured: boolean
+  containerised: boolean
+}
+
+/**
+ * Every reading is nullable and null means "could not be read", with the reason
+ * in `unavailable`. Render null as unavailable, never as 0 or a bare dash that
+ * reads like data -- 0 °C and an uptime of 0 s are both plausible and both lies.
+ */
+export interface SystemHost {
+  uptime_s: number | null
+  load1: number | null
+  load5: number | null
+  load15: number | null
+  cpu_count: number
+  cpu_temp_c: number | null
+  mem_total_kb: number | null
+  mem_available_kb: number | null
+  disk_path: string
+  disk_total_bytes: number | null
+  disk_free_bytes: number | null
+  /** field name -> why it is missing. `throttled` is always present here. */
+  unavailable?: Record<string, string>
+}
+
+export interface SystemInfo {
+  build: SystemBuild
+  runtime: SystemRuntime
+  host: SystemHost
+}
+
+// ---------------------------------------------------------------------------
 // Tracks / detections
 // ---------------------------------------------------------------------------
 

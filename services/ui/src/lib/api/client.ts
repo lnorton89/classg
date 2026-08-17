@@ -26,6 +26,7 @@ import type {
   SensorHealth,
   SettingsResponse,
   StartCaptureRequest,
+  SystemInfo,
   Track,
   TracksQuery,
   TracksResponse,
@@ -160,6 +161,10 @@ export function unwrapConfigValue<T>(response: ConfigResponse<T> | T): T {
 export const api = {
   health(): Promise<Health> {
     return request<Health>('/health')
+  },
+
+  system(): Promise<SystemInfo> {
+    return request<SystemInfo>('/system')
   },
 
   monitoring(): Promise<MonitoringState> {

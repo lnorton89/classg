@@ -24,6 +24,7 @@ import type {
   SettingsResponse,
   SettingValue,
   StartCaptureRequest,
+  SystemInfo,
   Track,
   TracksResponse,
 } from '@/lib/api/types'
@@ -115,6 +116,41 @@ function csv(value: string | null): string[] {
 export const handlers = [
   // --- Health -------------------------------------------------------------
   http.get(`${base}/health`, () => HttpResponse.json<Health>(getScenario().health)),
+
+  // Modelled on a real reading from the unit, including the shape that matters
+  // most: `throttled` is unavailable with a reason rather than absent, because
+  // the api runs in a container and cannot reach vcgencmd. Dev and test see the
+  // null-with-a-reason path by default, not only the happy one.
+  http.get(`${base}/system`, () =>
+    HttpResponse.json<SystemInfo>({
+      build: { version: '0.1.0', go_version: 'go1.26.6' },
+      runtime: {
+        listen: ':8081',
+        store: 'libsql',
+        ui_dir: 'off',
+        capture_dir: '/captures',
+        turso_sync_configured: false,
+        containerised: true,
+      },
+      host: {
+        uptime_s: 12167,
+        load1: 0.69,
+        load5: 1.32,
+        load15: 1.06,
+        cpu_count: 4,
+        cpu_temp_c: 46.251,
+        mem_total_kb: 3887868,
+        mem_available_kb: 3409708,
+        disk_path: '/data',
+        disk_total_bytes: 125585461248,
+        disk_free_bytes: 92687323136,
+        unavailable: {
+          throttled:
+            'vcgencmd is not available to the api; run `vcgencmd get_throttled` on the Pi',
+        },
+      },
+    }),
+  ),
 
   http.get(`${base}/sensors`, () =>
     HttpResponse.json<{ sensors: SensorHealth[] }>({
