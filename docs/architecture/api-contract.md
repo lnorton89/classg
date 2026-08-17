@@ -143,6 +143,46 @@ publish a credential, so Turso is reported as `turso_sync_configured: true|false
 and never the token. `revision` is absent in container builds because `.dockerignore` excludes
 `.git`, so the toolchain has no VCS to stamp.
 
+### `GET /telemetry`
+
+Recorded host and sensor history — the same readings `/system` reports live, written down
+once a minute so there is something to look back at. `/metrics` exposes the current numbers and
+nothing on a field unit scrapes them, so without this there is no history at all.
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `window` | `6h` | Go duration, max `720h` |
+| `since` | — | RFC3339; overrides `window` |
+
+```jsonc
+{
+  "samples": [
+    { "ts": "2026-08-17T20:00:00Z", "cpu_temp_c": 46.25, "load1": 0.69,
+      "mem_available_kb": 3409708, "disk_free_bytes": 92687323136, "uptime_s": 12167,
+      "sensors": [ { "sensor_id": "wifi-0", "sensor_kind": "wifi", "healthy": true,
+                     "metrics": { "beacons": 15886, "listening_fraction": 0.74 } } ] }
+  ],
+  "since": "2026-08-17T14:00:00Z", "until": "2026-08-17T20:00:00Z", "truncated": false
+}
+```
+
+Samples are ascending by time, because every consumer is a chart and a chart reads left to
+right. `truncated` is true when the window held more samples than the 5000-sample cap returned;
+a chart whose axis claims 24 h while showing 6 h of data is a lie, so it is reported rather
+than left to be inferred.
+
+**Every host figure is nullable, and `null` means the api could not read it.** A client must
+draw a **gap**, never a point at zero and never a line interpolated across the hole — `0` °C is
+a plausible temperature and `0` bytes free is a plausible disk. This is the same rule
+`/system` follows, carried through storage and the wire.
+
+`sensors[].metrics` carries only the keys named in `internal/sensormetrics`, the single
+allowlist shared with `/metrics`. It governs what is written to disk and kept for a fortnight,
+not just what is exposed, so adding a key there is the deliberate act of recording it.
+
+Sampling records raw readings and computes nothing — no rates, no smoothing. A stored average
+cannot be un-averaged later, and a raw sample can always be reduced by whoever draws the chart.
+
 ---
 
 ## Tracks
