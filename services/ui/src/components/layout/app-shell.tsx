@@ -63,8 +63,18 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => globalThis.removeEventListener('keydown', onKeyDown)
   }, [])
 
+  // h-dvh, not min-h-dvh. A minimum lets this column grow to whatever its
+  // content wants, and then `min-h-0 flex-1` on <main> has no upper bound to
+  // shrink against -- so the map page ran 749px tall inside a 600px viewport,
+  // pushing the map off the bottom of the screen while the contacts panel
+  // scrolled the whole document instead of its own list.
+  //
+  // A definite height makes the shell the viewport, which is what an operator
+  // console wants: the chrome stays put and the regions inside it scroll.
+  // <main> carries overflow-y-auto so ordinary long pages -- settings, the docs
+  // tree -- still scroll normally within it.
   return (
-    <div className="bg-background flex min-h-dvh flex-col">
+    <div className="bg-background flex h-dvh flex-col">
       <a href="#main" className="sr-only-focusable">
         Skip to main content
       </a>
@@ -171,7 +181,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* safe-pb-nav clears the fixed mobile nav and the home indicator under
           it; it collapses to 0 at md, where the nav moves into the header. */}
-      <main id="main" className="safe-pb-nav flex min-h-0 flex-1 flex-col">
+      <main id="main" className="safe-pb-nav flex min-h-0 flex-1 flex-col overflow-y-auto">
         {children}
       </main>
 
