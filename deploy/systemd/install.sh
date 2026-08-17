@@ -33,10 +33,22 @@ fi
 
 shopt -s nullglob
 installed=0
+# Who the unprivileged units run as. The Wi-Fi sensor needs root for AF_PACKET,
+# but the SDR one only reads a TCP socket from dump1090 and should not inherit
+# privileges it has no use for. The checkout's owner is the closest thing to
+# "whoever deployed this" that survives being run under sudo, where $USER is
+# root and SUDO_USER is unset for a root login.
+RUNAS="$(stat -c %U "$CLASSG_HOME")"
+if [[ -z "$RUNAS" || "$RUNAS" == "UNKNOWN" ]]; then
+    RUNAS="${SUDO_USER:-root}"
+fi
+echo "unprivileged units will run as: $RUNAS"
+
 for tpl in "$HERE"/*.service.in; do
     unit="$(basename "$tpl" .in)"
     sed -e "s|@CLASSG_HOME@|$CLASSG_HOME|g" \
         -e "s|@IFACE@|$IFACE|g" \
+        -e "s|@RUNAS@|$RUNAS|g" \
         "$tpl" > "/etc/systemd/system/$unit"
     echo "installed /etc/systemd/system/$unit"
     installed=$((installed + 1))
