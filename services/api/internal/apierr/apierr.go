@@ -21,6 +21,17 @@ const (
 	CodePrivilegesRequired = "privileges_required"
 	CodeSensorUnavailable  = "sensor_unavailable"
 	CodeInternal           = "internal"
+
+	// CodeUnauthenticated means "log in", CodeForbidden means "you are logged
+	// in and this is not yours". Distinct because the client does different
+	// things with them: the first sends you to the login screen, the second
+	// must not, or a viewer clicking an admin link gets bounced out of a
+	// session that is working perfectly.
+	CodeUnauthenticated = "unauthenticated"
+	CodeForbidden       = "forbidden"
+	// CodeSetupRequired means the unit has no accounts yet and serves nothing
+	// but the setup endpoint.
+	CodeSetupRequired = "setup_required"
 )
 
 type Error struct {
@@ -53,6 +64,14 @@ func (e *Error) Status() int {
 		return http.StatusConflict
 	case CodePrivilegesRequired, CodeSensorUnavailable:
 		return http.StatusServiceUnavailable
+	case CodeUnauthenticated:
+		return http.StatusUnauthorized
+	case CodeForbidden:
+		return http.StatusForbidden
+	case CodeSetupRequired:
+		// 409, not 401: nothing is wrong with the caller's credentials, the
+		// unit is in a state where only one endpoint means anything.
+		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
 	}
@@ -80,6 +99,18 @@ func PrivilegesRequired(message string) *Error {
 
 func SensorUnavailable(message string) *Error {
 	return &Error{Code: CodeSensorUnavailable, Message: message}
+}
+
+func Unauthenticated(message string) *Error {
+	return &Error{Code: CodeUnauthenticated, Message: message}
+}
+
+func Forbidden(message string) *Error {
+	return &Error{Code: CodeForbidden, Message: message}
+}
+
+func SetupRequired(message string) *Error {
+	return &Error{Code: CodeSetupRequired, Message: message}
 }
 
 func Internal(message string) *Error {

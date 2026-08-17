@@ -10,6 +10,9 @@ import (
 )
 
 type Querier interface {
+	// Guards the last admin. Deleting or demoting the only one leaves a box nobody
+	// can administer, recoverable only by editing the database by hand.
+	CountAdmins(ctx context.Context) (int64, error)
 	CountDetections(ctx context.Context, arg CountDetectionsParams) (int64, error)
 	// Reconstructing one track's detections matches on serial OR MAC, because a
 	// track is keyed by MAC until Basic ID arrives and by serial afterwards, and
@@ -21,15 +24,28 @@ type Querier interface {
 	// when a track has neither.
 	CountTrackDetections(ctx context.Context, arg CountTrackDetectionsParams) (int64, error)
 	CountTracks(ctx context.Context, arg CountTracksParams) (int64, error)
+	CountUsers(ctx context.Context) (int64, error)
+	DeleteSession(ctx context.Context, sessionID string) (int64, error)
+	DeleteUser(ctx context.Context, userID string) (int64, error)
+	DeleteUserSessions(ctx context.Context, userID string) (int64, error)
 	// Powers /health's detections_5m, which is how a quiet sky is told apart from
 	// a broken sensor.
 	DetectionCountsSince(ctx context.Context, ts string) ([]DetectionCountsSinceRow, error)
 	GetCapture(ctx context.Context, captureID string) (string, error)
 	GetCaptureReport(ctx context.Context, captureID string) (sql.NullString, error)
 	GetConfig(ctx context.Context, key string) (string, error)
+	GetSession(ctx context.Context, sessionID string) (Session, error)
 	GetSweep(ctx context.Context, sweepID string) (string, error)
 	GetSweepBins(ctx context.Context, sweepID string) (sql.NullString, error)
 	GetTrack(ctx context.Context, trackID string) (string, error)
+	GetUser(ctx context.Context, userID string) (User, error)
+	// `issuer <> ''` is load-bearing, not tidiness. Local accounts store ('',''),
+	// so without it a lookup with an empty issuer matches the first local account
+	// it finds -- and an SSO login would come back as an existing operator. The
+	// memstore refuses an empty issuer explicitly; this is the SQL half of the same
+	// rule, and storetest checks both.
+	GetUserByOIDC(ctx context.Context, arg GetUserByOIDCParams) (User, error)
+	GetUserByUsername(ctx context.Context, username string) (User, error)
 	InsertDetection(ctx context.Context, arg InsertDetectionParams) error
 	// Ignores a duplicate timestamp rather than failing: two samplers, or a restart
 	// inside one sampling interval, must not take the api down.
@@ -37,6 +53,7 @@ type Querier interface {
 	ListCaptures(ctx context.Context) ([]string, error)
 	ListDetections(ctx context.Context, arg ListDetectionsParams) ([]ListDetectionsRow, error)
 	ListSensors(ctx context.Context) ([]Sensor, error)
+	ListSessions(ctx context.Context, limit int64) ([]Session, error)
 	// Newest first, and deliberately without `bins`: the list is a menu, and
 	// dragging every measurement off disk to render it would make the page cost
 	// megabytes to answer "which sweeps do I have".
@@ -47,7 +64,9 @@ type Querier interface {
 	// Keyset paging on (last_seen DESC, track_id DESC), matching idx_tracks_page.
 	// Offset paging would silently skip rows on a table being appended to.
 	ListTracks(ctx context.Context, arg ListTracksParams) ([]ListTracksRow, error)
+	ListUsers(ctx context.Context) ([]User, error)
 	PurgeDetections(ctx context.Context, ts string) (int64, error)
+	PurgeExpiredSessions(ctx context.Context, expiresAt string) (int64, error)
 	PurgeSweeps(ctx context.Context, startedAt string) (int64, error)
 	PurgeTelemetry(ctx context.Context, ts string) (int64, error)
 	PurgeTracks(ctx context.Context, lastSeen string) (int64, error)
@@ -58,10 +77,13 @@ type Querier interface {
 	// reported as not-found rather than passing silently.
 	PutCaptureReport(ctx context.Context, arg PutCaptureReportParams) (int64, error)
 	PutConfig(ctx context.Context, arg PutConfigParams) error
+	PutSession(ctx context.Context, arg PutSessionParams) error
 	PutSweep(ctx context.Context, arg PutSweepParams) error
 	// Separate from PutSweep so finishing a sweep does not rewrite the megabyte,
 	// and so a failed sweep stores its reason without storing an empty blob.
 	PutSweepBins(ctx context.Context, arg PutSweepBinsParams) error
+	PutUser(ctx context.Context, arg PutUserParams) error
+	TouchSession(ctx context.Context, arg TouchSessionParams) error
 	UpsertSensor(ctx context.Context, arg UpsertSensorParams) error
 	// Every statement the store runs. sqlc type-checks each one against
 	// schema.sql and generates the Go, so a column that no longer exists is a

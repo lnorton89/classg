@@ -113,3 +113,61 @@ CREATE TABLE IF NOT EXISTS spectrum_sweeps (
 );
 
 CREATE INDEX IF NOT EXISTS idx_spectrum_sweeps_started ON spectrum_sweeps (started_at DESC);
+
+-- Accounts.
+--
+-- username is normalised (lowercased, trimmed) before it gets here, and the
+-- UNIQUE index is on that normalised form -- otherwise "Admin" and "admin"
+-- become two accounts and someone can register a near-twin of an operator that
+-- a human skims straight past.
+--
+-- password_hash is NULL for an SSO-only account. That is a real state, not a
+-- missing value: such an account has no password to check and must never fall
+-- through to a local login path.
+--
+-- (issuer, subject) is how an SSO identity is matched on return. Subject alone
+-- is not unique across providers, and matching on email would mean anyone who
+-- can set an email claim at any configured provider can become an existing
+-- user.
+CREATE TABLE IF NOT EXISTS users (
+    user_id       TEXT PRIMARY KEY,
+    username      TEXT NOT NULL,
+    display_name  TEXT NOT NULL DEFAULT '',
+    role          TEXT NOT NULL,
+    password_hash TEXT,
+    issuer        TEXT NOT NULL DEFAULT '',
+    subject       TEXT NOT NULL DEFAULT '',
+    disabled      INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL,
+    last_login_at TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username);
+
+-- Partial index: only SSO accounts participate, so the many local accounts
+-- with ('','') do not collide with each other.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_oidc
+    ON users (issuer, subject) WHERE issuer <> '';
+
+-- Live sessions.
+--
+-- session_id is the SHA-256 of the token the browser holds; the token itself is
+-- never written down. A database dump -- including the Turso replica, which
+-- leaves the unit by design -- therefore hands over no usable session.
+--
+-- ON DELETE CASCADE so deleting a user ends their sessions in the same
+-- statement. A deleted account whose cookie still works is the exact failure an
+-- admin thinks they just prevented.
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    last_seen  TEXT NOT NULL,
+    user_agent TEXT NOT NULL DEFAULT '',
+    ip         TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at);

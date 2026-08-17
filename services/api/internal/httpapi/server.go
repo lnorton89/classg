@@ -14,11 +14,13 @@ import (
 	"time"
 
 	"github.com/classg/api/internal/apierr"
+	"github.com/classg/api/internal/auth"
 	"github.com/classg/api/internal/capture"
 	"github.com/classg/api/internal/config"
 	"github.com/classg/api/internal/health"
 	"github.com/classg/api/internal/hub"
 	"github.com/classg/api/internal/monitoring"
+	"github.com/classg/api/internal/oidcauth"
 	"github.com/classg/api/internal/settings"
 	"github.com/classg/api/internal/spectrum"
 	"github.com/classg/api/internal/store"
@@ -40,6 +42,8 @@ type Server struct {
 	hub        *hub.Hub
 	captures   *capture.Manager
 	spectrum   *spectrum.Service
+	auth       *auth.Service
+	oidc       *oidcauth.Provider
 	sensors    Sensors
 	started    time.Time
 	settings   *settings.Settings
@@ -59,7 +63,12 @@ type Options struct {
 	// Spectrum may be nil: a unit with no SDR still serves everything else,
 	// and the band picker reports why rather than the page failing (ADR-0003).
 	Spectrum *spectrum.Service
-	Sensors  Sensors
+	// Auth may be nil only in tests that predate authentication; New builds a
+	// disabled service rather than leaving a nil to dereference.
+	Auth *auth.Service
+	// OIDC is nil when SSO is not configured, which is the common case.
+	OIDC    *oidcauth.Provider
+	Sensors Sensors
 	// Started must come from time.Now() and keep its monotonic reading. Passing
 	// a value that has been through .UTC(), .Round(0) or a parse makes uptime
 	// wall-clock arithmetic again, which on an RTC-less Pi reports the boot-time
@@ -77,11 +86,19 @@ func New(opts Options) *Server {
 		hub:        opts.Hub,
 		captures:   opts.Captures,
 		spectrum:   opts.Spectrum,
+		auth:       opts.Auth,
+		oidc:       opts.OIDC,
 		sensors:    opts.Sensors,
 		started:    opts.Started,
 	}
 	if s.started.IsZero() {
 		s.started = time.Now()
+	}
+	if s.auth == nil {
+		// A nil service would panic on the first request. An explicitly
+		// disabled one degrades the way ADR-0003 asks for: the API works, and
+		// /auth/me reports auth_enabled false so the UI says so.
+		s.auth = &auth.Service{Mode: auth.ModeOff}
 	}
 	s.mux = s.routes()
 	return s
@@ -92,55 +109,101 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.Serve
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 
-	h := func(pattern string, fn http.HandlerFunc) { mux.HandleFunc(pattern, fn) }
+	// `open` is public; `view`, `act` and `admin` require a role. There is
+	// deliberately no bare registration helper: adding a route means choosing
+	// one of these four, and the three restrictive ones are the easy ones to
+	// reach for. The public set below is short enough to audit at a glance.
+	open := func(pattern string, fn http.HandlerFunc) { mux.HandleFunc(pattern, fn) }
+	view := func(pattern string, fn http.HandlerFunc) {
+		mux.HandleFunc(pattern, s.protect(auth.RoleViewer, fn))
+	}
+	act := func(pattern string, fn http.HandlerFunc) {
+		mux.HandleFunc(pattern, s.protect(auth.RoleOperator, fn))
+	}
+	admin := func(pattern string, fn http.HandlerFunc) {
+		mux.HandleFunc(pattern, s.protect(auth.RoleAdmin, fn))
+	}
 
-	h("GET "+BasePath+"/health", s.handleHealth)
+	// --- public ---
+	//
+	// health is open because a monitoring probe has no session and a unit that
+	// only reports its health to authenticated callers cannot be monitored by
+	// the thing that notices it died. It carries no detections and no
+	// positions -- see handleHealth.
+	open("GET "+BasePath+"/health", s.handleHealth)
+
+	// The login surface. All of it must work for someone with no session.
+	open("GET "+BasePath+"/auth/me", s.handleMe)
+	open("POST "+BasePath+"/auth/login", s.handleLogin)
+	open("POST "+BasePath+"/auth/logout", s.handleLogout)
+	open("POST "+BasePath+"/auth/setup", s.handleSetup)
+	open("GET "+BasePath+"/auth/sso/start", s.handleOIDCStart)
+	open("GET "+BasePath+"/auth/sso/callback", s.handleOIDCCallback)
+
+	view("POST "+BasePath+"/auth/password", s.handleChangePassword)
 
 	// Not under /api/v1: every scraper in existence defaults to /metrics, and
 	// the contract's error envelope has no meaning to one. A more specific
 	// pattern than "/" wins in ServeMux, so this takes precedence over the web
 	// app without the static handler needing to know.
-	h("GET /metrics", s.handleMetrics)
+	//
+	// Left open for the same reason as health: Prometheus does not hold a
+	// session cookie, and a scrape target that 401s is a scrape target nobody
+	// is watching. It exposes counters and gauges, never positions or
+	// identities -- internal/sensormetrics is the allowlist that keeps it that
+	// way.
+	open("GET /metrics", s.handleMetrics)
 
-	h("GET "+BasePath+"/tracks", s.handleListTracks)
-	h("GET "+BasePath+"/tracks/{track_id}", s.handleGetTrack)
-	h("GET "+BasePath+"/tracks/{track_id}/detections", s.handleTrackDetections)
-	h("GET "+BasePath+"/tracks/{track_id}/export", s.handleExportTrack)
+	view("GET "+BasePath+"/tracks", s.handleListTracks)
+	view("GET "+BasePath+"/tracks/{track_id}", s.handleGetTrack)
+	view("GET "+BasePath+"/tracks/{track_id}/detections", s.handleTrackDetections)
+	view("GET "+BasePath+"/tracks/{track_id}/export", s.handleExportTrack)
 
-	h("GET "+BasePath+"/detections", s.handleListDetections)
+	view("GET "+BasePath+"/detections", s.handleListDetections)
 
-	h("GET "+BasePath+"/stream", s.handleStream)
+	view("GET "+BasePath+"/stream", s.handleStream)
 
-	h("GET "+BasePath+"/captures", s.handleListCaptures)
-	h("POST "+BasePath+"/captures", s.handleStartCapture)
-	h("GET "+BasePath+"/captures/{capture_id}", s.handleGetCapture)
-	h("POST "+BasePath+"/captures/{capture_id}/stop", s.handleStopCapture)
-	h("POST "+BasePath+"/captures/{capture_id}/analyze", s.handleAnalyzeCapture)
-	h("GET "+BasePath+"/captures/{capture_id}/report", s.handleCaptureReport)
-	h("GET "+BasePath+"/captures/{capture_id}/download", s.handleCaptureDownload)
+	view("GET "+BasePath+"/captures", s.handleListCaptures)
+	act("POST "+BasePath+"/captures", s.handleStartCapture)
+	view("GET "+BasePath+"/captures/{capture_id}", s.handleGetCapture)
+	act("POST "+BasePath+"/captures/{capture_id}/stop", s.handleStopCapture)
+	act("POST "+BasePath+"/captures/{capture_id}/analyze", s.handleAnalyzeCapture)
+	view("GET "+BasePath+"/captures/{capture_id}/report", s.handleCaptureReport)
+	view("GET "+BasePath+"/captures/{capture_id}/download", s.handleCaptureDownload)
 
 	// Energy measurement only -- see internal/spectrum. Sweeping takes the
 	// radio from dump1090 for its duration (ADR-0008), which is why there is a
 	// start endpoint and not a live stream.
-	h("GET "+BasePath+"/spectrum/bands", s.handleListBands)
-	h("GET "+BasePath+"/spectrum/sweeps", s.handleListSweeps)
-	h("POST "+BasePath+"/spectrum/sweeps", s.handleStartSweep)
-	h("GET "+BasePath+"/spectrum/sweeps/{sweep_id}", s.handleGetSweep)
+	view("GET "+BasePath+"/spectrum/bands", s.handleListBands)
+	view("GET "+BasePath+"/spectrum/sweeps", s.handleListSweeps)
+	act("POST "+BasePath+"/spectrum/sweeps", s.handleStartSweep)
+	view("GET "+BasePath+"/spectrum/sweeps/{sweep_id}", s.handleGetSweep)
 
-	h("GET "+BasePath+"/system", s.handleSystem)
-	h("GET "+BasePath+"/telemetry", s.handleTelemetry)
+	view("GET "+BasePath+"/system", s.handleSystem)
+	view("GET "+BasePath+"/telemetry", s.handleTelemetry)
 
-	h("GET "+BasePath+"/sensors", s.handleListSensors)
-	h("POST "+BasePath+"/sensors/{sensor_id}/restart", s.handleRestartSensor)
+	view("GET "+BasePath+"/sensors", s.handleListSensors)
+	act("POST "+BasePath+"/sensors/{sensor_id}/restart", s.handleRestartSensor)
 
-	h("GET "+BasePath+"/config/channels", s.handleGetChannels)
-	h("PUT "+BasePath+"/config/channels", s.handlePutChannels)
-	h("GET "+BasePath+"/monitoring", s.handleGetMonitoring)
-	h("PUT "+BasePath+"/monitoring", s.handlePutMonitoring)
-	h("GET "+BasePath+"/config/settings", s.handleGetSettings)
-	h("PUT "+BasePath+"/config/settings", s.handlePutSettings)
-	h("GET "+BasePath+"/config/weights", s.handleGetWeights)
-	h("PUT "+BasePath+"/config/weights", s.handlePutWeights)
+	view("GET "+BasePath+"/config/channels", s.handleGetChannels)
+	act("PUT "+BasePath+"/config/channels", s.handlePutChannels)
+	view("GET "+BasePath+"/monitoring", s.handleGetMonitoring)
+	act("PUT "+BasePath+"/monitoring", s.handlePutMonitoring)
+	view("GET "+BasePath+"/config/settings", s.handleGetSettings)
+	// Admin, not operator: this can repoint the store, the bus and the
+	// capture directory. It is configuration of the machine, not operation
+	// of it.
+	admin("PUT "+BasePath+"/config/settings", s.handlePutSettings)
+	view("GET "+BasePath+"/config/weights", s.handleGetWeights)
+	act("PUT "+BasePath+"/config/weights", s.handlePutWeights)
+
+	// --- administration ---
+	admin("GET "+BasePath+"/admin/users", s.handleListUsers)
+	admin("POST "+BasePath+"/admin/users", s.handleCreateUser)
+	admin("PATCH "+BasePath+"/admin/users/{user_id}", s.handleUpdateUser)
+	admin("DELETE "+BasePath+"/admin/users/{user_id}", s.handleDeleteUser)
+	admin("GET "+BasePath+"/admin/sessions", s.handleListSessions)
+	admin("DELETE "+BasePath+"/admin/sessions/{session_id}", s.handleRevokeSession)
 
 	// Anything else under /api gets the error envelope rather than ServeMux's
 	// plain-text 404. A client that parses one shape must never be handed two.

@@ -41,6 +41,16 @@ type Sensor struct {
 	Detail        sql.NullString
 }
 
+type Session struct {
+	SessionID string
+	UserID    string
+	CreatedAt string
+	ExpiresAt string
+	LastSeen  string
+	UserAgent string
+	Ip        string
+}
+
 type SpectrumSweep struct {
 	SweepID   string
 	Doc       string
@@ -66,4 +76,18 @@ type Track struct {
 	Confidence     float64
 	Serial         sql.NullString
 	Doc            string
+}
+
+type User struct {
+	UserID       string
+	Username     string
+	DisplayName  string
+	Role         string
+	PasswordHash sql.NullString
+	Issuer       string
+	Subject      string
+	Disabled     int64
+	CreatedAt    string
+	UpdatedAt    string
+	LastLoginAt  sql.NullString
 }

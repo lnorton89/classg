@@ -10,6 +10,19 @@ import (
 	"database/sql"
 )
 
+const countAdmins = `-- name: CountAdmins :one
+SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled = 0
+`
+
+// Guards the last admin. Deleting or demoting the only one leaves a box nobody
+// can administer, recoverable only by editing the database by hand.
+func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countDetections = `-- name: CountDetections :one
 SELECT COUNT(*) FROM detections
 WHERE (CAST(?1 AS TEXT)     IS NULL OR ts        >= ?1)
@@ -91,6 +104,53 @@ func (q *Queries) CountTracks(ctx context.Context, arg CountTracksParams) (int64
 	return count, err
 }
 
+const countUsers = `-- name: CountUsers :one
+SELECT COUNT(*) FROM users
+`
+
+func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUsers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteSession = `-- name: DeleteSession :execrows
+DELETE FROM sessions WHERE session_id = ?
+`
+
+func (q *Queries) DeleteSession(ctx context.Context, sessionID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteSession, sessionID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteUser = `-- name: DeleteUser :execrows
+DELETE FROM users WHERE user_id = ?
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, userID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUser, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteUserSessions = `-- name: DeleteUserSessions :execrows
+DELETE FROM sessions WHERE user_id = ?
+`
+
+func (q *Queries) DeleteUserSessions(ctx context.Context, userID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteUserSessions, userID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const detectionCountsSince = `-- name: DetectionCountsSince :many
 SELECT sensor_id, COUNT(*) AS count FROM detections
 WHERE ts >= ?
@@ -160,6 +220,26 @@ func (q *Queries) GetConfig(ctx context.Context, key string) (string, error) {
 	return value, err
 }
 
+const getSession = `-- name: GetSession :one
+SELECT session_id, user_id, created_at, expires_at, last_seen, user_agent, ip
+FROM sessions WHERE session_id = ?
+`
+
+func (q *Queries) GetSession(ctx context.Context, sessionID string) (Session, error) {
+	row := q.db.QueryRowContext(ctx, getSession, sessionID)
+	var i Session
+	err := row.Scan(
+		&i.SessionID,
+		&i.UserID,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.LastSeen,
+		&i.UserAgent,
+		&i.Ip,
+	)
+	return i, err
+}
+
 const getSweep = `-- name: GetSweep :one
 SELECT doc FROM spectrum_sweeps WHERE sweep_id = ?
 `
@@ -191,6 +271,91 @@ func (q *Queries) GetTrack(ctx context.Context, trackID string) (string, error) 
 	var doc string
 	err := row.Scan(&doc)
 	return doc, err
+}
+
+const getUser = `-- name: GetUser :one
+SELECT user_id, username, display_name, role, password_hash, issuer, subject,
+       disabled, created_at, updated_at, last_login_at
+FROM users WHERE user_id = ?
+`
+
+func (q *Queries) GetUser(ctx context.Context, userID string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUser, userID)
+	var i User
+	err := row.Scan(
+		&i.UserID,
+		&i.Username,
+		&i.DisplayName,
+		&i.Role,
+		&i.PasswordHash,
+		&i.Issuer,
+		&i.Subject,
+		&i.Disabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LastLoginAt,
+	)
+	return i, err
+}
+
+const getUserByOIDC = `-- name: GetUserByOIDC :one
+SELECT user_id, username, display_name, role, password_hash, issuer, subject,
+       disabled, created_at, updated_at, last_login_at
+FROM users WHERE issuer = ? AND issuer <> '' AND subject = ?
+`
+
+type GetUserByOIDCParams struct {
+	Issuer  string
+	Subject string
+}
+
+// `issuer <> ”` is load-bearing, not tidiness. Local accounts store (”,”),
+// so without it a lookup with an empty issuer matches the first local account
+// it finds -- and an SSO login would come back as an existing operator. The
+// memstore refuses an empty issuer explicitly; this is the SQL half of the same
+// rule, and storetest checks both.
+func (q *Queries) GetUserByOIDC(ctx context.Context, arg GetUserByOIDCParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByOIDC, arg.Issuer, arg.Subject)
+	var i User
+	err := row.Scan(
+		&i.UserID,
+		&i.Username,
+		&i.DisplayName,
+		&i.Role,
+		&i.PasswordHash,
+		&i.Issuer,
+		&i.Subject,
+		&i.Disabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LastLoginAt,
+	)
+	return i, err
+}
+
+const getUserByUsername = `-- name: GetUserByUsername :one
+SELECT user_id, username, display_name, role, password_hash, issuer, subject,
+       disabled, created_at, updated_at, last_login_at
+FROM users WHERE username = ?
+`
+
+func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
+	row := q.db.QueryRowContext(ctx, getUserByUsername, username)
+	var i User
+	err := row.Scan(
+		&i.UserID,
+		&i.Username,
+		&i.DisplayName,
+		&i.Role,
+		&i.PasswordHash,
+		&i.Issuer,
+		&i.Subject,
+		&i.Disabled,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.LastLoginAt,
+	)
+	return i, err
 }
 
 const insertDetection = `-- name: InsertDetection :exec
@@ -362,6 +527,42 @@ func (q *Queries) ListSensors(ctx context.Context) ([]Sensor, error) {
 			&i.Healthy,
 			&i.Reason,
 			&i.Detail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSessions = `-- name: ListSessions :many
+SELECT session_id, user_id, created_at, expires_at, last_seen, user_agent, ip
+FROM sessions ORDER BY last_seen DESC LIMIT ?
+`
+
+func (q *Queries) ListSessions(ctx context.Context, limit int64) ([]Session, error) {
+	rows, err := q.db.QueryContext(ctx, listSessions, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Session{}
+	for rows.Next() {
+		var i Session
+		if err := rows.Scan(
+			&i.SessionID,
+			&i.UserID,
+			&i.CreatedAt,
+			&i.ExpiresAt,
+			&i.LastSeen,
+			&i.UserAgent,
+			&i.Ip,
 		); err != nil {
 			return nil, err
 		}
@@ -578,12 +779,65 @@ func (q *Queries) ListTracks(ctx context.Context, arg ListTracksParams) ([]ListT
 	return items, nil
 }
 
+const listUsers = `-- name: ListUsers :many
+SELECT user_id, username, display_name, role, password_hash, issuer, subject,
+       disabled, created_at, updated_at, last_login_at
+FROM users ORDER BY username ASC
+`
+
+func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, listUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Username,
+			&i.DisplayName,
+			&i.Role,
+			&i.PasswordHash,
+			&i.Issuer,
+			&i.Subject,
+			&i.Disabled,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.LastLoginAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const purgeDetections = `-- name: PurgeDetections :execrows
 DELETE FROM detections WHERE ts < ?
 `
 
 func (q *Queries) PurgeDetections(ctx context.Context, ts string) (int64, error) {
 	result, err := q.db.ExecContext(ctx, purgeDetections, ts)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const purgeExpiredSessions = `-- name: PurgeExpiredSessions :execrows
+DELETE FROM sessions WHERE expires_at < ?
+`
+
+func (q *Queries) PurgeExpiredSessions(ctx context.Context, expiresAt string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeExpiredSessions, expiresAt)
 	if err != nil {
 		return 0, err
 	}
@@ -684,6 +938,34 @@ func (q *Queries) PutConfig(ctx context.Context, arg PutConfigParams) error {
 	return err
 }
 
+const putSession = `-- name: PutSession :exec
+INSERT INTO sessions (session_id, user_id, created_at, expires_at, last_seen, user_agent, ip)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+`
+
+type PutSessionParams struct {
+	SessionID string
+	UserID    string
+	CreatedAt string
+	ExpiresAt string
+	LastSeen  string
+	UserAgent string
+	Ip        string
+}
+
+func (q *Queries) PutSession(ctx context.Context, arg PutSessionParams) error {
+	_, err := q.db.ExecContext(ctx, putSession,
+		arg.SessionID,
+		arg.UserID,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+		arg.LastSeen,
+		arg.UserAgent,
+		arg.Ip,
+	)
+	return err
+}
+
 const putSweep = `-- name: PutSweep :exec
 INSERT INTO spectrum_sweeps (sweep_id, doc, started_at)
 VALUES (?, ?, ?)
@@ -714,6 +996,68 @@ type PutSweepBinsParams struct {
 // and so a failed sweep stores its reason without storing an empty blob.
 func (q *Queries) PutSweepBins(ctx context.Context, arg PutSweepBinsParams) error {
 	_, err := q.db.ExecContext(ctx, putSweepBins, arg.Bins, arg.SweepID)
+	return err
+}
+
+const putUser = `-- name: PutUser :exec
+INSERT INTO users (user_id, username, display_name, role, password_hash, issuer, subject,
+                   disabled, created_at, updated_at, last_login_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(user_id) DO UPDATE SET
+    username = excluded.username,
+    display_name = excluded.display_name,
+    role = excluded.role,
+    password_hash = excluded.password_hash,
+    issuer = excluded.issuer,
+    subject = excluded.subject,
+    disabled = excluded.disabled,
+    updated_at = excluded.updated_at,
+    last_login_at = excluded.last_login_at
+`
+
+type PutUserParams struct {
+	UserID       string
+	Username     string
+	DisplayName  string
+	Role         string
+	PasswordHash sql.NullString
+	Issuer       string
+	Subject      string
+	Disabled     int64
+	CreatedAt    string
+	UpdatedAt    string
+	LastLoginAt  sql.NullString
+}
+
+func (q *Queries) PutUser(ctx context.Context, arg PutUserParams) error {
+	_, err := q.db.ExecContext(ctx, putUser,
+		arg.UserID,
+		arg.Username,
+		arg.DisplayName,
+		arg.Role,
+		arg.PasswordHash,
+		arg.Issuer,
+		arg.Subject,
+		arg.Disabled,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.LastLoginAt,
+	)
+	return err
+}
+
+const touchSession = `-- name: TouchSession :exec
+UPDATE sessions SET last_seen = ?, expires_at = ? WHERE session_id = ?
+`
+
+type TouchSessionParams struct {
+	LastSeen  string
+	ExpiresAt string
+	SessionID string
+}
+
+func (q *Queries) TouchSession(ctx context.Context, arg TouchSessionParams) error {
+	_, err := q.db.ExecContext(ctx, touchSession, arg.LastSeen, arg.ExpiresAt, arg.SessionID)
 	return err
 }
 

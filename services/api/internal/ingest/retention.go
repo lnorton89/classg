@@ -27,7 +27,13 @@ type Retention struct {
 	// is about a megabyte -- three orders of magnitude bigger than a telemetry
 	// sample. Unbounded, an operator who sweeps daily fills a Pi's card with
 	// spectra nobody has looked at since.
-	Sweeps   time.Duration
+	Sweeps time.Duration
+	// Sessions is the auth service, if there is one. Expired sessions are
+	// deleted on sight during Authenticate, so this only sweeps the ones
+	// belonging to browsers that never came back.
+	Sessions interface {
+		PurgeSessions(ctx context.Context) (int64, error)
+	}
 	Interval time.Duration
 }
 
@@ -73,6 +79,13 @@ func (r *Retention) Sweep(ctx context.Context, now time.Time) {
 			slog.Error("purging telemetry failed", "err", err)
 		} else if n > 0 {
 			slog.Info("retention: purged telemetry", "rows", n, "older_than", r.Telemetry)
+		}
+	}
+	if r.Sessions != nil {
+		if n, err := r.Sessions.PurgeSessions(ctx); err != nil {
+			slog.Error("purging expired sessions failed", "err", err)
+		} else if n > 0 {
+			slog.Info("retention: purged expired sessions", "rows", n)
 		}
 	}
 	if r.Sweeps > 0 {

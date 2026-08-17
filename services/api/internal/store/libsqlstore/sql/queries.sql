@@ -221,3 +221,78 @@ SELECT doc FROM spectrum_sweeps ORDER BY started_at DESC LIMIT ?;
 
 -- name: PurgeSweeps :execrows
 DELETE FROM spectrum_sweeps WHERE started_at < ?;
+
+-- name: CountUsers :one
+SELECT COUNT(*) FROM users;
+
+-- name: PutUser :exec
+INSERT INTO users (user_id, username, display_name, role, password_hash, issuer, subject,
+                   disabled, created_at, updated_at, last_login_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(user_id) DO UPDATE SET
+    username = excluded.username,
+    display_name = excluded.display_name,
+    role = excluded.role,
+    password_hash = excluded.password_hash,
+    issuer = excluded.issuer,
+    subject = excluded.subject,
+    disabled = excluded.disabled,
+    updated_at = excluded.updated_at,
+    last_login_at = excluded.last_login_at;
+
+-- name: GetUser :one
+SELECT user_id, username, display_name, role, password_hash, issuer, subject,
+       disabled, created_at, updated_at, last_login_at
+FROM users WHERE user_id = ?;
+
+-- name: GetUserByUsername :one
+SELECT user_id, username, display_name, role, password_hash, issuer, subject,
+       disabled, created_at, updated_at, last_login_at
+FROM users WHERE username = ?;
+
+-- name: GetUserByOIDC :one
+-- `issuer <> ''` is load-bearing, not tidiness. Local accounts store ('',''),
+-- so without it a lookup with an empty issuer matches the first local account
+-- it finds -- and an SSO login would come back as an existing operator. The
+-- memstore refuses an empty issuer explicitly; this is the SQL half of the same
+-- rule, and storetest checks both.
+SELECT user_id, username, display_name, role, password_hash, issuer, subject,
+       disabled, created_at, updated_at, last_login_at
+FROM users WHERE issuer = ? AND issuer <> '' AND subject = ?;
+
+-- name: ListUsers :many
+SELECT user_id, username, display_name, role, password_hash, issuer, subject,
+       disabled, created_at, updated_at, last_login_at
+FROM users ORDER BY username ASC;
+
+-- name: DeleteUser :execrows
+DELETE FROM users WHERE user_id = ?;
+
+-- name: CountAdmins :one
+-- Guards the last admin. Deleting or demoting the only one leaves a box nobody
+-- can administer, recoverable only by editing the database by hand.
+SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled = 0;
+
+-- name: PutSession :exec
+INSERT INTO sessions (session_id, user_id, created_at, expires_at, last_seen, user_agent, ip)
+VALUES (?, ?, ?, ?, ?, ?, ?);
+
+-- name: GetSession :one
+SELECT session_id, user_id, created_at, expires_at, last_seen, user_agent, ip
+FROM sessions WHERE session_id = ?;
+
+-- name: TouchSession :exec
+UPDATE sessions SET last_seen = ?, expires_at = ? WHERE session_id = ?;
+
+-- name: DeleteSession :execrows
+DELETE FROM sessions WHERE session_id = ?;
+
+-- name: DeleteUserSessions :execrows
+DELETE FROM sessions WHERE user_id = ?;
+
+-- name: ListSessions :many
+SELECT session_id, user_id, created_at, expires_at, last_seen, user_agent, ip
+FROM sessions ORDER BY last_seen DESC LIMIT ?;
+
+-- name: PurgeExpiredSessions :execrows
+DELETE FROM sessions WHERE expires_at < ?;

@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/classg/api/internal/auth"
 	"github.com/classg/api/internal/bus"
 	"github.com/classg/api/internal/capture"
 	"github.com/classg/api/internal/config"
@@ -29,6 +30,7 @@ import (
 	"github.com/classg/api/internal/ingest"
 	"github.com/classg/api/internal/model"
 	"github.com/classg/api/internal/monitoring"
+	"github.com/classg/api/internal/oidcauth"
 	"github.com/classg/api/internal/settings"
 	"github.com/classg/api/internal/spectrum"
 	"github.com/classg/api/internal/store"
@@ -190,6 +192,51 @@ func run() error {
 		}
 	}
 
+	// Authentication. A unit with no accounts serves nothing but the setup
+	// endpoint until someone creates the first administrator -- which is how a
+	// freshly flashed Pi avoids shipping a default password.
+	authMode, err := auth.ParseMode(cfg.AuthMode)
+	if err != nil {
+		slog.Error("configuration", "err", err)
+		os.Exit(1)
+	}
+	authSvc := &auth.Service{
+		Store: st,
+		Mode:  authMode,
+		TTL:   cfg.SessionTTL,
+		Now:   func() time.Time { return time.Now().UTC() },
+	}
+	if authMode == auth.ModeOff {
+		slog.Warn("AUTHENTICATION IS DISABLED",
+			"reason", "CLASSG_AUTH_MODE=off",
+			"consequence", "every request is treated as an administrator")
+	} else if needs, err := authSvc.NeedsSetup(ctx); err == nil && needs {
+		slog.Info("no accounts yet: open the web app to create the first administrator")
+	}
+
+	// Single sign-on, if configured. Discovery happens here so a wrong issuer
+	// URL fails at startup with a clear message rather than on someone's first
+	// login attempt.
+	var ssoProvider *oidcauth.Provider
+	if cfg.OIDCIssuer != "" {
+		ssoProvider, err = oidcauth.New(ctx, oidcauth.Config{
+			IssuerURL:         cfg.OIDCIssuer,
+			ClientID:          cfg.OIDCClientID,
+			ClientSecret:      cfg.OIDCSecret,
+			RedirectURL:       cfg.OIDCRedirectURL,
+			Label:             cfg.OIDCLabel,
+			AutoProvision:     cfg.OIDCAutoProvision,
+			AutoProvisionRole: cfg.OIDCRole,
+			UsernameClaim:     cfg.OIDCUsernameClaim,
+		})
+		if err != nil {
+			slog.Error("single sign-on", "err", err)
+			os.Exit(1)
+		}
+		slog.Info("single sign-on ready", "issuer", cfg.OIDCIssuer,
+			"auto_provision", cfg.OIDCAutoProvision)
+	}
+
 	srv := httpapi.New(httpapi.Options{
 		Config:     cfg,
 		Store:      st,
@@ -197,6 +244,8 @@ func run() error {
 		Hub:        h,
 		Captures:   captures,
 		Spectrum:   sweeps,
+		Auth:       authSvc,
+		OIDC:       ssoProvider,
 		Settings:   set,
 		Monitoring: recording,
 		Sensors:    httpapi.SystemdSensors{Argv: cfg.SensorRestartCommand},
@@ -243,6 +292,7 @@ func run() error {
 		Tracks:     cfg.RetentionTracks,
 		Telemetry:  cfg.RetentionTelemetry,
 		Sweeps:     cfg.RetentionSweeps,
+		Sessions:   authSvc,
 		Interval:   cfg.RetentionInterval,
 	}).Run(ctx)
 	// Records what /metrics only ever exposes live. Nothing scrapes a field

@@ -517,5 +517,125 @@ These hold regardless of deployment choices, and are not configurable:
 
 ## Auth
 
-**None in v1.** Bind to localhost or a trusted LAN. Documented explicitly so nobody assumes
-otherwise: do not expose this to the internet.
+Session cookies, three roles, and optional OIDC single sign-on. This replaces the
+"none in v1, bind to a trusted LAN" position, which stopped being defensible once
+the unit joined a tailnet and grew an admin surface, a hook system that can be
+pointed at arbitrary URLs, and a button that takes the radio away from ADS-B.
+
+### Roles
+
+Ordered, not a matrix: `viewer` < `operator` < `admin`.
+
+| Role | Can |
+|---|---|
+| `viewer` | Read everything: tracks, detections, captures, spectrum, telemetry, settings |
+| `operator` | Act on the hardware: start a capture, sweep a band, restart a sensor, change channels/weights/recording |
+| `admin` | Change who exists, edit `config/settings`, manage sessions |
+
+A permission matrix is the right answer when permissions are genuinely
+orthogonal. These are not, and a matrix would be a configuration surface nobody
+audits protecting three verbs.
+
+**Every endpoint is closed unless it is explicitly public.** The public set is
+`/health`, `/metrics`, and the login surface (`/auth/me`, `/auth/login`,
+`/auth/logout`, `/auth/setup`, `/auth/sso/*`) — short enough to audit at a
+glance. `/health` and `/metrics` stay open because a monitoring probe holds no
+cookie, and a unit that only reports its health to authenticated callers cannot
+be watched by the thing that notices it died; neither carries positions or
+identities.
+
+### First run
+
+A unit with no accounts answers `409 setup_required` to everything and serves
+only `POST /auth/setup`. There is no default password — shipping one is the most
+reliable way to end up with an internet-facing box running `admin/admin`. Setup
+creates the first `admin`, logs them in, and closes permanently.
+
+### `GET /auth/me`
+```jsonc
+{ "authenticated": true, "auth_enabled": true, "setup_required": false,
+  "user": { "user_id": "…", "username": "lee", "role": "admin", "disabled": false },
+  "providers": [ { "id": "oidc", "label": "Company SSO" } ] }
+```
+Public, and always `200`: "nobody is logged in" is a normal answer, and it is how
+the web app decides whether to draw the app, a login form, or the setup screen.
+
+### `POST /auth/login` · `POST /auth/logout` · `POST /auth/password`
+
+Login takes `{username, password}` and sets an `HttpOnly`, `SameSite=Lax`
+session cookie (`Secure` when the request arrived over TLS). **A wrong username
+and a wrong password return the identical `401` body** — distinguishing them
+turns the login form into an account-enumeration oracle.
+
+`SameSite=Lax` rather than `Strict` because Strict drops the cookie on the
+top-level redirect back from an SSO provider, which breaks OIDC login outright.
+
+`POST /auth/password` requires `current_password`, even though the caller is
+already authenticated: it is what stops a borrowed unlocked browser becoming a
+permanent takeover. It ends every *other* session for that user.
+
+### Sessions
+
+Opaque random tokens, not JWTs. The cookie is a lookup key and every request
+checks the database — that costs a query and buys revocation that is actually
+immediate. Disabling an account, changing a role, or killing a session takes
+effect on the next request, not at the next expiry.
+
+**The stored value is a SHA-256 of the token, never the token.** A database dump
+— including the Turso replica, which leaves the unit by design — hands over no
+usable session.
+
+Expiry is a sliding 12 h (`CLASSG_SESSION_TTL`): active use slides it forward, so
+an operator is not logged out mid-shift, and an abandoned browser stops working
+overnight.
+
+### Single sign-on
+
+One generic OIDC provider — Google, Authentik, Keycloak, Entra and Okta all
+speak discovery, and vendor-shaped integrations would be five code paths nobody
+here can test. Configure `CLASSG_OIDC_ISSUER`, `CLASSG_OIDC_CLIENT_ID`,
+`CLASSG_OIDC_CLIENT_SECRET` and `CLASSG_OIDC_REDIRECT_URL` together or not at
+all; a half-configured provider fails at the first login attempt, which is the
+worst moment to find out.
+
+Identities are matched on `(issuer, subject)`, **never on email**. Email is a
+claim a provider can change and, at some providers, one a user can set — matching
+on it would mean anyone who can set an email claim can become an existing
+operator.
+
+**SSO does not create accounts by default.** A provider that issues tokens to
+anyone with a Google account would otherwise make "SSO configured" mean "anyone
+on the internet is an operator". `CLASSG_OIDC_AUTO_PROVISION=true` opts in, and
+`CLASSG_OIDC_ROLE` may be `viewer` or `operator` — never `admin`, which both the
+config validator and the service refuse, because auto-provisioning admins hands
+this unit to whoever runs the identity provider.
+
+### Administration
+
+`GET|POST /admin/users`, `PATCH|DELETE /admin/users/{user_id}`,
+`GET /admin/sessions`, `DELETE /admin/sessions/{session_id}` — all `admin`.
+
+Password hashes never appear in any response. Two refusals are deliberate and
+both return `409`:
+
+- **The last enabled admin** cannot be demoted, disabled or deleted. Doing so
+  leaves a box recoverable only by editing the database by hand, which on a
+  sealed field unit means a card reader.
+- **You cannot delete the account you are signed in with.** It is almost always
+  a misclick, and "disable" is what someone actually wants.
+
+### Turning it off
+
+`CLASSG_AUTH_MODE=off` disables authentication entirely and treats every request
+as an admin. It exists for a bench unit on an isolated network. It is logged
+loudly at startup, reported by `GET /system`, and shown as a banner in the web
+app — an auth-disabled box that nobody remembers disabling is worse than one
+that never had authentication.
+
+### Errors
+
+| Code | Status | Means |
+|---|---|---|
+| `unauthenticated` | 401 | No session, or it expired. Show the login screen. |
+| `forbidden` | 403 | Logged in, wrong role. **Do not** bounce to login — the session is fine. |
+| `setup_required` | 409 | No accounts exist yet. Show the setup screen. |

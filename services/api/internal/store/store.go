@@ -18,11 +18,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/classg/api/internal/auth"
 	"github.com/classg/api/internal/model"
 )
 
 var (
-	ErrNotFound  = errors.New("not found")
+	// ErrNotFound wraps auth.ErrNotFound so the auth service -- which declares
+	// its own Store interface to stay free of this package -- can recognise a
+	// miss with errors.Is without either package importing the other's error.
+	ErrNotFound  = fmt.Errorf("%w", auth.ErrNotFound)
 	ErrBadCursor = errors.New("malformed cursor")
 )
 
@@ -190,6 +194,25 @@ type Store interface {
 	ListSweeps(ctx context.Context, limit int) ([]model.SpectrumSweep, error)
 	PutSweepBins(ctx context.Context, id string, bins json.RawMessage) error
 	GetSweepBins(ctx context.Context, id string) (json.RawMessage, error)
+
+	// Accounts and sessions. See internal/auth for why sessions are opaque
+	// tokens stored as hashes rather than JWTs.
+	CountUsers(ctx context.Context) (int64, error)
+	CountAdmins(ctx context.Context) (int64, error)
+	PutUser(ctx context.Context, u auth.User) error
+	GetUser(ctx context.Context, id string) (auth.User, error)
+	GetUserByUsername(ctx context.Context, username string) (auth.User, error)
+	GetUserByOIDC(ctx context.Context, issuer, subject string) (auth.User, error)
+	ListUsers(ctx context.Context) ([]auth.User, error)
+	DeleteUser(ctx context.Context, id string) error
+
+	PutSession(ctx context.Context, s auth.Session) error
+	GetSession(ctx context.Context, id string) (auth.Session, error)
+	TouchSession(ctx context.Context, id string, lastSeen, expiresAt time.Time) error
+	DeleteSession(ctx context.Context, id string) error
+	DeleteUserSessions(ctx context.Context, userID string) (int64, error)
+	ListSessions(ctx context.Context, limit int) ([]auth.Session, error)
+	PurgeExpiredSessions(ctx context.Context, now time.Time) (int64, error)
 
 	GetConfig(ctx context.Context, key string) (json.RawMessage, error)
 	PutConfig(ctx context.Context, key string, value json.RawMessage) error

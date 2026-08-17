@@ -59,6 +59,23 @@ type Bootstrap struct {
 	TursoURL          string
 	TursoAuthToken    string
 	TursoSyncInterval time.Duration
+
+	// Authentication. Tier 1 because the OIDC client secret is a secret, and
+	// because a box whose auth mode is editable through its own web UI can be
+	// switched off by whoever already got in.
+	AuthMode        string
+	SessionTTL      time.Duration
+	OIDCIssuer      string
+	OIDCClientID    string
+	OIDCSecret      string
+	OIDCRedirectURL string
+	OIDCLabel       string
+	// OIDCAutoProvision creates an account on first successful SSO login. Off
+	// by default: a provider that issues tokens to anyone with a Google account
+	// would otherwise make "SSO configured" mean "anyone is an operator".
+	OIDCAutoProvision bool
+	OIDCRole          string
+	OIDCUsernameClaim string
 }
 
 // Config is the effective configuration, assembled from all tiers. Downstream
@@ -74,6 +91,17 @@ type Config struct {
 	TursoURL          string
 	TursoAuthToken    string
 	TursoSyncInterval time.Duration
+
+	AuthMode          string
+	SessionTTL        time.Duration
+	OIDCIssuer        string
+	OIDCClientID      string
+	OIDCSecret        string
+	OIDCRedirectURL   string
+	OIDCLabel         string
+	OIDCAutoProvision bool
+	OIDCRole          string
+	OIDCUsernameClaim string
 
 	// Bus. Empty means "not configured": the service still starts and serves,
 	// it just reports the link as down. See ADR-0003 -- degrade, never refuse.
@@ -140,6 +168,15 @@ func LoadBootstrap(getenv func(string) string) (*Bootstrap, error) {
 
 		TursoURL:       get("CLASSG_TURSO_URL", ""),
 		TursoAuthToken: get("CLASSG_TURSO_AUTH_TOKEN", ""),
+
+		AuthMode:          strings.ToLower(get("CLASSG_AUTH_MODE", "required")),
+		OIDCIssuer:        get("CLASSG_OIDC_ISSUER", ""),
+		OIDCClientID:      get("CLASSG_OIDC_CLIENT_ID", ""),
+		OIDCSecret:        get("CLASSG_OIDC_CLIENT_SECRET", ""),
+		OIDCRedirectURL:   get("CLASSG_OIDC_REDIRECT_URL", ""),
+		OIDCLabel:         get("CLASSG_OIDC_LABEL", ""),
+		OIDCRole:          strings.ToLower(get("CLASSG_OIDC_ROLE", "viewer")),
+		OIDCUsernameClaim: get("CLASSG_OIDC_USERNAME_CLAIM", ""),
 	}
 
 	raw := strings.TrimSpace(getenv("CLASSG_TURSO_SYNC_INTERVAL"))
@@ -154,6 +191,55 @@ func LoadBootstrap(getenv func(string) string) (*Bootstrap, error) {
 		default:
 			b.TursoSyncInterval = v
 		}
+	}
+
+	rawTTL := strings.TrimSpace(getenv("CLASSG_SESSION_TTL"))
+	b.SessionTTL = 12 * time.Hour
+	if rawTTL != "" {
+		v, err := time.ParseDuration(rawTTL)
+		switch {
+		case err != nil:
+			bad("CLASSG_SESSION_TTL: %q is not a duration (e.g. 12h, 30m)", rawTTL)
+		case v <= 0:
+			bad("CLASSG_SESSION_TTL: must be positive, got %s", v)
+		default:
+			b.SessionTTL = v
+		}
+	}
+
+	switch b.AuthMode {
+	case "required", "off":
+	default:
+		bad("CLASSG_AUTH_MODE: %q is not a mode (use required or off)", b.AuthMode)
+	}
+	rawAuto := strings.ToLower(strings.TrimSpace(getenv("CLASSG_OIDC_AUTO_PROVISION")))
+	switch rawAuto {
+	case "", "false", "0", "no":
+		b.OIDCAutoProvision = false
+	case "true", "1", "yes":
+		b.OIDCAutoProvision = true
+	default:
+		bad("CLASSG_OIDC_AUTO_PROVISION: %q is not a boolean", rawAuto)
+	}
+
+	// Every OIDC field or none. A half-configured provider fails at the first
+	// login attempt, which is the worst moment to discover it.
+	oidcSet := 0
+	for _, v := range []string{b.OIDCIssuer, b.OIDCClientID, b.OIDCSecret, b.OIDCRedirectURL} {
+		if v != "" {
+			oidcSet++
+		}
+	}
+	if oidcSet != 0 && oidcSet != 4 {
+		bad("single sign-on needs CLASSG_OIDC_ISSUER, CLASSG_OIDC_CLIENT_ID, " +
+			"CLASSG_OIDC_CLIENT_SECRET and CLASSG_OIDC_REDIRECT_URL together, or none of them")
+	}
+	if b.OIDCRole == "admin" {
+		bad("CLASSG_OIDC_ROLE: refusing to auto-provision administrators; " +
+			"whoever controls the identity provider would control this unit")
+	}
+	if b.OIDCRole != "" && b.OIDCRole != "viewer" && b.OIDCRole != "operator" {
+		bad("CLASSG_OIDC_ROLE: %q is not a role (use viewer or operator)", b.OIDCRole)
 	}
 
 	if _, _, err := splitHostPort(b.Listen); err != nil {
@@ -210,6 +296,16 @@ func Assemble(b *Bootstrap, s *settings.Settings) (*Config, error) {
 		DBPath:            b.DBPath,
 		TursoURL:          b.TursoURL,
 		TursoAuthToken:    b.TursoAuthToken,
+		AuthMode:          b.AuthMode,
+		SessionTTL:        b.SessionTTL,
+		OIDCIssuer:        b.OIDCIssuer,
+		OIDCClientID:      b.OIDCClientID,
+		OIDCSecret:        b.OIDCSecret,
+		OIDCRedirectURL:   b.OIDCRedirectURL,
+		OIDCLabel:         b.OIDCLabel,
+		OIDCAutoProvision: b.OIDCAutoProvision,
+		OIDCRole:          b.OIDCRole,
+		OIDCUsernameClaim: b.OIDCUsernameClaim,
 		TursoSyncInterval: b.TursoSyncInterval,
 
 		TrackEndpoint:     endpointOrOff(s.String("bus.track_endpoint")),

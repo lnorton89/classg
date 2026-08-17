@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/classg/api/internal/auth"
 	"github.com/classg/api/internal/model"
 	"github.com/classg/api/internal/store"
 )
@@ -66,6 +67,8 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("OperatorRoundTrip", func(t *testing.T) { testOperatorRoundTrip(t, newStore) })
 	t.Run("Telemetry", func(t *testing.T) { testTelemetry(t, newStore) })
 	t.Run("Sweeps", func(t *testing.T) { testSweeps(t, newStore) })
+	t.Run("Users", func(t *testing.T) { testUsers(t, newStore) })
+	t.Run("Sessions", func(t *testing.T) { testSessions(t, newStore) })
 }
 
 func testTrackRoundTrip(t *testing.T, newStore Factory) {
@@ -690,5 +693,182 @@ func testSweeps(t *testing.T, newStore Factory) {
 	}
 	if _, err := s.GetSweep(ctx, "S1"); err != nil {
 		t.Fatalf("the newer sweep was purged too: %v", err)
+	}
+}
+
+func testUsers(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	if n, err := s.CountUsers(ctx); err != nil || n != 0 {
+		t.Fatalf("a fresh store has %d users (%v)", n, err)
+	}
+
+	u := auth.User{
+		UserID: "u1", Username: "admin", DisplayName: "Admin",
+		Role: auth.RoleAdmin, PasswordHash: "$argon2id$fake",
+		CreatedAt: base, UpdatedAt: base,
+	}
+	if err := s.PutUser(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetUser(ctx, "u1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Username != "admin" || got.Role != auth.RoleAdmin || got.PasswordHash != u.PasswordHash {
+		t.Fatalf("round trip: %+v", got)
+	}
+	if got.Disabled {
+		t.Fatal("a user stored as enabled came back disabled")
+	}
+	// last_login_at is nullable and must stay nil rather than becoming the zero
+	// time, which would render as the year 1.
+	if got.LastLoginAt != nil {
+		t.Fatalf("LastLoginAt is %v, want nil", got.LastLoginAt)
+	}
+
+	// Lookup normalises, so "Admin" finds the same row.
+	for _, spelling := range []string{"admin", "Admin", " ADMIN "} {
+		if _, err := s.GetUserByUsername(ctx, spelling); err != nil {
+			t.Errorf("GetUserByUsername(%q): %v", spelling, err)
+		}
+	}
+	if _, err := s.GetUserByUsername(ctx, "nobody"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+
+	// An SSO-only account has no password. NULL must survive as empty rather
+	// than becoming a hash that could be verified against.
+	sso := auth.User{
+		UserID: "u2", Username: "sso", Role: auth.RoleViewer,
+		Issuer: "https://idp.example", Subject: "sub-1",
+		CreatedAt: base, UpdatedAt: base,
+	}
+	if err := s.PutUser(ctx, sso); err != nil {
+		t.Fatal(err)
+	}
+	back, err := s.GetUser(ctx, "u2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if back.HasPassword() {
+		t.Fatal("an SSO account came back with a password")
+	}
+
+	found, err := s.GetUserByOIDC(ctx, "https://idp.example", "sub-1")
+	if err != nil || found.UserID != "u2" {
+		t.Fatalf("GetUserByOIDC: %+v %v", found, err)
+	}
+	// A local account must never be matched by an SSO lookup, or the first
+	// login with a blank issuer would answer as an existing operator.
+	if _, err := s.GetUserByOIDC(ctx, "", ""); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("an empty issuer matched something: %v", err)
+	}
+	if _, err := s.GetUserByOIDC(ctx, "https://other", "sub-1"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a subject matched under the wrong issuer: %v", err)
+	}
+
+	if n, err := s.CountAdmins(ctx); err != nil || n != 1 {
+		t.Fatalf("CountAdmins = %d (%v), want 1", n, err)
+	}
+	// A disabled admin is not a usable one.
+	u.Disabled = true
+	if err := s.PutUser(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.CountAdmins(ctx); err != nil || n != 0 {
+		t.Fatalf("CountAdmins with the only admin disabled = %d (%v), want 0", n, err)
+	}
+
+	list, err := s.ListUsers(ctx)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("ListUsers: %d users (%v)", len(list), err)
+	}
+	if list[0].Username != "admin" || list[1].Username != "sso" {
+		t.Fatalf("not sorted by username: %v", []string{list[0].Username, list[1].Username})
+	}
+
+	if err := s.DeleteUser(ctx, "u2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteUser(ctx, "u2"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("deleting twice: %v", err)
+	}
+}
+
+func testSessions(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	if err := s.PutUser(ctx, auth.User{
+		UserID: "u1", Username: "admin", Role: auth.RoleAdmin,
+		CreatedAt: base, UpdatedAt: base,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sess := auth.Session{
+		SessionID: "hash-of-token", UserID: "u1",
+		CreatedAt: base, ExpiresAt: base.Add(time.Hour), LastSeen: base,
+		UserAgent: "curl/8", IP: "10.0.0.5",
+	}
+	if err := s.PutSession(ctx, sess); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetSession(ctx, "hash-of-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.UserID != "u1" || got.UserAgent != "curl/8" || got.IP != "10.0.0.5" {
+		t.Fatalf("round trip: %+v", got)
+	}
+	if !got.ExpiresAt.Equal(base.Add(time.Hour)) {
+		t.Fatalf("ExpiresAt %v", got.ExpiresAt)
+	}
+
+	later := base.Add(30 * time.Minute)
+	if err := s.TouchSession(ctx, "hash-of-token", later, later.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.GetSession(ctx, "hash-of-token")
+	if !got.LastSeen.Equal(later) || !got.ExpiresAt.Equal(later.Add(time.Hour)) {
+		t.Fatalf("Touch did not slide the window: %+v", got)
+	}
+
+	if _, err := s.GetSession(ctx, "no-such-session"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+
+	// Expired rows go; live ones stay.
+	if err := s.PutSession(ctx, auth.Session{
+		SessionID: "stale", UserID: "u1",
+		CreatedAt: base.Add(-2 * time.Hour), ExpiresAt: base.Add(-time.Hour),
+		LastSeen: base.Add(-2 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.PurgeExpiredSessions(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("purged %d, want 1", n)
+	}
+	if _, err := s.GetSession(ctx, "hash-of-token"); err != nil {
+		t.Fatalf("the live session was purged: %v", err)
+	}
+
+	// Deleting a user takes their sessions. The SQL side gets this from
+	// ON DELETE CASCADE; a map only gets it if someone remembered. A deleted
+	// account whose cookie still works is the exact failure an admin thinks
+	// they just prevented.
+	if err := s.DeleteUser(ctx, "u1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetSession(ctx, "hash-of-token"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a deleted user's session survived: %v", err)
 	}
 }

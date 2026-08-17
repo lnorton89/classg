@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/classg/api/internal/auth"
 	"github.com/classg/api/internal/model"
 	"github.com/classg/api/internal/store"
 )
@@ -30,6 +31,8 @@ type Store struct {
 	reports    map[string]json.RawMessage
 	config     map[string]json.RawMessage
 	telemetry  []store.TelemetrySample
+	users      map[string]auth.User
+	sessions   map[string]auth.Session
 	sweeps     map[string]model.SpectrumSweep
 	sweepBins  map[string]json.RawMessage
 }
@@ -42,6 +45,8 @@ func New() *Store {
 		captures:   map[string]model.Capture{},
 		reports:    map[string]json.RawMessage{},
 		config:     map[string]json.RawMessage{},
+		users:      map[string]auth.User{},
+		sessions:   map[string]auth.Session{},
 		sweeps:     map[string]model.SpectrumSweep{},
 		sweepBins:  map[string]json.RawMessage{},
 	}
