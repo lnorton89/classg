@@ -85,7 +85,7 @@ function CalibrationSettings() {
  * the Pi and shared by every client — the same reason it lives on this page
  * rather than that one.
  */
-function ReceiverPositionEditor() {
+export function ReceiverPositionEditor() {
   const queryClient = useQueryClient()
   const { data } = useQuery(settingsQuery())
   const setting = data?.settings['map.receiver_position']
@@ -93,6 +93,7 @@ function ReceiverPositionEditor() {
   const locked = setting?.source === 'env'
 
   const [draft, setDraft] = useState<{ lat: string; lon: string } | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
   const lat = draft?.lat ?? (current ? String(current.lat) : '')
   const lon = draft?.lon ?? (current ? String(current.lon) : '')
   const dirty = draft !== null
@@ -109,13 +110,31 @@ function ReceiverPositionEditor() {
 
   const onSubmit = (event: React.SyntheticEvent) => {
     event.preventDefault()
-    if (lat.trim() === '' && lon.trim() === '') {
+    const latBlank = lat.trim() === ''
+    const lonBlank = lon.trim() === ''
+    if (latBlank && lonBlank) {
+      setFormError(null)
       save.mutate('')
+      return
+    }
+    // One blank field must be an error the operator sees, never a save:
+    // Number('') is 0, so letting it through would silently store latitude 0
+    // for every client -- the exact "0 is a real coordinate off the Gulf of
+    // Guinea, not unset" lie the rest of the system refuses to tell (fusion
+    // treats 0,0 as unset for the same reason; see Settings > Data sources).
+    if (latBlank || lonBlank) {
+      setFormError(
+        `${latBlank ? 'Latitude' : 'Longitude'} is blank. Fill in both fields, or clear both to unset the position.`,
+      )
       return
     }
     const latNum = Number(lat)
     const lonNum = Number(lon)
-    if (!Number.isFinite(latNum) || !Number.isFinite(lonNum)) return
+    if (!Number.isFinite(latNum) || !Number.isFinite(lonNum)) {
+      setFormError('Both fields must be decimal degrees.')
+      return
+    }
+    setFormError(null)
     save.mutate(`${latNum},${lonNum}`)
   }
 
@@ -153,6 +172,11 @@ function ReceiverPositionEditor() {
           <Alert tone="info" title="Set by the environment">
             CLASSG_RECEIVER_POSITION takes precedence over this field. Unset it to manage this
             value here.
+          </Alert>
+        ) : null}
+        {formError ? (
+          <Alert tone="error" title="Not saved">
+            {formError}
           </Alert>
         ) : null}
         {apiError ? (
@@ -218,7 +242,15 @@ function ReceiverPositionEditor() {
             <SaveIcon aria-hidden /> {save.isPending ? 'Saving…' : 'Save'}
           </Button>
           {dirty ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => setDraft(null)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setDraft(null)
+                setFormError(null)
+              }}
+            >
               <RotateCcwIcon aria-hidden /> Reset
             </Button>
           ) : null}

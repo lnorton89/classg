@@ -43,9 +43,15 @@ export function formatConfidence(value: number): string {
   return `${Math.round(value * 100)}%`
 }
 
+/**
+ * Binary units, labelled as such. Capture sizes are file sizes, where 1024-based
+ * arithmetic is the convention -- but dividing by 1024 while writing "MB" (10^6)
+ * rendered a 1 GB capture as "953.7 MB", a number that matches nothing `ls -l`
+ * or the API reports. KiB/MiB/GiB make the maths and the label agree.
+ */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
-  const units = ['kB', 'MB', 'GB']
+  const units = ['KiB', 'MiB', 'GiB']
   let value = bytes / 1024
   let unit = 0
   while (value >= 1024 && unit < units.length - 1) {

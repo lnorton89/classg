@@ -123,11 +123,15 @@ export function LogsView() {
   }, [entries])
 
   // Follow the tail. Skipped while frozen, which is the whole point of freezing.
+  // Keyed on the last entry's id, not the list length: once the render cap is
+  // reached the length pins at RENDER_CAP while entries keep arriving, and a
+  // follow keyed on length stops firing exactly when the log is busiest.
+  const tailId = visible.at(-1)?.id
   useEffect(() => {
     if (!follow || frozen) return
     const node = scrollRef.current
     if (node) node.scrollTop = node.scrollHeight
-  }, [visible.length, follow, frozen])
+  }, [tailId, follow, frozen])
 
   const onScroll = useCallback(() => {
     const node = scrollRef.current

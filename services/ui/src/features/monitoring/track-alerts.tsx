@@ -6,9 +6,9 @@
  * bench or a tripod while the operator does something else, and the whole value
  * of a continuously recording detector is lost if nobody looks up.
  *
- * Only ever fires for a track's FIRST appearance. Re-firing while a drone
- * loiters overhead would train the operator to ignore the sound, which is worse
- * than having no sound at all.
+ * Fires at most once per track, the first time it qualifies for the chosen
+ * level. Re-firing while a drone loiters overhead would train the operator to
+ * ignore the sound, which is worse than having no sound at all.
  */
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
@@ -49,10 +49,18 @@ export function TrackAlerts() {
     let fired: 'contact' | 'confirmed' | null = null
     for (const track of tracks) {
       if (announced.current.has(track.track_id)) continue
-      announced.current.add(track.track_id)
-      if (track.state === 'CLOSED') continue
+      if (track.state === 'CLOSED') {
+        // Arrived already over: never worth a sound, and never will be.
+        announced.current.add(track.track_id)
+        continue
+      }
       const confirmed = track.confidence >= CONFIRM_THRESHOLD
+      // A track that is not yet loud enough for the chosen level must stay
+      // eligible, not be consumed: tracks open TENTATIVE and cross the
+      // threshold later (log-bridge watches the same transition), so marking
+      // it announced here would mean "Confirmed only" almost never fires.
       if (level === 'confirmed' && !confirmed) continue
+      announced.current.add(track.track_id)
       // One sound per batch however many tracks appeared: six drones arriving
       // together is one event to look up at, not six.
       if (fired !== 'confirmed') fired = confirmed ? 'confirmed' : 'contact'
