@@ -8,11 +8,12 @@ import {
   RadarIcon,
   SatelliteDishIcon,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { usePreferences } from '@/app/preferences-context'
 import { Button } from '@/components/ui/button'
 import { StatTile } from '@/components/ui/stat'
+import { aircraftFromDetections } from '@/features/map/aircraft'
 import { ContactsPanel } from '@/features/map/contacts-panel'
 import { LiveMap } from '@/features/map/live-map'
 import { MapLegend } from '@/features/map/legend'
@@ -47,7 +48,10 @@ function LiveView() {
 
   const tracks = tracksData?.tracks ?? []
   const { active: activeTracks, closed: closedTracks } = partitionTracks(tracks)
-  const adsb = adsbData?.detections ?? []
+  // One entry per aircraft, not per report. The feed is a stream of SBS
+  // messages, so an airliner overhead arrives dozens of times and the panel
+  // counted every one of them as a separate contact.
+  const adsb = useMemo(() => aircraftFromDetections(adsbData?.detections ?? []), [adsbData])
   const showClosed = preferences.showClosedContacts
   // Hiding the closed section has to remove it from the count as well. A
   // "Contacts (12)" tab that opens onto nine rows reads as a rendering fault.
