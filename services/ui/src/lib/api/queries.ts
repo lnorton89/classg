@@ -3,7 +3,7 @@
  * same cache keys the views read from. `queryOptions()` carries the data type on
  * the key, which is what makes `setQueryData` type-safe.
  */
-import { queryOptions } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 
 import { api } from './client'
 import type { DetectionsQuery, TracksQuery } from './types'
@@ -13,6 +13,7 @@ export const queryKeys = {
   system: ['system'] as const,
   sensors: ['sensors'] as const,
   monitoring: ['monitoring'] as const,
+  telemetry: (window: string) => ['telemetry', window] as const,
   tracks: (query: TracksQuery = {}) => ['tracks', 'list', query] as const,
   track: (trackId: string) => ['tracks', 'detail', trackId] as const,
   trackDetections: (trackId: string) => ['tracks', 'detections', trackId] as const,
@@ -52,6 +53,22 @@ export const systemQuery = () =>
     queryFn: () => api.system(),
     staleTime: 10_000,
     refetchInterval: 30_000,
+  })
+
+/**
+ * Recorded host history for the About panel's sparklines. Refetched on the
+ * sampler's own cadence (one row a minute), so the right edge stays current
+ * without hammering a Pi that is possibly the thing under thermal stress.
+ * `keepPreviousData` holds the old window's frame at reduced opacity while a
+ * new window loads, instead of collapsing to a skeleton.
+ */
+export const telemetryQuery = (window: string) =>
+  queryOptions({
+    queryKey: queryKeys.telemetry(window),
+    queryFn: () => api.telemetry({ window }),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    placeholderData: keepPreviousData,
   })
 
 export const monitoringQuery = () =>

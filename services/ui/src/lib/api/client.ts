@@ -27,6 +27,8 @@ import type {
   SettingsResponse,
   StartCaptureRequest,
   SystemInfo,
+  TelemetryQuery,
+  TelemetryResponse,
   Track,
   TracksQuery,
   TracksResponse,
@@ -169,6 +171,12 @@ export const api = {
 
   monitoring(): Promise<MonitoringState> {
     return request<MonitoringState>('/monitoring')
+  },
+
+  telemetry(query: TelemetryQuery = {}): Promise<TelemetryResponse> {
+    return request<TelemetryResponse>(
+      `/telemetry${buildQuery({ window: query.window, since: query.since })}`,
+    )
   },
 
   setMonitoring(enabled: boolean, reason?: string): Promise<MonitoringState> {

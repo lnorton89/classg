@@ -125,6 +125,53 @@ export interface SystemInfo {
 }
 
 // ---------------------------------------------------------------------------
+// Telemetry — GET /telemetry, recorded host + sensor history
+// ---------------------------------------------------------------------------
+
+export interface TelemetrySensorSample {
+  sensor_id: string
+  sensor_kind: SensorKind
+  healthy: boolean
+  metrics?: Record<string, number>
+}
+
+/**
+ * One recorded minute. Every host figure is nullable and `null` means "the api
+ * could not read it" — NOT zero. A chart must draw a gap at a null, never a
+ * point at zero and never a line interpolated across the hole: 0 °C and 0 bytes
+ * free are both plausible readings. Same rule as `SystemHost`, over time.
+ */
+export interface TelemetrySample {
+  ts: string
+  cpu_temp_c: number | null
+  load1: number | null
+  mem_available_kb: number | null
+  disk_free_bytes: number | null
+  uptime_s: number | null
+  sensors?: TelemetrySensorSample[]
+}
+
+export interface TelemetryResponse {
+  /** Ascending by time — every consumer is a chart that reads left to right. */
+  samples: TelemetrySample[]
+  since: string
+  until: string
+  /**
+   * True when the window held more samples than the 5000-sample cap returned.
+   * A chart whose axis claims 24 h while showing 6 h of data is a lie, so the
+   * API says so rather than leaving it to be inferred.
+   */
+  truncated: boolean
+}
+
+export interface TelemetryQuery {
+  /** Go duration, e.g. `6h` (the default) or `90m`. Max `720h`. */
+  window?: string
+  /** RFC3339; overrides `window`. */
+  since?: string
+}
+
+// ---------------------------------------------------------------------------
 // Tracks / detections
 // ---------------------------------------------------------------------------
 

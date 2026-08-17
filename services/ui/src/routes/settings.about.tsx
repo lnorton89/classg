@@ -1,12 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { CpuIcon, InfoIcon, ServerIcon, SlidersHorizontalIcon } from 'lucide-react'
+import { useState } from 'react'
 import { useFormat } from '@/app/use-format'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Alert, DataRow } from '@/components/ui/misc'
 import { SettingsCard } from '@/features/settings/controls'
+import { HostHistory, type TelemetryWindow } from '@/features/settings/host-history'
 import { HostRow } from '@/features/settings/host-row'
-import { healthQuery, systemQuery } from '@/lib/api/queries'
+import { healthQuery, systemQuery, telemetryQuery } from '@/lib/api/queries'
 
 export const Route = createFileRoute('/settings/about')({
   component: AboutSettings,
@@ -26,6 +28,9 @@ function AboutSettings() {
   const format = useFormat()
   const system = useQuery(systemQuery())
   const health = useQuery(healthQuery())
+  // 6h matches the API's default window: an evening's thermal behaviour.
+  const [historyWindow, setHistoryWindow] = useState<TelemetryWindow>('6h')
+  const telemetry = useQuery(telemetryQuery(historyWindow))
 
   if (system.isError) {
     return (
@@ -183,6 +188,14 @@ function AboutSettings() {
           read as &ldquo;not throttled&rdquo;. Run{' '}
           <code className="font-mono text-xs">vcgencmd get_throttled</code> on the Pi.
         </p>
+        <HostHistory
+          data={telemetry.data}
+          isPending={telemetry.isPending}
+          isRefreshing={telemetry.isPlaceholderData}
+          isError={telemetry.isError}
+          window={historyWindow}
+          onWindowChange={setHistoryWindow}
+        />
       </SettingsCard>
 
       <SettingsCard

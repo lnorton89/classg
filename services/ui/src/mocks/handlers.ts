@@ -25,6 +25,7 @@ import type {
   SettingValue,
   StartCaptureRequest,
   SystemInfo,
+  TelemetryResponse,
   Track,
   TracksResponse,
 } from '@/lib/api/types'
@@ -32,6 +33,7 @@ import type {
 import { CAPTURES, REPORTS } from './fixtures/captures'
 import { channelPlan, fusionWeights } from './fixtures/config'
 import { ADSB_DETECTIONS, mini5Detections } from './fixtures/detections'
+import { telemetrySamples } from './fixtures/telemetry'
 import { getScenario, setScenario, type ScenarioName } from './scenario'
 
 const base = API_BASE
@@ -111,6 +113,21 @@ function csv(value: string | null): string[] {
   return value ? value.split(',').filter(Boolean) : []
 }
 
+/**
+ * The subset of Go duration syntax the telemetry window actually uses:
+ * `6h`, `90m`, `1h30m`, `45s`. Returns milliseconds, or null when malformed —
+ * the handler turns null into the same invalid_parameter the Go API sends.
+ */
+function parseGoDuration(raw: string): number | null {
+  const match = /^(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$/.exec(raw)
+  if (!match || (!match[1] && !match[2] && !match[3])) return null
+  const [, h, m, s] = match
+  return (Number(h ?? 0) * 3600 + Number(m ?? 0) * 60 + Number(s ?? 0)) * 1000
+}
+
+/** Mirrors the Go API's response cap, so `truncated: true` is reachable in dev. */
+const MAX_TELEMETRY_SAMPLES = 5000
+
 // ---------------------------------------------------------------------------
 
 export const handlers = [
@@ -150,6 +167,62 @@ export const handlers = [
         },
       },
     }),
+  ),
+
+  // Recorded host history. The fixture guarantees null readings and a sampler
+  // outage inside the default 6 h window, so the charts' gap path runs in dev
+  // and test by default — see fixtures/telemetry.ts. Ascending, capped at 5000
+  // samples with `truncated` set, exactly like the Go handler.
+  // Like /tracks below, the body type is stated explicitly because the
+  // resolver can return either the history or the error envelope.
+  http.get<PathParams, never, TelemetryResponse | ApiErrorBody>(
+    `${base}/telemetry`,
+    ({ request }) => {
+      const url = new URL(request.url)
+      const until = Date.now()
+
+      let windowMs = 6 * 3600 * 1000
+      const rawWindow = url.searchParams.get('window')
+      if (rawWindow) {
+        const parsed = parseGoDuration(rawWindow)
+        if (parsed === null || parsed <= 0) {
+          return apiError(
+            400,
+            'invalid_parameter',
+            'must be a positive duration, for example 6h or 90m',
+            'window',
+          )
+        }
+        if (parsed > 720 * 3600 * 1000) {
+          return apiError(400, 'invalid_parameter', 'must be at most 720h', 'window')
+        }
+        windowMs = parsed
+      }
+
+      let since = until - windowMs
+      const rawSince = url.searchParams.get('since')
+      if (rawSince) {
+        const parsed = Date.parse(rawSince)
+        if (Number.isNaN(parsed)) {
+          return apiError(400, 'invalid_parameter', 'must be RFC3339', 'since')
+        }
+        since = parsed
+      }
+      if (since > until) {
+        return apiError(400, 'invalid_parameter', 'must be before now', 'since')
+      }
+
+      let samples = telemetrySamples(since, until)
+      const truncated = samples.length > MAX_TELEMETRY_SAMPLES
+      if (truncated) samples = samples.slice(0, MAX_TELEMETRY_SAMPLES)
+
+      return HttpResponse.json<TelemetryResponse>({
+        samples,
+        since: new Date(since).toISOString(),
+        until: new Date(until).toISOString(),
+        truncated,
+      })
+    },
   ),
 
   http.get(`${base}/sensors`, () =>
