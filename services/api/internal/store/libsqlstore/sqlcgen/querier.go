@@ -27,6 +27,8 @@ type Querier interface {
 	GetCapture(ctx context.Context, captureID string) (string, error)
 	GetCaptureReport(ctx context.Context, captureID string) (sql.NullString, error)
 	GetConfig(ctx context.Context, key string) (string, error)
+	GetSweep(ctx context.Context, sweepID string) (string, error)
+	GetSweepBins(ctx context.Context, sweepID string) (sql.NullString, error)
 	GetTrack(ctx context.Context, trackID string) (string, error)
 	InsertDetection(ctx context.Context, arg InsertDetectionParams) error
 	// Ignores a duplicate timestamp rather than failing: two samplers, or a restart
@@ -35,6 +37,10 @@ type Querier interface {
 	ListCaptures(ctx context.Context) ([]string, error)
 	ListDetections(ctx context.Context, arg ListDetectionsParams) ([]ListDetectionsRow, error)
 	ListSensors(ctx context.Context) ([]Sensor, error)
+	// Newest first, and deliberately without `bins`: the list is a menu, and
+	// dragging every measurement off disk to render it would make the page cost
+	// megabytes to answer "which sweeps do I have".
+	ListSweeps(ctx context.Context, limit int64) ([]string, error)
 	// Ascending, because every consumer is a chart and a chart reads left to right.
 	ListTelemetry(ctx context.Context, arg ListTelemetryParams) ([]Telemetry, error)
 	ListTrackDetections(ctx context.Context, arg ListTrackDetectionsParams) ([]ListTrackDetectionsRow, error)
@@ -42,6 +48,7 @@ type Querier interface {
 	// Offset paging would silently skip rows on a table being appended to.
 	ListTracks(ctx context.Context, arg ListTracksParams) ([]ListTracksRow, error)
 	PurgeDetections(ctx context.Context, ts string) (int64, error)
+	PurgeSweeps(ctx context.Context, startedAt string) (int64, error)
 	PurgeTelemetry(ctx context.Context, ts string) (int64, error)
 	PurgeTracks(ctx context.Context, lastSeen string) (int64, error)
 	PutCapture(ctx context.Context, arg PutCaptureParams) error
@@ -51,6 +58,10 @@ type Querier interface {
 	// reported as not-found rather than passing silently.
 	PutCaptureReport(ctx context.Context, arg PutCaptureReportParams) (int64, error)
 	PutConfig(ctx context.Context, arg PutConfigParams) error
+	PutSweep(ctx context.Context, arg PutSweepParams) error
+	// Separate from PutSweep so finishing a sweep does not rewrite the megabyte,
+	// and so a failed sweep stores its reason without storing an empty blob.
+	PutSweepBins(ctx context.Context, arg PutSweepBinsParams) error
 	UpsertSensor(ctx context.Context, arg UpsertSensorParams) error
 	// Every statement the store runs. sqlc type-checks each one against
 	// schema.sql and generates the Go, so a column that no longer exists is a

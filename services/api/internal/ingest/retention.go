@@ -22,7 +22,13 @@ type Retention struct {
 	// dozen bytes, and the questions it answers ("has free disk been sliding
 	// for a week") need a week to answer.
 	Telemetry time.Duration
-	Interval  time.Duration
+	// Sweeps is shorter than everything else by default, and for the opposite
+	// reason: one sweep of fpv_1g2 is 146 steps of 1024 bins, so a stored sweep
+	// is about a megabyte -- three orders of magnitude bigger than a telemetry
+	// sample. Unbounded, an operator who sweeps daily fills a Pi's card with
+	// spectra nobody has looked at since.
+	Sweeps   time.Duration
+	Interval time.Duration
 }
 
 func (r *Retention) Run(ctx context.Context) {
@@ -67,6 +73,13 @@ func (r *Retention) Sweep(ctx context.Context, now time.Time) {
 			slog.Error("purging telemetry failed", "err", err)
 		} else if n > 0 {
 			slog.Info("retention: purged telemetry", "rows", n, "older_than", r.Telemetry)
+		}
+	}
+	if r.Sweeps > 0 {
+		if n, err := r.Store.PurgeSweeps(ctx, now.Add(-r.Sweeps)); err != nil {
+			slog.Error("purging sweeps failed", "err", err)
+		} else if n > 0 {
+			slog.Info("retention: purged spectrum sweeps", "rows", n, "older_than", r.Sweeps)
 		}
 	}
 }

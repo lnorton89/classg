@@ -317,6 +317,98 @@ this exists. Note that a capture contains every network in range, not only drone
 
 ---
 
+## Spectrum
+
+Band sweeps from the SDR sensor. **Energy measurement only.** A peak above
+threshold means something is transmitting; it never means a drone. The detector
+that could tell an ELRS burst train from a smart meter is Milestone 3, it needs
+a test transmitter to validate against, and until it exists no field here may
+imply a classification.
+
+Sweeps are operator-initiated rather than continuous, and that is forced by
+[ADR-0008](adr/0008-adsb-via-dump1090.md): `dump1090` owns the dongle on a
+working unit, so a live waterfall would mean permanent ADS-B blindness. A sweep
+borrows the radio for one band and gives it back. The cost is real, it is tens
+of seconds of no ADS-B, and it belongs to whoever pressed the button.
+
+### `GET /spectrum/bands`
+```jsonc
+{ "bands": [ {
+  "name": "ism_915", "class": "E", "start_hz": 902000000, "stop_hz": 928000000,
+  "steps": 14, "note": "ELRS 900, TBS Crossfire, RFD900. Heavy clutter: ..."
+} ],
+  "available": true,          // false on a unit with no SDR, or a sensor built
+  "reason": "",               //   without the `rtlsdr` feature -- reason says which
+  "running_sweep_id": ""      // non-empty while the radio is taken
+}
+```
+Always `200`, even with no radio attached. A unit without an SDR is a working
+unit with one fewer sensor ([ADR-0003](adr/0003-sensor-process-isolation.md)),
+and the picker should say so rather than the page failing to load. The band list
+comes from the sensor's own `BAND_PLANS` rather than a copy in Go, so the two
+cannot drift.
+
+### `POST /spectrum/sweeps`
+```jsonc
+{ "band": "ism_915" }
+```
+`202 Accepted` with the sweep object in `state: "running"`. The band is checked
+against the sensor's plan before it reaches a subprocess argv.
+
+- `400` — unknown band.
+- `409` — a sweep is already running, or something else holds the radio (on a
+  healthy unit, `dump1090`). Nothing is broken; the dongle is busy.
+- `503` — this unit cannot sweep at all.
+
+### `GET /spectrum/sweeps`
+```jsonc
+{ "sweeps": [ {
+  "sweep_id": "01J8...", "band": "ism_915", "state": "completed",
+  "started_at": "...", "ended_at": "...", "class": "E", "steps": 14,
+  "noise_floor_dbfs": -70.5, "threshold_dbfs": -60.5,
+  "peak_dbfs": -48.2, "peak_hz": 903412500,
+  "short_reads": 0            // steps that read too short to transform
+} ] }
+```
+`?limit=` bounds the page. The bins are deliberately absent: one sweep of
+`fpv_1g2` is 146 steps of 1024 bins, so a list that carried them would cost
+megabytes to answer "which sweeps do I have".
+
+### `GET /spectrum/sweeps/{sweep_id}`
+The sweep object plus the measurement:
+```jsonc
+{ "sweep_id": "01J8...", "state": "completed", /* ...as above... */
+  "trace": {
+    "start_hz": 901760000, "stop_hz": 928160000, "bin_width_hz": 22000,
+    "dbfs": [-70.5, -71.2, null, -69.8],   // null = unmeasured, NOT quiet
+    "blind": 14
+  },
+  "step_peaks": [ { "center_hz": 902960000, "peak_hz": 902341000, "peak_dbfs": -65.5 } ]
+}
+```
+
+`?bins=` sets the trace width (default 1200, max 4096, never finer than the
+measurement behind it).
+
+**A `null` in `dbfs` is a frequency the receiver could not see, and a client
+must render it as a gap rather than joining across it.** Two things produce one.
+The RTL-SDR is zero-IF, so its own local oscillator lands at every step's tuned
+frequency; the sensor guards three bins either side, leaving a ~16 kHz blind
+notch every 1.92 MHz that the 20% step overlap does **not** close (it covers the
+rolled-off step edges, not another step's centre). And a gap between distant
+steps is spectrum nothing tuned to. Drawing a level across either shows a quiet
+frequency that was never measured — which is the same lie `/telemetry` refuses
+to tell with a null CPU temperature.
+
+Overlapping steps are combined with max-hold, not averaged: a control-link burst
+occupies a couple of bins out of a thousand, and averaging is exactly the
+operation that buries it.
+
+`trace` is absent — not empty — on a sweep that is still running or that failed.
+An empty trace would chart as a flat, quiet band.
+
+---
+
 ## Sensors
 
 ### `GET /sensors` — as the `sensors` array in `/health`, with full config.

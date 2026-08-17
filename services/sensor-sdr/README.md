@@ -151,6 +151,15 @@ local oscillator lands at the tuned frequency and appears as a spike at the
 centre of every slice. The first version of this sweep trusted the raw peak and
 reported a detection at the exact centre of all fourteen steps — the receiver
 detecting itself, fourteen times, about 12 dB over the floor. `peak_excluding_dc`
-skips a three-bin guard, and the step overlap in `plan_sweep` covers the ~16 kHz
-notch that creates. Every synthetic-tone test passed before that fix; only real
-spectrum showed it.
+skips a three-bin guard. Every synthetic-tone test passed before that fix; only
+real spectrum showed it.
+
+That guard leaves a ~16 kHz blind notch at each step centre, and it stays blind
+— `plan_sweep`'s 20% overlap does not cover it. Centres are 1.92 MHz apart and
+each step spans 2.4 MHz, so what gets measured twice is the rolled-off outer
+0.48 MHz of each step; no step contains another step's centre at any overlap
+below 50%. The notch is tolerable because it is 0.8% of the band and everything
+this sensor exists to notice occupies 250 kHz or more, so a real emitter
+straddles a notch rather than hiding in one. `sweep --json` reports the guard
+bins as measured and the API renders them as unmeasured, so the hole is visible
+rather than papered over.

@@ -23,6 +23,8 @@ mod source;
 mod spectrum;
 #[allow(dead_code)]
 mod sweep;
+#[allow(dead_code)]
+mod sweepdoc;
 // The real radio, behind a feature because linking librtlsdr would stop the
 // crate building on the CI runner, which installs no system packages.
 #[cfg(feature = "rtlsdr")]
@@ -63,6 +65,14 @@ fn main() {
         std::process::exit(run_probe(args.iter().any(|a| a == "--open")));
     }
 
+    // The band plan without a radio. The api needs to offer bands before an
+    // operator has picked one, and hardcoding the list in Go would let it drift
+    // from BAND_PLANS silently -- the same trap two sensor-detail allowlists
+    // would have been.
+    if args.iter().any(|a| a == "bands") {
+        std::process::exit(run_bands(args.iter().any(|a| a == "--json")));
+    }
+
     if args.iter().any(|a| a == "sweep") {
         let band = args
             .iter()
@@ -70,7 +80,7 @@ fn main() {
             .and_then(|i| args.get(i + 1))
             .cloned()
             .unwrap_or_else(|| "ism_915".to_string());
-        std::process::exit(run_sweep(&band));
+        std::process::exit(run_sweep(&band, args.iter().any(|a| a == "--json")));
     }
 
     if args.iter().any(|a| a == "-h" || a == "--help") {
@@ -90,7 +100,9 @@ fn usage() {
     println!("classg-sensor-sdr {}\n", env!("CARGO_PKG_VERSION"));
     println!("  adsb                      consume dump1090's SBS-1 stream, publish Class D");
     println!("  probe [--open]            list attached SDRs; --open tunes and reads a burst");
+    println!("  bands [--json]            list the band plan; needs no radio");
     println!("  sweep [--band NAME]       measure a band's spectrum and noise floor");
+    println!("       [--json]             emit the whole measurement, bins included");
     println!("  --emit-sample-detection   print one schema-shaped detection and exit");
     println!("  (no argument)             print the band plan and the tuner limits");
     println!("\nConfiguration is environment-driven (ADR-0007); `adsb` prints every");
@@ -190,7 +202,7 @@ fn run_probe(open: bool) -> i32 {
 ///
 /// Envelope only. See spectrum.rs.
 #[cfg(feature = "rtlsdr")]
-fn run_sweep(band_name: &str) -> i32 {
+fn run_sweep(band_name: &str, json: bool) -> i32 {
     use source::SdrSource;
 
     let Some(band) = sweep::BAND_PLANS.iter().find(|b| b.name == band_name) else {
@@ -209,14 +221,18 @@ fn run_sweep(band_name: &str) -> i32 {
     // 20% overlap: the outer fifth of the passband rolls off, so abutting steps
     // exactly would leave a blind notch at every boundary.
     let steps = sweep::plan_sweep(band, 0.2);
-    println!(
+
+    // Progress goes to stderr, always. --json puts one parseable document on
+    // stdout and nothing else; interleaving a human line into it would make the
+    // api's decoder fail on a working sweep.
+    eprintln!(
         "{} -- {:.3}-{:.3} MHz in {} steps",
         band.name,
         band.start_hz as f64 / 1e6,
         band.stop_hz as f64 / 1e6,
         steps.len()
     );
-    println!("{}\n", band.note);
+    eprintln!("{}\n", band.note);
 
     let mut sdr = match rtlsdr::RtlSdrSource::open(0) {
         Ok(s) => s,
@@ -225,7 +241,8 @@ fn run_sweep(band_name: &str) -> i32 {
             return 1;
         }
     };
-    if let Err(err) = sdr.set_gain(200) {
+    const GAIN_TENTH_DB: i32 = 200;
+    if let Err(err) = sdr.set_gain(GAIN_TENTH_DB) {
         eprintln!("{err}");
         return 1;
     }
@@ -234,9 +251,11 @@ fn run_sweep(band_name: &str) -> i32 {
     // Eight segments per step: enough averaging to stop the floor wandering
     // several dB between reads, which is what a single transform of noise does.
     const SAMPLES: usize = FFT * 8;
+    const THRESHOLD_OVER_FLOOR_DB: f32 = 10.0;
 
     let mut floor = sweep::NoiseFloor::new(steps.len() * FFT);
-    let mut peaks: Vec<(f64, f32)> = Vec::with_capacity(steps.len());
+    let mut step_docs: Vec<sweepdoc::SweepStepDoc> = Vec::with_capacity(steps.len());
+    let mut short_reads: Vec<u64> = Vec::new();
 
     for step in &steps {
         if let Err(err) = sdr.set_center_freq(step.center_hz) {
@@ -253,6 +272,7 @@ fn run_sweep(band_name: &str) -> i32 {
         let Some(spec) = spectrum::power_spectrum(&buf.iq, step.center_hz, buf.sample_rate, FFT)
         else {
             eprintln!("short read at {:.3} MHz", step.center_hz as f64 / 1e6);
+            short_reads.push(step.center_hz);
             continue;
         };
 
@@ -262,45 +282,159 @@ fn run_sweep(band_name: &str) -> i32 {
         // Excluding DC: the radio's own LO lands at the tuned frequency, and
         // trusting the raw peak reported a detection at the centre of all
         // fourteen steps the first time this ran against real spectrum.
-        if let Some((bin, db)) = spec.peak_excluding_dc(spectrum::DC_GUARD_BINS) {
-            peaks.push((spec.bin_hz(bin), db));
-            println!(
+        let peak = spec.peak_excluding_dc(spectrum::DC_GUARD_BINS);
+        if let Some((bin, db)) = peak {
+            eprintln!(
                 "  {:>9.3} MHz  peak {:>7.1} dBFS at {:>9.3} MHz",
                 step.center_hz as f64 / 1e6,
                 db,
                 spec.bin_hz(bin) / 1e6
             );
         }
+
+        step_docs.push(sweepdoc::SweepStepDoc {
+            center_hz: step.center_hz,
+            first_bin_hz: spec.bin_hz(0),
+            bin_width_hz: buf.sample_rate as f64 / FFT as f64,
+            peak_hz: peak.map(|(bin, _)| spec.bin_hz(bin)),
+            peak_dbfs: peak.map(|(_, db)| sweepdoc::round_db(db)),
+            bins_dbfs: spec
+                .bins_db
+                .iter()
+                .copied()
+                .map(sweepdoc::round_db)
+                .collect(),
+        });
     }
 
-    match (floor.median(), floor.threshold(10.0)) {
-        (Some(median), Some(threshold)) => {
-            println!(
-                "\nnoise floor {median:.1} dBFS (median), +10 dB threshold {threshold:.1} dBFS"
-            );
-            let above: Vec<_> = peaks.iter().filter(|(_, db)| *db > threshold).collect();
-            if above.is_empty() {
-                println!("nothing above threshold in this band right now.");
-            } else {
-                println!("{} step peak(s) above threshold:", above.len());
-                for (hz, db) in above {
-                    println!("  {:>9.3} MHz  {:>7.1} dBFS", hz / 1e6, db);
-                }
+    let doc = sweepdoc::SweepDoc {
+        band: band.name.to_string(),
+        class: band.class.to_string(),
+        note: band.note.to_string(),
+        start_hz: band.start_hz,
+        stop_hz: band.stop_hz,
+        sample_rate: RTLSDR_STABLE_SAMPLE_RATE,
+        fft_size: FFT,
+        dc_guard_bins: spectrum::DC_GUARD_BINS,
+        gain_tenth_db: GAIN_TENTH_DB,
+        noise_floor_dbfs: floor.median(),
+        threshold_dbfs: floor.threshold(THRESHOLD_OVER_FLOOR_DB),
+        threshold_over_floor_db: THRESHOLD_OVER_FLOOR_DB,
+        steps: step_docs,
+        short_reads,
+    };
+
+    if doc.noise_floor_dbfs.is_none() {
+        eprintln!("no spectrum measured");
+        return 1;
+    }
+
+    if json {
+        match serde_json::to_string(&doc) {
+            Ok(s) => {
+                println!("{s}");
+                return 0;
             }
-            println!(
-                "\nEnergy only. Nothing here identifies a transmitter -- cadence analysis\nagainst CONTROL_LINK_RATES_HZ is Milestone 3's detector and needs a test\ntransmitter to validate."
-            );
-            0
-        }
-        _ => {
-            eprintln!("no spectrum measured");
-            1
+            Err(err) => {
+                eprintln!("serialising the sweep failed: {err}");
+                return 1;
+            }
         }
     }
+
+    print_sweep_summary(&doc);
+    0
+}
+
+/// The human tail of a sweep: floor, threshold, and which step peaks cleared it.
+///
+/// Split out so the JSON path and the terminal path report the same measurement
+/// rather than two loops that can drift.
+#[cfg(feature = "rtlsdr")]
+fn print_sweep_summary(doc: &sweepdoc::SweepDoc) {
+    let (Some(median), Some(threshold)) = (doc.noise_floor_dbfs, doc.threshold_dbfs) else {
+        return;
+    };
+    println!(
+        "\nnoise floor {median:.1} dBFS (median), +{:.0} dB threshold {threshold:.1} dBFS",
+        doc.threshold_over_floor_db
+    );
+
+    let above: Vec<_> = doc
+        .steps
+        .iter()
+        .filter_map(|s| Some((s.peak_hz?, s.peak_dbfs?)))
+        .filter(|(_, db)| *db > threshold)
+        .collect();
+
+    if above.is_empty() {
+        println!("nothing above threshold in this band right now.");
+    } else {
+        println!("{} step peak(s) above threshold:", above.len());
+        for (hz, db) in above {
+            println!("  {:>9.3} MHz  {:>7.1} dBFS", hz / 1e6, db);
+        }
+    }
+    if !doc.short_reads.is_empty() {
+        println!(
+            "{} step(s) read short and were not measured -- the band has holes at:",
+            doc.short_reads.len()
+        );
+        for hz in &doc.short_reads {
+            println!("  {:>9.3} MHz", *hz as f64 / 1e6);
+        }
+    }
+    println!(
+        "\nEnergy only. Nothing here identifies a transmitter -- cadence analysis\nagainst CONTROL_LINK_RATES_HZ is Milestone 3's detector and needs a test\ntransmitter to validate."
+    );
+}
+
+/// The band plan, with no radio involved.
+///
+/// `--json` is what the api reads to populate its band picker. Splitting the
+/// list out of `banner()` means the api never has to parse a human table, and
+/// never has to keep its own copy of BAND_PLANS in Go.
+fn run_bands(json: bool) -> i32 {
+    if json {
+        let bands: Vec<_> = BAND_PLANS
+            .iter()
+            .map(|b| {
+                serde_json::json!({
+                    "name": b.name,
+                    "class": b.class.to_string(),
+                    "note": b.note,
+                    "start_hz": b.start_hz,
+                    "stop_hz": b.stop_hz,
+                    "steps": plan_sweep(b, 0.2).len(),
+                })
+            })
+            .collect();
+        match serde_json::to_string(&serde_json::json!({ "bands": bands })) {
+            Ok(s) => println!("{s}"),
+            Err(err) => {
+                eprintln!("serialising the band plan failed: {err}");
+                return 1;
+            }
+        }
+        return 0;
+    }
+
+    for b in BAND_PLANS {
+        println!(
+            "{:<10} class {}  {:>8.3}-{:>8.3} MHz  {:>3} steps",
+            b.name,
+            b.class,
+            b.start_hz as f64 / 1e6,
+            b.stop_hz as f64 / 1e6,
+            plan_sweep(b, 0.2).len(),
+        );
+        println!("           {}", b.note);
+    }
+    0
 }
 
 #[cfg(not(feature = "rtlsdr"))]
-fn run_sweep(_band: &str) -> i32 {
+fn run_sweep(_band: &str, _json: bool) -> i32 {
     eprintln!(
         "built without the `rtlsdr` feature, so this binary cannot talk to a radio.\n\
          Rebuild with: cargo build --release --features rtlsdr"

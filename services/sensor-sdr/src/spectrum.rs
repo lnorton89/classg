@@ -54,9 +54,24 @@ impl Spectrum {
     /// A guard of a few bins rather than one: the spike smears across
     /// neighbours through window leakage and any residual IQ imbalance.
     ///
-    /// The cost is a genuine blind notch a few kHz wide at each step centre.
-    /// That is why `plan_sweep` overlaps its steps -- a signal hidden under one
-    /// step's DC spike sits well away from centre in the neighbouring step.
+    /// The cost is a genuine blind notch a few kHz wide at each step centre,
+    /// and it stays blind. `plan_sweep`'s 20% overlap does NOT cover it: with
+    /// centres 1.92 MHz apart and each step spanning 2.4 MHz, what gets measured
+    /// twice is the outer 0.48 MHz of each step -- the rolled-off edges, which
+    /// is what that overlap is for. No step contains another step's centre, at
+    /// any overlap below 50%.
+    ///
+    /// What makes the notch acceptable is its width, not any coverage. At 2.4
+    /// MSPS with a 1024-point transform it is ~16 kHz, recurring every 1.92 MHz:
+    /// 0.8% of the band. Nothing this sensor exists to notice is that narrow --
+    /// ELRS, Crossfire and analog FPV all occupy 250 kHz or more, so a real
+    /// emitter straddles a notch rather than hiding in one. A sweeper that
+    /// closed the notch would need better than 50% overlap, which doubles the
+    /// step count and doubles the time the radio is taken from dump1090.
+    ///
+    /// Consumers must render the notch as unmeasured rather than as a level.
+    /// The api's stitcher does (internal/spectrum.Stitch), and its tests assert
+    /// the arithmetic above rather than trusting this comment.
     pub fn peak_excluding_dc(&self, guard_bins: usize) -> Option<(usize, f32)> {
         let n = self.bins_db.len();
         if n == 0 {

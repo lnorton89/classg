@@ -65,6 +65,7 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("Sensors", func(t *testing.T) { testSensors(t, newStore) })
 	t.Run("OperatorRoundTrip", func(t *testing.T) { testOperatorRoundTrip(t, newStore) })
 	t.Run("Telemetry", func(t *testing.T) { testTelemetry(t, newStore) })
+	t.Run("Sweeps", func(t *testing.T) { testSweeps(t, newStore) })
 }
 
 func testTrackRoundTrip(t *testing.T, newStore Factory) {
@@ -593,5 +594,101 @@ func isNilPtr(v any) bool {
 		return p == nil
 	default:
 		return v == nil
+	}
+}
+
+func testSweeps(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	floor := -70.5
+	sw := model.SpectrumSweep{
+		SweepID: "S1", Band: "ism_915", State: model.SweepRunning,
+		StartedAt: base, Class: "E", StartHz: 902_000_000, StopHz: 928_000_000, Steps: 14,
+	}
+	if err := s.PutSweep(ctx, sw); err != nil {
+		t.Fatal(err)
+	}
+
+	// A running sweep has no measurement, and that is not the same as an empty
+	// one: an empty trace charts as a flat, quiet band.
+	if _, err := s.GetSweepBins(ctx, "S1"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a running sweep should have no bins, got %v", err)
+	}
+
+	ended := base.Add(30 * time.Second)
+	sw.State, sw.EndedAt, sw.NoiseFloorDBFS = model.SweepCompleted, &ended, &floor
+	if err := s.PutSweep(ctx, sw); err != nil {
+		t.Fatal(err)
+	}
+	bins := json.RawMessage(`{"band":"ism_915","steps":[{"bins_dbfs":[-70,-71]}]}`)
+	if err := s.PutSweepBins(ctx, "S1", bins); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetSweep(ctx, "S1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.State != model.SweepCompleted || got.EndedAt == nil {
+		t.Fatalf("state not updated: %+v", got)
+	}
+	// A pointer float has to survive as a pointer. Flattened to 0 it reads as a
+	// full-scale signal across the whole band.
+	if got.NoiseFloorDBFS == nil || *got.NoiseFloorDBFS != floor {
+		t.Fatalf("noise floor %v, want %v", got.NoiseFloorDBFS, floor)
+	}
+	if got.ThresholdDBFS != nil {
+		t.Fatalf("threshold was never set but came back as %v", *got.ThresholdDBFS)
+	}
+
+	stored, err := s.GetSweepBins(ctx, "S1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(stored) != string(bins) {
+		t.Fatalf("bins round trip: got %s want %s", stored, bins)
+	}
+
+	if _, err := s.GetSweep(ctx, "missing"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+	if err := s.PutSweepBins(ctx, "missing", bins); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("storing bins for a sweep that does not exist: %v", err)
+	}
+
+	// Newest first, and bounded.
+	older := model.SpectrumSweep{
+		SweepID: "S0", Band: "ism_433", State: model.SweepCompleted,
+		StartedAt: base.Add(-time.Hour),
+	}
+	if err := s.PutSweep(ctx, older); err != nil {
+		t.Fatal(err)
+	}
+	list, err := s.ListSweeps(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 || list[0].SweepID != "S1" {
+		t.Fatalf("want newest first, got %+v", list)
+	}
+	if list, err = s.ListSweeps(ctx, 1); err != nil || len(list) != 1 || list[0].SweepID != "S1" {
+		t.Fatalf("limit not applied: %+v %v", list, err)
+	}
+
+	// Retention takes the bins with the sweep -- they are the reason a sweep is
+	// worth purging at all.
+	n, err := s.PurgeSweeps(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("purged %d sweeps, want 1", n)
+	}
+	if _, err := s.GetSweep(ctx, "S0"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("purged sweep still readable: %v", err)
+	}
+	if _, err := s.GetSweep(ctx, "S1"); err != nil {
+		t.Fatalf("the newer sweep was purged too: %v", err)
 	}
 }

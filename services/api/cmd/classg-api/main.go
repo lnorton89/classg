@@ -30,11 +30,13 @@ import (
 	"github.com/classg/api/internal/model"
 	"github.com/classg/api/internal/monitoring"
 	"github.com/classg/api/internal/settings"
+	"github.com/classg/api/internal/spectrum"
 	"github.com/classg/api/internal/store"
 	"github.com/classg/api/internal/store/libsqlstore"
 	"github.com/classg/api/internal/store/memstore"
 	"github.com/classg/api/internal/system"
 	"github.com/classg/api/internal/telemetry"
+	"github.com/classg/api/internal/ulid"
 )
 
 func main() {
@@ -168,12 +170,33 @@ func run() error {
 		slog.Info("adopted existing captures", "count", n)
 	}
 
+	// The sweep engine, if this unit has one. Nil is a normal state: sweeping
+	// needs an SDR and a sensor binary built with the `rtlsdr` feature, which
+	// is a Pi and not a laptop, and everything else must keep working without
+	// it (ADR-0003).
+	var sweeps *spectrum.Service
+	if cfg.SDRBin != "" {
+		sweeps = &spectrum.Service{
+			Store: st,
+			Sweeper: spectrum.CommandSweeper{
+				Bin:     cfg.SDRBin,
+				Timeout: cfg.SweepTimeout,
+			},
+			NewID: func() string { return ulid.New(time.Now().UTC()) },
+			Now:   func() time.Time { return time.Now().UTC() },
+		}
+		if ok, why := sweeps.Available(); !ok {
+			slog.Warn("band sweeping is configured but unavailable", "reason", why)
+		}
+	}
+
 	srv := httpapi.New(httpapi.Options{
 		Config:     cfg,
 		Store:      st,
 		Registry:   registry,
 		Hub:        h,
 		Captures:   captures,
+		Spectrum:   sweeps,
 		Settings:   set,
 		Monitoring: recording,
 		Sensors:    httpapi.SystemdSensors{Argv: cfg.SensorRestartCommand},
@@ -219,6 +242,7 @@ func run() error {
 		Detections: cfg.RetentionDetections,
 		Tracks:     cfg.RetentionTracks,
 		Telemetry:  cfg.RetentionTelemetry,
+		Sweeps:     cfg.RetentionSweeps,
 		Interval:   cfg.RetentionInterval,
 	}).Run(ctx)
 	// Records what /metrics only ever exposes live. Nothing scrapes a field

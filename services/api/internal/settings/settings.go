@@ -172,6 +172,11 @@ var Defs = []Def{
 		Default: "2160h", Mutable: true, Doc: "how long tracks are kept"},
 	{Key: "retention.telemetry", Env: "CLASSG_RETENTION_TELEMETRY", Kind: KindDuration,
 		Default: "336h", Mutable: true, Doc: "how long recorded host and sensor telemetry is kept"},
+	{Key: "retention.sweeps", Env: "CLASSG_RETENTION_SWEEPS", Kind: KindDuration,
+		Default: "720h", Mutable: true,
+		Doc: "how long stored spectrum sweeps are kept. Shorter than tracks despite being " +
+			"rarer: one sweep of fpv_1g2 is about a megabyte of bins, so a few hundred of " +
+			"them is a noticeable fraction of a Pi's card"},
 	{Key: "retention.interval", Env: "CLASSG_RETENTION_INTERVAL", Kind: KindDuration,
 		Default: "1h", Mutable: true, Doc: "how often the retention job runs"},
 
@@ -196,6 +201,21 @@ var Defs = []Def{
 		Default: "../sensor-wifi", Doc: "path to the sensor-wifi checkout used for analysis"},
 	{Key: "capture.python_bin", Env: "CLASSG_PYTHON", Kind: KindString,
 		Default: "python3", Doc: "python interpreter used to run the analyzer"},
+
+	// --- Spectrum
+	//
+	// Empty by default, and that is the right default: on a unit with no SDR --
+	// or with the sensor built without the `rtlsdr` feature, which is how it
+	// builds everywhere except a Pi -- sweeping is simply unavailable, and the
+	// band picker says so rather than the API failing to start.
+	{Key: "spectrum.sdr_bin", Env: "CLASSG_SDR_BIN", Kind: KindString,
+		Default: "", Doc: "path to the classg-sensor-sdr binary used for band sweeps; " +
+			"empty disables sweeping"},
+	{Key: "spectrum.sweep_timeout", Env: "CLASSG_SWEEP_TIMEOUT", Kind: KindDuration,
+		Default: "10m", Mutable: true,
+		Doc: "how long one band sweep may take before it is abandoned. fpv_1g2 is 146 tune " +
+			"steps, so this is minutes -- but it is bounded, because a wedged USB device " +
+			"blocks a read forever rather than failing"},
 
 	// --- Map
 	{Key: "map.receiver_position", Env: "CLASSG_RECEIVER_POSITION", Kind: KindLatLon,

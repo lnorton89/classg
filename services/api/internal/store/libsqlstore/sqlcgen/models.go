@@ -41,6 +41,13 @@ type Sensor struct {
 	Detail        sql.NullString
 }
 
+type SpectrumSweep struct {
+	SweepID   string
+	Doc       string
+	StartedAt string
+	Bins      sql.NullString
+}
+
 type Telemetry struct {
 	Ts             string
 	CpuTempC       sql.NullFloat64

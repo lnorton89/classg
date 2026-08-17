@@ -23,6 +23,11 @@ import (
 	"github.com/classg/api/internal/store/libsqlstore/sqlcgen"
 )
 
+// ListSweeps takes a LIMIT because the query does; this is what an unbounded
+// caller gets. Well above any sensible retention on a Pi, and small enough that
+// a runaway sweeper cannot make the list endpoint the slowest thing in the API.
+const defaultSweepLimit = 500
+
 // --- parameter helpers -----------------------------------------------------
 
 func nullStr(s string) sql.NullString {
@@ -539,6 +544,91 @@ func (s *Store) ListTelemetry(ctx context.Context, q store.TelemetryQuery) ([]st
 		out = append(out, sample)
 	}
 	return out, nil
+}
+
+func (s *Store) PutSweep(ctx context.Context, sw model.SpectrumSweep) error {
+	doc, err := json.Marshal(sw)
+	if err != nil {
+		return fmt.Errorf("put sweep: %w", err)
+	}
+	err = s.q.PutSweep(ctx, sqlcgen.PutSweepParams{
+		SweepID:   sw.SweepID,
+		Doc:       string(doc),
+		StartedAt: toDB(sw.StartedAt),
+	})
+	if err != nil {
+		return fmt.Errorf("put sweep: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) GetSweep(ctx context.Context, id string) (model.SpectrumSweep, error) {
+	doc, err := s.q.GetSweep(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return model.SpectrumSweep{}, store.ErrNotFound
+	}
+	if err != nil {
+		return model.SpectrumSweep{}, fmt.Errorf("get sweep: %w", err)
+	}
+	var sw model.SpectrumSweep
+	if err := json.Unmarshal([]byte(doc), &sw); err != nil {
+		return model.SpectrumSweep{}, fmt.Errorf("get sweep: decoding stored doc: %w", err)
+	}
+	return sw, nil
+}
+
+func (s *Store) ListSweeps(ctx context.Context, limit int) ([]model.SpectrumSweep, error) {
+	if limit <= 0 {
+		limit = defaultSweepLimit
+	}
+	docs, err := s.q.ListSweeps(ctx, int64(limit))
+	if err != nil {
+		return nil, fmt.Errorf("list sweeps: %w", err)
+	}
+	out := make([]model.SpectrumSweep, 0, len(docs))
+	for _, doc := range docs {
+		var sw model.SpectrumSweep
+		if err := json.Unmarshal([]byte(doc), &sw); err != nil {
+			return nil, fmt.Errorf("list sweeps: decoding stored doc: %w", err)
+		}
+		out = append(out, sw)
+	}
+	return out, nil
+}
+
+func (s *Store) PutSweepBins(ctx context.Context, id string, bins json.RawMessage) error {
+	if _, err := s.GetSweep(ctx, id); err != nil {
+		return err
+	}
+	err := s.q.PutSweepBins(ctx, sqlcgen.PutSweepBinsParams{
+		Bins:    nullStr(string(bins)),
+		SweepID: id,
+	})
+	if err != nil {
+		return fmt.Errorf("put sweep bins: %w", err)
+	}
+	return nil
+}
+
+// GetSweepBins reports ErrNotFound when the sweep exists but holds no
+// measurement -- still running, or failed. Same shape as GetCaptureReport for
+// an unanalysed capture: the parent is there, the payload is not.
+func (s *Store) GetSweepBins(ctx context.Context, id string) (json.RawMessage, error) {
+	bins, err := s.q.GetSweepBins(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, store.ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get sweep bins: %w", err)
+	}
+	if !bins.Valid || bins.String == "" {
+		return nil, store.ErrNotFound
+	}
+	return json.RawMessage(bins.String), nil
+}
+
+func (s *Store) PurgeSweeps(ctx context.Context, before time.Time) (int64, error) {
+	return s.q.PurgeSweeps(ctx, toDB(before))
 }
 
 func (s *Store) PurgeTelemetry(ctx context.Context, before time.Time) (int64, error) {

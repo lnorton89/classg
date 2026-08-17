@@ -181,6 +181,16 @@ type Store interface {
 	PutCaptureReport(ctx context.Context, id string, report json.RawMessage, summary model.CaptureAnalysis) error
 	GetCaptureReport(ctx context.Context, id string) (json.RawMessage, error)
 
+	// PutSweep writes the metadata; PutSweepBins writes the measurement. Two
+	// calls because they have different lifetimes -- a sweep is recorded as
+	// running before there are any bins, and a sweep that fails gets a reason
+	// and never gets bins at all.
+	PutSweep(ctx context.Context, s model.SpectrumSweep) error
+	GetSweep(ctx context.Context, id string) (model.SpectrumSweep, error)
+	ListSweeps(ctx context.Context, limit int) ([]model.SpectrumSweep, error)
+	PutSweepBins(ctx context.Context, id string, bins json.RawMessage) error
+	GetSweepBins(ctx context.Context, id string) (json.RawMessage, error)
+
 	GetConfig(ctx context.Context, key string) (json.RawMessage, error)
 	PutConfig(ctx context.Context, key string, value json.RawMessage) error
 
@@ -190,6 +200,7 @@ type Store interface {
 	PurgeDetections(ctx context.Context, before time.Time) (int64, error)
 	PurgeTracks(ctx context.Context, before time.Time) (int64, error)
 	PurgeTelemetry(ctx context.Context, before time.Time) (int64, error)
+	PurgeSweeps(ctx context.Context, before time.Time) (int64, error)
 
 	Close() error
 }

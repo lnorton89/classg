@@ -95,11 +95,14 @@ type Config struct {
 	RetentionDetections time.Duration
 	RetentionTracks     time.Duration
 	RetentionTelemetry  time.Duration
+	RetentionSweeps     time.Duration
 	TelemetryInterval   time.Duration
 	RetentionInterval   time.Duration
 
 	SensorWifiDir            string
 	PythonBin                string
+	SDRBin                   string
+	SweepTimeout             time.Duration
 	CaptureAllowUnprivileged bool
 	WifiInterface            string
 	WifiChannel              int
@@ -227,11 +230,14 @@ func Assemble(b *Bootstrap, s *settings.Settings) (*Config, error) {
 		RetentionDetections: s.Duration("retention.detections"),
 		RetentionTracks:     s.Duration("retention.tracks"),
 		RetentionTelemetry:  s.Duration("retention.telemetry"),
+		RetentionSweeps:     s.Duration("retention.sweeps"),
 		TelemetryInterval:   s.Duration("telemetry.interval"),
 		RetentionInterval:   s.Duration("retention.interval"),
 
 		SensorWifiDir:            s.String("capture.sensor_wifi_dir"),
 		PythonBin:                s.String("capture.python_bin"),
+		SDRBin:                   s.String("spectrum.sdr_bin"),
+		SweepTimeout:             s.Duration("spectrum.sweep_timeout"),
 		CaptureAllowUnprivileged: s.Bool("capture.allow_unprivileged"),
 		WifiInterface:            s.String("capture.wifi_interface"),
 		WifiChannel:              s.Int("capture.wifi_channel"),

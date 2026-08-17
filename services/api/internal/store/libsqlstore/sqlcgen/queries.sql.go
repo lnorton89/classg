@@ -160,6 +160,28 @@ func (q *Queries) GetConfig(ctx context.Context, key string) (string, error) {
 	return value, err
 }
 
+const getSweep = `-- name: GetSweep :one
+SELECT doc FROM spectrum_sweeps WHERE sweep_id = ?
+`
+
+func (q *Queries) GetSweep(ctx context.Context, sweepID string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getSweep, sweepID)
+	var doc string
+	err := row.Scan(&doc)
+	return doc, err
+}
+
+const getSweepBins = `-- name: GetSweepBins :one
+SELECT bins FROM spectrum_sweeps WHERE sweep_id = ?
+`
+
+func (q *Queries) GetSweepBins(ctx context.Context, sweepID string) (sql.NullString, error) {
+	row := q.db.QueryRowContext(ctx, getSweepBins, sweepID)
+	var bins sql.NullString
+	err := row.Scan(&bins)
+	return bins, err
+}
+
 const getTrack = `-- name: GetTrack :one
 SELECT doc FROM tracks WHERE track_id = ?
 `
@@ -354,6 +376,36 @@ func (q *Queries) ListSensors(ctx context.Context) ([]Sensor, error) {
 	return items, nil
 }
 
+const listSweeps = `-- name: ListSweeps :many
+SELECT doc FROM spectrum_sweeps ORDER BY started_at DESC LIMIT ?
+`
+
+// Newest first, and deliberately without `bins`: the list is a menu, and
+// dragging every measurement off disk to render it would make the page cost
+// megabytes to answer "which sweeps do I have".
+func (q *Queries) ListSweeps(ctx context.Context, limit int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listSweeps, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var doc string
+		if err := rows.Scan(&doc); err != nil {
+			return nil, err
+		}
+		items = append(items, doc)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTelemetry = `-- name: ListTelemetry :many
 SELECT ts, cpu_temp_c, load1, mem_available_kb, disk_free_bytes, doc
 FROM telemetry
@@ -538,6 +590,18 @@ func (q *Queries) PurgeDetections(ctx context.Context, ts string) (int64, error)
 	return result.RowsAffected()
 }
 
+const purgeSweeps = `-- name: PurgeSweeps :execrows
+DELETE FROM spectrum_sweeps WHERE started_at < ?
+`
+
+func (q *Queries) PurgeSweeps(ctx context.Context, startedAt string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeSweeps, startedAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const purgeTelemetry = `-- name: PurgeTelemetry :execrows
 DELETE FROM telemetry WHERE ts < ?
 `
@@ -617,6 +681,39 @@ type PutConfigParams struct {
 
 func (q *Queries) PutConfig(ctx context.Context, arg PutConfigParams) error {
 	_, err := q.db.ExecContext(ctx, putConfig, arg.Key, arg.Value, arg.UpdatedAt)
+	return err
+}
+
+const putSweep = `-- name: PutSweep :exec
+INSERT INTO spectrum_sweeps (sweep_id, doc, started_at)
+VALUES (?, ?, ?)
+ON CONFLICT(sweep_id) DO UPDATE SET doc = excluded.doc
+`
+
+type PutSweepParams struct {
+	SweepID   string
+	Doc       string
+	StartedAt string
+}
+
+func (q *Queries) PutSweep(ctx context.Context, arg PutSweepParams) error {
+	_, err := q.db.ExecContext(ctx, putSweep, arg.SweepID, arg.Doc, arg.StartedAt)
+	return err
+}
+
+const putSweepBins = `-- name: PutSweepBins :exec
+UPDATE spectrum_sweeps SET bins = ? WHERE sweep_id = ?
+`
+
+type PutSweepBinsParams struct {
+	Bins    sql.NullString
+	SweepID string
+}
+
+// Separate from PutSweep so finishing a sweep does not rewrite the megabyte,
+// and so a failed sweep stores its reason without storing an empty blob.
+func (q *Queries) PutSweepBins(ctx context.Context, arg PutSweepBinsParams) error {
+	_, err := q.db.ExecContext(ctx, putSweepBins, arg.Bins, arg.SweepID)
 	return err
 }
 

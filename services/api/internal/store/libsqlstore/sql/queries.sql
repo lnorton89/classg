@@ -196,3 +196,28 @@ LIMIT ?;
 
 -- name: PurgeTelemetry :execrows
 DELETE FROM telemetry WHERE ts < ?;
+
+-- name: PutSweep :exec
+INSERT INTO spectrum_sweeps (sweep_id, doc, started_at)
+VALUES (?, ?, ?)
+ON CONFLICT(sweep_id) DO UPDATE SET doc = excluded.doc;
+
+-- name: PutSweepBins :exec
+-- Separate from PutSweep so finishing a sweep does not rewrite the megabyte,
+-- and so a failed sweep stores its reason without storing an empty blob.
+UPDATE spectrum_sweeps SET bins = ? WHERE sweep_id = ?;
+
+-- name: GetSweep :one
+SELECT doc FROM spectrum_sweeps WHERE sweep_id = ?;
+
+-- name: GetSweepBins :one
+SELECT bins FROM spectrum_sweeps WHERE sweep_id = ?;
+
+-- name: ListSweeps :many
+-- Newest first, and deliberately without `bins`: the list is a menu, and
+-- dragging every measurement off disk to render it would make the page cost
+-- megabytes to answer "which sweeps do I have".
+SELECT doc FROM spectrum_sweeps ORDER BY started_at DESC LIMIT ?;
+
+-- name: PurgeSweeps :execrows
+DELETE FROM spectrum_sweeps WHERE started_at < ?;

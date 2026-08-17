@@ -92,3 +92,24 @@ CREATE TABLE IF NOT EXISTS telemetry (
 );
 
 CREATE INDEX IF NOT EXISTS idx_telemetry_ts ON telemetry (ts DESC);
+
+-- Band sweeps: the spectrum measurement, kept.
+--
+-- Same split as `captures`: `doc` is the small record every list renders, and
+-- the bulky half lives in its own nullable column so listing sweeps never drags
+-- it off disk. Here that matters more than it does for captures -- `fpv_1g2` is
+-- 146 tune steps of 1024 bins, so `bins` is a megabyte and the metadata beside
+-- it is a few hundred bytes.
+--
+-- Sweeps are stored rather than streamed because the useful question is
+-- comparative. "Is there something at 903 MHz that was not there last week" is
+-- unanswerable from a live view, and it is the question that distinguishes a
+-- new emitter from the smart meter that has always been there.
+CREATE TABLE IF NOT EXISTS spectrum_sweeps (
+    sweep_id   TEXT PRIMARY KEY,
+    doc        TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    bins       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_spectrum_sweeps_started ON spectrum_sweeps (started_at DESC);

@@ -362,3 +362,49 @@ type CaptureAnalysis struct {
 	ClassA            int  `json:"class_a"`
 	ClassB            int  `json:"class_b"`
 }
+
+// SpectrumSweep is one band, measured once, by the SDR sensor's sweep engine.
+//
+// This is the metadata half. The bins themselves are a megabyte for the widest
+// band and live behind GET /spectrum/sweeps/{id}, so a list of sweeps stays a
+// list rather than a bulk download.
+//
+// Everything here is an ENERGY measurement and nothing here classifies. A peak
+// above threshold means "something is transmitting", never "a drone" -- the
+// detector that could tell those apart is Milestone 3 and needs a test
+// transmitter to validate. See services/sensor-sdr/src/sweep.rs.
+type SpectrumSweep struct {
+	SweepID   string     `json:"sweep_id"`
+	Band      string     `json:"band"`
+	State     string     `json:"state"`
+	StartedAt time.Time  `json:"started_at"`
+	EndedAt   *time.Time `json:"ended_at,omitempty"`
+
+	// Class the band would produce if a detector existed, from BAND_PLANS.
+	Class   string `json:"class,omitempty"`
+	Note    string `json:"note,omitempty"`
+	StartHz int64  `json:"start_hz,omitempty"`
+	StopHz  int64  `json:"stop_hz,omitempty"`
+	Steps   int    `json:"steps,omitempty"`
+
+	// Nil until the sweep finishes, and nil forever if it failed. A missing
+	// floor is not a floor of 0 dBFS -- that would read as a full-scale signal
+	// across the whole band, which is the most alarming possible way to render
+	// "we did not measure".
+	NoiseFloorDBFS *float64 `json:"noise_floor_dbfs,omitempty"`
+	ThresholdDBFS  *float64 `json:"threshold_dbfs,omitempty"`
+	PeakDBFS       *float64 `json:"peak_dbfs,omitempty"`
+	PeakHz         *float64 `json:"peak_hz,omitempty"`
+
+	// Steps that read short. Non-empty means the band was not fully covered and
+	// the trace has genuine holes in it.
+	ShortReads int `json:"short_reads,omitempty"`
+
+	Error string `json:"error,omitempty"`
+}
+
+const (
+	SweepRunning   = "running"
+	SweepCompleted = "completed"
+	SweepFailed    = "failed"
+)

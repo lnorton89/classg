@@ -20,6 +20,7 @@ import (
 	"github.com/classg/api/internal/hub"
 	"github.com/classg/api/internal/monitoring"
 	"github.com/classg/api/internal/settings"
+	"github.com/classg/api/internal/spectrum"
 	"github.com/classg/api/internal/store"
 )
 
@@ -38,6 +39,7 @@ type Server struct {
 	registry   *health.Registry
 	hub        *hub.Hub
 	captures   *capture.Manager
+	spectrum   *spectrum.Service
 	sensors    Sensors
 	started    time.Time
 	settings   *settings.Settings
@@ -54,7 +56,10 @@ type Options struct {
 	Registry   *health.Registry
 	Hub        *hub.Hub
 	Captures   *capture.Manager
-	Sensors    Sensors
+	// Spectrum may be nil: a unit with no SDR still serves everything else,
+	// and the band picker reports why rather than the page failing (ADR-0003).
+	Spectrum *spectrum.Service
+	Sensors  Sensors
 	// Started must come from time.Now() and keep its monotonic reading. Passing
 	// a value that has been through .UTC(), .Round(0) or a parse makes uptime
 	// wall-clock arithmetic again, which on an RTC-less Pi reports the boot-time
@@ -71,6 +76,7 @@ func New(opts Options) *Server {
 		registry:   opts.Registry,
 		hub:        opts.Hub,
 		captures:   opts.Captures,
+		spectrum:   opts.Spectrum,
 		sensors:    opts.Sensors,
 		started:    opts.Started,
 	}
@@ -112,6 +118,14 @@ func (s *Server) routes() http.Handler {
 	h("POST "+BasePath+"/captures/{capture_id}/analyze", s.handleAnalyzeCapture)
 	h("GET "+BasePath+"/captures/{capture_id}/report", s.handleCaptureReport)
 	h("GET "+BasePath+"/captures/{capture_id}/download", s.handleCaptureDownload)
+
+	// Energy measurement only -- see internal/spectrum. Sweeping takes the
+	// radio from dump1090 for its duration (ADR-0008), which is why there is a
+	// start endpoint and not a live stream.
+	h("GET "+BasePath+"/spectrum/bands", s.handleListBands)
+	h("GET "+BasePath+"/spectrum/sweeps", s.handleListSweeps)
+	h("POST "+BasePath+"/spectrum/sweeps", s.handleStartSweep)
+	h("GET "+BasePath+"/spectrum/sweeps/{sweep_id}", s.handleGetSweep)
 
 	h("GET "+BasePath+"/system", s.handleSystem)
 	h("GET "+BasePath+"/telemetry", s.handleTelemetry)

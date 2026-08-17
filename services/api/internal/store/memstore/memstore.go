@@ -30,6 +30,8 @@ type Store struct {
 	reports    map[string]json.RawMessage
 	config     map[string]json.RawMessage
 	telemetry  []store.TelemetrySample
+	sweeps     map[string]model.SpectrumSweep
+	sweepBins  map[string]json.RawMessage
 }
 
 func New() *Store {
@@ -40,6 +42,8 @@ func New() *Store {
 		captures:   map[string]model.Capture{},
 		reports:    map[string]json.RawMessage{},
 		config:     map[string]json.RawMessage{},
+		sweeps:     map[string]model.SpectrumSweep{},
+		sweepBins:  map[string]json.RawMessage{},
 	}
 }
 
@@ -291,6 +295,75 @@ func (s *Store) GetCaptureReport(_ context.Context, id string) (json.RawMessage,
 		return nil, store.ErrNotFound
 	}
 	return r, nil
+}
+
+func (s *Store) PutSweep(_ context.Context, sw model.SpectrumSweep) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sweeps[sw.SweepID] = sw
+	return nil
+}
+
+func (s *Store) GetSweep(_ context.Context, id string) (model.SpectrumSweep, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sw, ok := s.sweeps[id]
+	if !ok {
+		return model.SpectrumSweep{}, store.ErrNotFound
+	}
+	return sw, nil
+}
+
+func (s *Store) ListSweeps(_ context.Context, limit int) ([]model.SpectrumSweep, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]model.SpectrumSweep, 0, len(s.sweeps))
+	for _, sw := range s.sweeps {
+		out = append(out, sw)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt.After(out[j].StartedAt) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (s *Store) PutSweepBins(_ context.Context, id string, bins json.RawMessage) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.sweeps[id]; !ok {
+		return store.ErrNotFound
+	}
+	s.sweepBins[id] = append(json.RawMessage(nil), bins...)
+	return nil
+}
+
+// GetSweepBins reports ErrNotFound for a sweep that exists but has no
+// measurement -- one still running, or one that failed. "The sweep is there,
+// its bins are not" is the honest answer, and it is the same shape
+// GetCaptureReport gives for an unanalysed capture.
+func (s *Store) GetSweepBins(_ context.Context, id string) (json.RawMessage, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	b, ok := s.sweepBins[id]
+	if !ok || len(b) == 0 {
+		return nil, store.ErrNotFound
+	}
+	return b, nil
+}
+
+func (s *Store) PurgeSweeps(_ context.Context, before time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var n int64
+	for id, sw := range s.sweeps {
+		if sw.StartedAt.Before(before) {
+			delete(s.sweeps, id)
+			delete(s.sweepBins, id)
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (s *Store) GetConfig(_ context.Context, key string) (json.RawMessage, error) {
