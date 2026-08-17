@@ -14,8 +14,10 @@ const detectionWindow = 5 * time.Minute
 // Health builds the report. Exported because the stream publisher pushes the
 // same object on the health topic, and the two must never disagree.
 func (s *Server) Health(ctx context.Context) health.Report {
-	now := time.Now().UTC()
-	counts, err := s.store.DetectionCountsSince(ctx, now.Add(-detectionWindow))
+	// Not .UTC() here: Snapshot measures sensor ages against this, and the
+	// conversion would strip the monotonic reading those subtractions rely on.
+	now := time.Now()
+	counts, err := s.store.DetectionCountsSince(ctx, now.UTC().Add(-detectionWindow))
 	if err != nil {
 		// A storage failure must not turn into a 500 on the one endpoint an
 		// operator reaches for when things are broken. Zero counts alongside

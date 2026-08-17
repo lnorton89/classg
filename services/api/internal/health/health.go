@@ -24,11 +24,16 @@ const (
 // Heartbeat is what a sensor publishes on the bus at a fixed interval,
 // regardless of whether it detected anything.
 type Heartbeat struct {
-	SensorID   string         `json:"sensor_id"`
-	SensorKind string         `json:"sensor_kind"`
-	Healthy    bool           `json:"healthy"`
-	TS         time.Time      `json:"-"`
-	Detail     map[string]any `json:"detail"`
+	SensorID   string    `json:"sensor_id"`
+	SensorKind string    `json:"sensor_kind"`
+	Healthy    bool      `json:"healthy"`
+	TS         time.Time `json:"-"`
+	// At is when this api observed the heartbeat, by its own clock. Liveness is
+	// a local observation -- "have I heard from it lately" -- and deriving it
+	// from TS instead means subtracting the sensor's clock from ours. Zero falls
+	// back to TS, which is what the tests and Restore rely on.
+	At     time.Time      `json:"-"`
+	Detail map[string]any `json:"detail"`
 }
 
 // Sensor is one entry in the /health sensors array.
@@ -72,11 +77,17 @@ type Report struct {
 }
 
 type entry struct {
-	kind    string
-	last    time.Time
-	healthy bool
-	reason  string
-	detail  map[string]any
+	kind string
+	// last is what the sensor said the time was; it is reported verbatim as
+	// last_heartbeat and never used for arithmetic.
+	last time.Time
+	// observed is when we heard it, by our clock. Staleness is measured from
+	// this so a sensor with a skewed clock cannot talk its way out of being
+	// declared dead.
+	observed time.Time
+	healthy  bool
+	reason   string
+	detail   map[string]any
 	// seen is false for a sensor that was declared in configuration but has
 	// never published a heartbeat.
 	seen bool
@@ -129,6 +140,11 @@ func (r *Registry) Restore(sensorID, kind string, last time.Time, reason string)
 	}
 	if last.After(e.last) {
 		e.last = last
+		// Nothing was observed locally -- this sensor last spoke to a previous
+		// process. The persisted wall-clock time is the only age available, and
+		// it is the honest one: however old it really is, that is how long this
+		// api has not heard from it.
+		e.observed = last
 		e.seen = true
 		e.reason = reason
 	}
@@ -150,6 +166,10 @@ func (r *Registry) Heartbeat(hb Heartbeat) {
 	}
 	e.seen = true
 	e.last = hb.TS
+	e.observed = hb.At
+	if e.observed.IsZero() {
+		e.observed = hb.TS
+	}
 	e.healthy = hb.Healthy
 	e.detail, e.reason = splitReason(hb.Detail)
 }
@@ -198,6 +218,11 @@ func (r *Registry) NoteFusionMessage(at time.Time) {
 
 // Snapshot builds the /health payload. detections5m comes from the store,
 // keyed by sensor_id.
+//
+// now is this api's current time and is used only for arithmetic against
+// observed heartbeat times, never for display. Pass it straight from
+// time.Now(): a value that has been through .UTC() has lost its monotonic
+// reading, and sensor ages then move whenever the system clock is corrected.
 func (r *Registry) Snapshot(now time.Time, uptime time.Duration, version string, detections5m map[string]int) Report {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -240,9 +265,10 @@ func (r *Registry) Snapshot(now time.Time, uptime time.Duration, version string,
 		default:
 			last := e.last
 			s.LastHeartbeat = &last
-			secs := int64(now.Sub(e.last) / time.Second)
+			age := now.Sub(e.observed)
+			secs := int64(age / time.Second)
 			s.SecondsSinceHeartbeat = &secs
-			stale := now.Sub(e.last) > r.staleAfter
+			stale := age > r.staleAfter
 			s.Healthy = e.healthy && !stale
 			if stale && s.Reason == "" {
 				s.Reason = "heartbeat stale"

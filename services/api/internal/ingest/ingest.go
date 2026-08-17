@@ -161,7 +161,12 @@ func (in *Ingestor) Heartbeat(ctx context.Context, topic string, body []byte) {
 		SensorKind: hb.SensorKind,
 		Healthy:    hb.Healthy,
 		TS:         ts,
-		Detail:     hb.Detail,
+		// Stamped here rather than derived from ts: this is the moment the
+		// heartbeat arrived, on our clock, and it is what liveness is measured
+		// against. A sensor whose clock runs ahead used to stamp heartbeats in
+		// the future and stay "fresh" long after it died.
+		At:     time.Now(),
+		Detail: hb.Detail,
 	})
 
 	// Persist so that a sensor known before an api restart is still reported
