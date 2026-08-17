@@ -73,9 +73,26 @@ locked to channel 6 ten seconds in. See
 
 - [ ] `sensor-sdr` skeleton in Rust: `SdrSource` trait, `RtlSdrSource` implementation
 - [ ] `dump1090` integration → Class D detections
-- [ ] Fusion: ADS-B correlation and suppression logic for Class E/F
-- [ ] UI: distinct rendering for manned traffic
+- [x] Fusion: ADS-B correlation and suppression logic for Class E/F — `netadsb.go`, `aircraftdb.go`; Class D is pinned at 0.00 confidence, so it only ever explains a detection away
+- [x] UI: distinct rendering for manned traffic — the "Manned traffic" section of `contacts-panel.tsx`
 - [ ] Graceful degradation when the SDR is absent
+
+`dump1090-mutability` is installed on the Pi and decoding live aircraft
+(2026-08-16: ASA1413 at 25,175 ft, RSSI −28.4). Two things were needed that the
+docs did not mention:
+
+- Its own `dump1090` user is not in `plugdev`, and the rtl-sdr udev rule grants
+  `MODE="0660" GROUP="plugdev"`, so it starts, fails with `usb_open error -3`,
+  and keeps running with no radio. `usermod -aG plugdev dump1090` fixes it.
+  Widening the udev rule to 0666 would too, and would hand every local user the
+  radio, so prefer the group.
+- Reception is bursty. Six minutes can pass with `peak_signal` equal to
+  `noise` and no aircraft at all, then 120 messages arrive at once. Do not
+  diagnose a receiver from one short window; `stats.json` separates
+  `local.accepted` (the radio) from `remote.accepted` (anything injected).
+
+Frames captured earlier replay into port 30001 and come back out as SBS on
+30003, which exercises the whole decode path with no radio and no aircraft.
 
 **Exit criterion:** manned aircraft appear on the map, visually distinct from drone tracks.
 
