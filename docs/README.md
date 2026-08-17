@@ -59,3 +59,5 @@ If you read three documents, read these:
 | [04 — Calibration](ops/04-calibration.md) | DJI field units — fill in during Milestone 1 |
 | [05 — Troubleshooting](ops/05-troubleshooting.md) | Diagnose bottom-up, not top-down |
 | [06 — First capture](ops/06-first-capture.md) | Capture a DJI powering up and get a ground-truth PCAP |
+| [07 — External data](ops/07-external-data.md) | Five optional feeds, all off by default, none of them gating detection |
+| [08 — Cloud sessions](ops/08-cloud-tailscale.md) | Reach the Pi over Tailscale from Claude Code on the web |

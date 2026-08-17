@@ -158,7 +158,7 @@ test-sdr:
 
 # Mirrors .github/workflows/ci.yml -- if this passes, CI should too.
 lint:
-	shellcheck scripts/*.sh
+	shellcheck scripts/*.sh .claude/hooks/*.sh
 	cd services/sensor-wifi && .venv/bin/python -m ruff check . && .venv/bin/python -m mypy classg_wifi
 	cd services/fusion && gofmt -l . && go vet ./...
 	cd services/api && gofmt -l . && go vet ./...

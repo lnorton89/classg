@@ -294,7 +294,9 @@ jobs:
 
       - run: shellcheck --version
 
-      - run: shellcheck scripts/*.sh
+      # .claude/hooks runs before a cloud session exists, so a bug there fails
+      # where nobody is watching -- the same reason scripts/ is checked here.
+      - run: shellcheck scripts/*.sh .claude/hooks/*.sh
 
   # Nothing checked dependencies for known vulnerabilities in any of the four
   # languages. That gap hid a reachable one: golang.org/x/text v0.15.0 carried
