@@ -9,10 +9,15 @@ license = "MIT"
 num-complex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-# Added as the capture loop lands (Milestone 3):
+# No ZeroMQ crate. `zmq` links libzmq and the CI `rust` job installs no system
+# packages; `zeromq` (zmq.rs) is pure Rust but costs 84 transitive crates and a
+# Tokio runtime, and its PUB socket awaits slow subscribers with no high-water
+# mark -- the one thing ADR-0002 forbids. src/zmtp.rs speaks the PUB half of
+# ZMTP 3.0 on std::net instead; the reasoning is in that file's header.
+#
+# Added as the sweep engine lands (Milestone 3):
 #   rustfft   = "6"      FFT for the sweep engine
 #   rtlsdr    = "0.1"    or FFI to the RTL-SDR Blog fork -- NOT stock librtlsdr
-#   zmq       = "0.10"   detection bus
 
 [profile.release]
 opt-level = 3

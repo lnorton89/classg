@@ -7,16 +7,21 @@ OcuSync at 2.4 or 5.8 GHz.
 
 ## Current state
 
-The crate provides tested sweep planning, source abstractions, noise-floor
-scaffolding, and the ADS-B translation layer: `sbs.rs` turns dump1090's SBS-1
-output into schema-conformant Class D detections. `cargo run` prints the planned
-bands, explains the tuner limits, and returns a nonzero status because hardware
-capture and bus publication are not implemented yet.
+**ADS-B (Milestone 2) runs.** `classg-sensor-sdr adsb` consumes dump1090's
+SBS-1 stream, translates it into schema-conformant Class D detections, mints
+ULIDs, and publishes them on the ClassG bus alongside a heartbeat that fires
+whether or not aircraft are in range.
+
+The sweep engine (Milestone 3) does not. Sweep planning, the `SdrSource`
+abstraction and the noise-floor estimator are tested scaffolding waiting for it;
+`cargo run` with no subcommand prints the band plan and the tuner limits and
+returns nonzero.
 
 ```bash
 cd services/sensor-sdr
 cargo test
-cargo run
+cargo run -- adsb          # the ADS-B ingest loop
+cargo run                  # band plan only; no capture loop selected
 
 # One schema-shaped detection, as CI validates it against schemas/
 cargo run -- --emit-sample-detection
@@ -30,10 +35,61 @@ translate. The reasoning, and the consequence that Milestone 3's sweep cannot
 share the same dongle, are in
 [ADR-0008](../../docs/architecture/adr/0008-adsb-via-dump1090.md).
 
-Still to come for Milestone 2: the TCP client for port 30003, ULID minting, the
-ZeroMQ publisher, and a heartbeat that fires whether or not aircraft are in
-range — a quiet sky and a dead dump1090 produce identical detection streams, and
-only the heartbeat tells them apart ([ADR-0003](../../docs/architecture/adr/0003-sensor-process-isolation.md)).
+Start dump1090 separately — this process never opens the device:
+
+```bash
+dump1090 --net            # SBS-1 output on 30003
+cargo run -- adsb
+```
+
+### Configuration
+
+Environment only, per [ADR-0007](../../docs/architecture/adr/0007-configuration-tiers.md).
+`adsb` prints every effective value **and where it came from** at startup, which
+is the part of that ADR that matters. The nearest `.env` is loaded the way the
+API, fusion and the Wi-Fi CLI load it; anything already in the process
+environment wins.
+
+| Variable | Default | |
+|---|---|---|
+| `CLASSG_SDR_SENSOR_ID` | `sdr-0` | matches `CLASSG_EXPECTED_SENSORS` |
+| `CLASSG_SDR_DUMP1090_ADDR` | `127.0.0.1:30003` | dump1090's SBS-1 port |
+| `CLASSG_DETECTION_ENDPOINT` | `tcp://127.0.0.1:5556` | shared with the other sensors |
+| `CLASSG_DETECTION_TOPIC` | `detection.` | |
+| `CLASSG_HEARTBEAT_TOPIC` | `heartbeat.` | |
+| `CLASSG_SDR_SOCKET_MODE` | `connect` | `bind` or `connect` |
+| `CLASSG_SDR_ZMQ_HWM` | `1000` | outbound queue; overflow drops and counts |
+| `CLASSG_SDR_HEARTBEAT_S` | `10` | |
+| `CLASSG_SDR_RECONNECT_MAX_S` | `30` | backoff ceiling for both dump1090 and the bus |
+
+**`CLASSG_SDR_SOCKET_MODE` defaults to `connect`, unlike the Wi-Fi sensor's
+`bind`.** Two PUB sockets cannot bind the same endpoint, and `sensor-wifi`
+already owns the bind side in the all-native layout. Running both sensors
+therefore means fusion listens (`CLASSG_FUSION_DETECTION_SOCKET_MODE=listen`) and
+both sensors dial out — the same direction the Compose layout already uses. Get
+it wrong and the handshake is refused with the peer's socket type in the log
+rather than failing silently.
+
+### Degradation
+
+dump1090 not running, refusing connections, or dying mid-stream are expected
+states, not faults ([ADR-0003](../../docs/architecture/adr/0003-sensor-process-isolation.md)).
+Each reconnects with bounded backoff and reports `healthy: false` with the
+reason in the heartbeat's `detail.error`.
+
+**A quiet sky is healthy.** Health tracks the link to dump1090, not the presence
+of aircraft; `detail.seconds_since_message` is what tells an operator the
+difference. Lines that do not parse — STA/ID/AIR session records, partial reads
+at a TCP boundary — are counted in `detail.unparsed` and never fatal.
+
+### The bus, without a ZeroMQ crate
+
+`src/zmtp.rs` implements the PUB half of ZMTP 3.0 directly on `std::net`. The
+`zmq` crate links libzmq, which the CI `rust` job cannot build; `zeromq`
+(zmq.rs) is pure Rust but adds 84 crates and a Tokio runtime, and its PUB socket
+awaits slow subscribers with no high-water mark — the one behaviour ADR-0002
+rules out. The header comment in that file has the full reasoning and the
+`go-zeromq/zmq4` behaviour it was written against.
 
 Future capture work must characterize signal envelopes only; it must not
 demodulate control or video payloads. See [ADR-0004](../../docs/architecture/adr/0004-rtlsdr-scope.md)

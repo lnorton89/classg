@@ -32,6 +32,11 @@ pub const ADSB_FREQ_HZ: u64 = 1_090_000_000;
 /// Field indices in an SBS-1 record.
 mod field {
     pub const MESSAGE_TYPE: usize = 0;
+    /// Not read: the parser derives what is populated from the fields
+    /// themselves rather than from the declared transmission type, so a
+    /// dump1090 that mislabels a record still yields whatever it did carry.
+    /// Kept because the module's field map is only legible if it is complete.
+    #[allow(dead_code)]
     pub const TRANSMISSION_TYPE: usize = 1;
     pub const ICAO: usize = 4;
     pub const DATE_LOGGED: usize = 6;
