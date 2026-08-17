@@ -25,7 +25,12 @@ import type {
   RestartSensorResponse,
   SensorHealth,
   SettingsResponse,
+  SpectrumBandsResponse,
+  SpectrumSweep,
+  SpectrumSweepDetail,
+  SpectrumSweepsResponse,
   StartCaptureRequest,
+  StartSweepRequest,
   SystemInfo,
   TelemetryQuery,
   TelemetryResponse,
@@ -235,6 +240,38 @@ export const api = {
         cursor: query.cursor,
       })}`,
     )
+  },
+
+  spectrumBands(): Promise<SpectrumBandsResponse> {
+    return request<SpectrumBandsResponse>('/spectrum/bands')
+  },
+
+  spectrumSweeps(): Promise<SpectrumSweepsResponse> {
+    return request<SpectrumSweepsResponse>('/spectrum/sweeps')
+  },
+
+  /**
+   * `bins` is the trace width. The api caps it and never returns cells finer
+   * than the measurement behind them, so asking for more than a chart can draw
+   * costs nothing but is also pointless.
+   */
+  spectrumSweep(sweepId: string, bins?: number): Promise<SpectrumSweepDetail> {
+    return request<SpectrumSweepDetail>(
+      `/spectrum/sweeps/${encodeURIComponent(sweepId)}${buildQuery({ bins })}`,
+    )
+  },
+
+  /**
+   * Takes the radio from dump1090 for the duration (ADR-0008), which is why
+   * this is a button and not a live stream. 409 means the dongle is busy --
+   * either another sweep or dump1090 itself, which is what a healthy unit looks
+   * like.
+   */
+  startSweep(body: StartSweepRequest): Promise<SpectrumSweep> {
+    return request<SpectrumSweep>('/spectrum/sweeps', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
   },
 
   captures(): Promise<CapturesResponse> {

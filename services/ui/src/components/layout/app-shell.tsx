@@ -1,5 +1,6 @@
 import { Link, useRouter, useRouterState } from '@tanstack/react-router'
 import {
+  AudioWaveformIcon,
   BookOpenIcon,
   MapIcon,
   RadarIcon,
@@ -45,6 +46,7 @@ const PRIMARY_NAV: NavItem[] = [
   { to: '/', label: 'Live', icon: MapIcon, exact: true },
   { to: '/tracks', label: 'Tracks', icon: RadarIcon, exact: false },
   { to: '/sensors', label: 'Sensors', icon: SlidersHorizontalIcon, exact: false },
+  { to: '/spectrum', label: 'Spectrum', icon: AudioWaveformIcon, exact: false },
   { to: '/logs', label: 'Logs', icon: ScrollTextIcon, exact: false },
   { to: '/docs', label: 'Docs', icon: BookOpenIcon, exact: false },
 ]

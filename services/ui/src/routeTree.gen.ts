@@ -15,6 +15,7 @@ import { Route as DocsRouteImport } from './routes/docs'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as SensorsRouteImport } from './routes/sensors'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SpectrumRouteImport } from './routes/spectrum'
 import { Route as CapturesIndexRouteImport } from './routes/captures.index'
 import { Route as CapturesCaptureIdRouteImport } from './routes/captures.$captureId'
 import { Route as DocsIndexRouteImport } from './routes/docs.index'
@@ -61,6 +62,11 @@ const SensorsRoute = SensorsRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpectrumRoute = SpectrumRouteImport.update({
+  id: '/spectrum',
+  path: '/spectrum',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CapturesIndexRoute = CapturesIndexRouteImport.update({
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/logs': typeof LogsRoute
   '/sensors': typeof SensorsRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/spectrum': typeof SpectrumRoute
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
   '/settings/about': typeof SettingsAboutRoute
@@ -179,6 +186,7 @@ export interface FileRoutesByTo {
   '/config': typeof ConfigRoute
   '/logs': typeof LogsRoute
   '/sensors': typeof SensorsRoute
+  '/spectrum': typeof SpectrumRoute
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
   '/settings/about': typeof SettingsAboutRoute
@@ -205,6 +213,7 @@ export interface FileRoutesById {
   '/logs': typeof LogsRoute
   '/sensors': typeof SensorsRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/spectrum': typeof SpectrumRoute
   '/captures/$captureId': typeof CapturesCaptureIdRoute
   '/docs/$docId': typeof DocsDocIdRoute
   '/settings/about': typeof SettingsAboutRoute
@@ -232,6 +241,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/sensors'
     | '/settings'
+    | '/spectrum'
     | '/captures/$captureId'
     | '/docs/$docId'
     | '/settings/about'
@@ -255,6 +265,7 @@ export interface FileRouteTypes {
     | '/config'
     | '/logs'
     | '/sensors'
+    | '/spectrum'
     | '/captures/$captureId'
     | '/docs/$docId'
     | '/settings/about'
@@ -280,6 +291,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/sensors'
     | '/settings'
+    | '/spectrum'
     | '/captures/$captureId'
     | '/docs/$docId'
     | '/settings/about'
@@ -306,6 +318,7 @@ export interface RootRouteChildren {
   LogsRoute: typeof LogsRoute
   SensorsRoute: typeof SensorsRoute
   SettingsRoute: typeof SettingsRouteWithChildren
+  SpectrumRoute: typeof SpectrumRoute
   CapturesCaptureIdRoute: typeof CapturesCaptureIdRoute
   TracksTrackIdRoute: typeof TracksTrackIdRoute
   CapturesIndexRoute: typeof CapturesIndexRoute
@@ -354,6 +367,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/spectrum': {
+      id: '/spectrum'
+      path: '/spectrum'
+      fullPath: '/spectrum'
+      preLoaderRoute: typeof SpectrumRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/captures/': {
@@ -529,6 +549,7 @@ const rootRouteChildren: RootRouteChildren = {
   LogsRoute: LogsRoute,
   SensorsRoute: SensorsRoute,
   SettingsRoute: SettingsRouteWithChildren,
+  SpectrumRoute: SpectrumRoute,
   CapturesCaptureIdRoute: CapturesCaptureIdRoute,
   TracksTrackIdRoute: TracksTrackIdRoute,
   CapturesIndexRoute: CapturesIndexRoute,

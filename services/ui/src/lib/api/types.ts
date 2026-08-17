@@ -411,3 +411,92 @@ export type ServerFrame =
   | { type: 'ping'; ts?: string }
 
 export type ServerFrameType = ServerFrame['type']
+
+// --- Spectrum -------------------------------------------------------------
+//
+// Band sweeps from the SDR sensor. ENERGY ONLY: a peak above threshold means
+// something is transmitting, never that it is a drone. The detector that could
+// tell an ELRS burst train from a smart meter is Milestone 3 and needs a test
+// transmitter to validate against, so nothing here carries a classification and
+// nothing in the UI may imply one.
+
+export type SweepState = 'running' | 'completed' | 'failed'
+
+export interface SpectrumBand {
+  name: string
+  class: string
+  note: string
+  start_hz: number
+  stop_hz: number
+  steps: number
+}
+
+export interface SpectrumBandsResponse {
+  bands: SpectrumBand[]
+  /** False on a unit with no SDR, or a sensor built without the rtlsdr feature. */
+  available: boolean
+  /** Why not. Empty when available. */
+  reason?: string
+  /** Non-empty while the radio is taken by a sweep. */
+  running_sweep_id?: string
+}
+
+export interface SpectrumSweep {
+  sweep_id: string
+  band: string
+  state: SweepState
+  started_at: string
+  ended_at?: string
+  class?: string
+  note?: string
+  start_hz?: number
+  stop_hz?: number
+  steps?: number
+  /**
+   * Null-able all the way from the api. A sweep that failed has no floor, and
+   * substituting 0 dBFS would draw a full-scale signal across the whole band --
+   * the loudest possible way to render "we did not measure".
+   */
+  noise_floor_dbfs?: number | null
+  threshold_dbfs?: number | null
+  peak_dbfs?: number | null
+  peak_hz?: number | null
+  /** Steps that read too short to transform, so the band has holes in it. */
+  short_reads?: number
+  error?: string
+}
+
+export interface SpectrumTrace {
+  start_hz: number
+  stop_hz: number
+  bin_width_hz: number
+  /**
+   * One entry per cell, low frequency to high. **A null is a frequency the
+   * receiver could not see, not a quiet one** -- the zero-IF DC guard at every
+   * step centre, or a gap between steps. Rendering it as a level draws a
+   * measurement that was never taken.
+   */
+  dbfs: (number | null)[]
+  /** How many cells are null. */
+  blind: number
+}
+
+export interface SpectrumStepPeak {
+  center_hz: number
+  peak_hz: number | null
+  peak_dbfs: number | null
+}
+
+export interface SpectrumSweepDetail extends SpectrumSweep {
+  /** Absent -- not empty -- while running and on a sweep that failed. */
+  trace?: SpectrumTrace
+  step_peaks?: SpectrumStepPeak[]
+}
+
+export interface SpectrumSweepsResponse {
+  sweeps: SpectrumSweep[]
+}
+
+export interface StartSweepRequest {
+  band: string
+}

@@ -19,6 +19,9 @@ export const queryKeys = {
   trackDetections: (trackId: string) => ['tracks', 'detections', trackId] as const,
   detections: (query: DetectionsQuery = {}) => ['detections', query] as const,
   captures: ['captures'] as const,
+  spectrumBands: ['spectrum', 'bands'] as const,
+  spectrumSweeps: ['spectrum', 'sweeps'] as const,
+  spectrumSweep: (id: string, bins: number) => ['spectrum', 'sweep', id, bins] as const,
   capture: (id: string) => ['captures', 'detail', id] as const,
   captureReport: (id: string) => ['captures', 'report', id] as const,
   channelPlan: ['config', 'channels'] as const,
@@ -125,6 +128,48 @@ export const adsbDetectionsQuery = () =>
   queryOptions({
     queryKey: queryKeys.detections({ class: ['D'], limit: 200 }),
     queryFn: () => api.detections({ class: ['D'], limit: 200 }),
+    staleTime: Infinity,
+  })
+
+/**
+ * The band plan and whether this unit can sweep at all.
+ *
+ * The poll rate is decided from the response rather than from a caller-supplied
+ * flag: `running_sweep_id` is in the payload, so the query can speed itself up
+ * while the radio is taken and go quiet when it is not. Passing the flag in
+ * instead would mean two components mounting the same key with different
+ * intervals, which React Query resolves by whichever mounted first.
+ */
+export const spectrumBandsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.spectrumBands,
+    queryFn: () => api.spectrumBands(),
+    staleTime: 30_000,
+    refetchInterval: (query) => (query.state.data?.running_sweep_id ? 3_000 : false),
+  })
+
+/** Same self-pacing rule: poll while any sweep is still measuring. */
+export const spectrumSweepsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.spectrumSweeps,
+    queryFn: () => api.spectrumSweeps(),
+    staleTime: 10_000,
+    refetchInterval: (query) =>
+      query.state.data?.sweeps.some((sweep) => sweep.state === 'running') ? 3_000 : false,
+  })
+
+/**
+ * One sweep with its trace.
+ *
+ * `staleTime: Infinity` is right here and almost nowhere else: a completed
+ * sweep is a measurement of one moment and will never change. A running one is
+ * polled by `spectrumSweepsQuery` until it lands, and only becomes worth
+ * fetching in detail once it has.
+ */
+export const spectrumSweepQuery = (sweepId: string, bins: number) =>
+  queryOptions({
+    queryKey: queryKeys.spectrumSweep(sweepId, bins),
+    queryFn: () => api.spectrumSweep(sweepId, bins),
     staleTime: Infinity,
   })
 
