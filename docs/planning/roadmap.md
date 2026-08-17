@@ -72,10 +72,10 @@ locked to channel 6 ten seconds in. See
 *Goal: manned aircraft on the same map; false-positive suppression working.*
 
 - [ ] `sensor-sdr` skeleton in Rust: `SdrSource` trait, `RtlSdrSource` implementation
-- [ ] `dump1090` integration → Class D detections
+- [x] `dump1090` integration → Class D detections — `sensor-sdr adsb`, published over a hand-written ZMTP PUB
 - [x] Fusion: ADS-B correlation and suppression logic for Class E/F — `netadsb.go`, `aircraftdb.go`; Class D is pinned at 0.00 confidence, so it only ever explains a detection away
 - [x] UI: distinct rendering for manned traffic — the "Manned traffic" section of `contacts-panel.tsx`
-- [ ] Graceful degradation when the SDR is absent
+- [x] Graceful degradation when the SDR is absent — verified on the Pi by stopping dump1090 mid-run: `healthy: false` with the refusal in `detail.error`, process alive, reconnected 31 s later with `reconnects: 1`
 
 `dump1090-mutability` is installed on the Pi and decoding live aircraft
 (2026-08-16: ASA1413 at 25,175 ft, RSSI −28.4). Two things were needed that the
