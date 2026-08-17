@@ -152,9 +152,9 @@ both transports produces exactly **one** track, not two.
 - [x] systemd units with bounded restart backoff — [deploy/systemd](../../deploy/systemd), rendered per checkout
 - [x] libSQL/Turso storage, retention jobs — `internal/store/libsqlstore`, with `retention.go` and `stale_tracks.go` sweeping on a timer. The **separate operator-location store is dropped**, not outstanding: [ADR-0006](../architecture/adr/0006-storage-turso-libsql.md) records the operator deciding that syncing pilot ground positions is acceptable for this deployment, and names the `Store` interface as where the separation goes back in for anyone redeploying under GDPR
 - [x] Prometheus metrics, including hopper efficiency — `GET /metrics`, hand-written exposition off the same report `/health` returns; sensor `detail` exported through an allowlist so ADR-0006 data cannot leak into a scrape
-- [ ] Offline tile server for field deployment
+- [x] Offline tile server for field deployment — achieved with **no tile server**: [`fetch-basemap.sh`](../../scripts/fetch-basemap.sh) cuts two `.pmtiles` archives that whatever already serves the app serves directly, so there is no proxy and no upstream to be offline from
 - [x] Docker Compose for the web tier — fusion, api and ui, `restart: unless-stopped`
-- [ ] Config validation on startup with clear errors
+- [x] Config validation on startup with clear errors — all four services: `api` accumulates every fault before exiting (`config.go`), `sensor-sdr` returns `Result<_, Vec<String>>` the same way, `fusion` names the key and the value it rejected and range-checks the receiver position, `sensor-wifi` gets it from argparse type conversion, which applies to environment-supplied defaults too
 
 Bookworm ships systemd 252, which has no `RestartSteps`, so the backoff is
 bounded rather than escalating: five failures inside five minutes and the unit
