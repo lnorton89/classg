@@ -110,6 +110,38 @@ When a check is impossible in your environment, say so plainly and say what you
 did instead. "Typecheck passes; I could not test against hardware" is useful.
 "Verified" when you only ran a no-op is worse than saying nothing.
 
+### Your commit is not done until CI is green
+
+**Pushing is not finishing.** Watch the run your push triggered, and if it fails,
+fix it — in this repo, before moving on to anything else. A red `main` blocks
+every other agent and human working here.
+
+```bash
+# after pushing, find your run and watch it land
+gh run list --branch main --limit 3          # or the GitHub MCP tools
+gh run watch <run-id>                        # then read the failing job's log
+```
+
+Reporting "verified" on the strength of local checks alone has already put two
+commits' worth of red on `main`. Both were invisible locally and obvious in CI:
+
+- **`go.mod` asked for a newer Go patch than the runner had.** Locally
+  `GOTOOLCHAIN` is `auto`, so Go silently downloaded 1.26.6 and every test
+  passed. CI sets `GOTOOLCHAIN=local`, which forbids that, and both Go jobs
+  died before running a single test.
+- **A dependency tree that cannot be installed from scratch.** `npm run lint`
+  passed against an existing `node_modules`. CI runs `npm ci`, which resolves
+  from nothing, hit an unsatisfiable peer range, and never got as far as linting.
+
+The pattern in both: **the local command and the CI command were not the same
+command.** When you change a toolchain version or a dependency, run what CI runs
+— `GOTOOLCHAIN=local`, and a clean `npm ci` from a deleted `node_modules`. See
+[docs/dev/dependencies.md](docs/dev/dependencies.md), which records these and the
+upgrades that are deliberately held back.
+
+If CI fails for a reason that predates your change, say so explicitly and show
+the evidence — do not describe your own breakage that way.
+
 ## Constraints that are not negotiable
 
 **Receive-only.** ClassG never transmits, jams, spoofs, or takes over a drone.

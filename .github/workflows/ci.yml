@@ -75,9 +75,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # go-version-file, not a literal: go.mod pins a PATCH version (1.26.6,
+      # for the stdlib CVEs) and GOTOOLCHAIN=local forbids downloading a newer
+      # toolchain, so a literal "1.26" here resolves to whatever patch the
+      # runner ships and fails the moment go.mod moves ahead of it. That is
+      # exactly how this job broke: go.mod said 1.26.6, the runner had 1.26.5.
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version-file: services/fusion/go.mod
           cache-dependency-path: services/fusion/go.sum
 
       - name: Format check
@@ -102,9 +107,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # See the fusion job: read the version from go.mod so it cannot drift.
       - uses: actions/setup-go@v7
         with:
-          go-version: "1.26"
+          go-version-file: services/api/go.mod
           cache-dependency-path: services/api/go.sum
 
       - name: Format check
