@@ -71,12 +71,19 @@ print(w, s)
 " 2>/dev/null || echo "? ?"
 }
 
+# Seconds since boot, which is the axis the 2026-08-16 dropout sits on. Elapsed
+# time since this script started is not comparable to it -- sampling usually
+# begins hours into a run -- so both are recorded and up_s is the one to read
+# against the 15060 s mark.
+uptime_s() { cut -d. -f1 /proc/uptime; }
+
 if [ ! -s "$LOG" ]; then
-    printf 'elapsed_s\twall\tsdr\twifi\tusb_err\trs_wifi\trs_sdr\tthrottled\ttemp\tbeacons\tmsgs\n' >"$LOG"
+    printf 'up_s\telapsed_s\twall\tsdr\twifi\tusb_err\trs_wifi\trs_sdr\tthrottled\ttemp\tbeacons\tmsgs\n' >"$LOG"
 fi
 
 echo "sampling every ${INTERVAL}s into $LOG -- Ctrl-C to stop"
-echo "the mark to beat is 4 h 11 min (15060 s); the 2026-08-16 dropout was there"
+echo "watch up_s, not elapsed_s: the 2026-08-16 dropout sits at 4 h 11 min (up_s 15060)"
+echo "this unit is at up_s $(uptime_s) now"
 
 # A counter repeating once means nothing: sensors publish heartbeats on their
 # own interval, the API reports the last one it saw, and ADS-B reception is
@@ -93,8 +100,8 @@ while true; do
     wifi="$(usb_present "$WIFI_ID")"
     read -r beacons msgs <<<"$(api_counter)"
 
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-        "$elapsed" "$(date +%H:%M:%S)" "$sdr" "$wifi" "$(usb_errors)" \
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$(uptime_s)" "$elapsed" "$(date +%H:%M:%S)" "$sdr" "$wifi" "$(usb_errors)" \
         "$(restarts classg-sensor-wifi)" "$(restarts classg-sensor-sdr)" \
         "$(vcgencmd get_throttled 2>/dev/null || echo n/a)" \
         "$(vcgencmd measure_temp 2>/dev/null || echo n/a)" \
