@@ -150,7 +150,7 @@ both transports produces exactly **one** track, not two.
 ## Milestone 5 — Operational hardening
 
 - [x] systemd units with bounded restart backoff — [deploy/systemd](../../deploy/systemd), rendered per checkout
-- [ ] libSQL/Turso storage, retention jobs, **separate operator-location store, never synced**
+- [x] libSQL/Turso storage, retention jobs — `internal/store/libsqlstore`, with `retention.go` and `stale_tracks.go` sweeping on a timer. The **separate operator-location store is dropped**, not outstanding: [ADR-0006](../architecture/adr/0006-storage-turso-libsql.md) records the operator deciding that syncing pilot ground positions is acceptable for this deployment, and names the `Store` interface as where the separation goes back in for anyone redeploying under GDPR
 - [x] Prometheus metrics, including hopper efficiency — `GET /metrics`, hand-written exposition off the same report `/health` returns; sensor `detail` exported through an allowlist so ADR-0006 data cannot leak into a scrape
 - [ ] Offline tile server for field deployment
 - [x] Docker Compose for the web tier — fusion, api and ui, `restart: unless-stopped`

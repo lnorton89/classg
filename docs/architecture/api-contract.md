@@ -97,9 +97,11 @@ reported — zero would read as "heard from just now", which is the inversion `/
 to prevent.
 
 Sensor `detail` is exported through an **allowlist**, never wholesale. `detail` is whatever a
-sensor chose to publish, `/metrics` is the endpoint most likely to be scraped into somebody
-else's database, and [ADR-0006](adr/0006-operator-location-retention.md) makes the operator's
-position the one field that must never leave the unit by accident. A key that is not named in
+sensor chose to publish, and `/metrics` is the endpoint most likely to be scraped into somebody
+else's database. Operator positions are pilot ground positions and personal data under GDPR
+([legal and ethics](../research/06-legal-and-ethics.md)); [ADR-0006](adr/0006-storage-turso-libsql.md)
+records that this deployment accepts syncing them, which is a decision about this unit and not a
+reason to export whatever a sensor happens to publish. A key that is not named in
 `sensorDetailMetrics` is not exported, and a test enforces it.
 
 ---

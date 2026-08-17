@@ -23,11 +23,15 @@ import (
 // metric.
 //
 // An allowlist, deliberately, rather than exporting the blob. detail is
-// whatever a sensor chose to put there, `/metrics` is the endpoint most likely
-// to be scraped into somebody else's time-series database, and
-// [ADR-0006](../../../../docs/architecture/adr/0006-operator-location-retention.md)
-// makes the operator's position the one field that must never leave the unit
-// by accident. A key that is not named below is not exported.
+// whatever a sensor chose to put there, and `/metrics` is the endpoint most
+// likely to be scraped into somebody else's time-series database.
+//
+// Operator positions are pilot ground positions, and personal data under GDPR
+// (docs/research/06-legal-and-ethics.md, "Operator location is the sharp
+// edge"). ADR-0006 records that this deployment accepts syncing them, which is
+// a decision about this unit rather than a licence to widen the blast radius
+// by exporting whatever a sensor happens to publish. A key that is not named
+// below is not exported.
 type detailMetric struct {
 	name    string
 	help    string

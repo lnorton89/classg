@@ -29,7 +29,7 @@ appears in `/health` alongside them.
 
 **Nothing detected leaves the unit.** Every integration here is inbound only.
 `operator.lat/lon` is a real person's ground position
-([ADR-0006](../architecture/adr/0006-operator-location-retention.md)), and a
+([legal and ethics](../research/06-legal-and-ethics.md)), and a
 detector that quietly posted its findings to a third party would be a different
 product from the one described in
 [docs/research/06-legal-and-ethics.md](../research/06-legal-and-ethics.md). The

@@ -193,7 +193,7 @@ editing the hook.
 ## One thing worth deciding deliberately
 
 This uplink lets detection data — including `operator.lat/lon`, which is a real
-person's ground position ([ADR-0006](../architecture/adr/0006-operator-location-retention.md))
+person's ground position ([legal and ethics](../research/06-legal-and-ethics.md))
 — be pulled from the Pi into a cloud session and into a transcript. Nothing
 does that on its own; the hook only opens a route. But "nothing detected leaves
 the unit" ([external data](07-external-data.md)) stops being automatically true
