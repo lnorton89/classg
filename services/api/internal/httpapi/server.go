@@ -55,7 +55,11 @@ type Options struct {
 	Hub        *hub.Hub
 	Captures   *capture.Manager
 	Sensors    Sensors
-	Started    time.Time
+	// Started must come from time.Now() and keep its monotonic reading. Passing
+	// a value that has been through .UTC(), .Round(0) or a parse makes uptime
+	// wall-clock arithmetic again, which on an RTC-less Pi reports the boot-time
+	// NTP correction as hours of uptime. See Health.
+	Started time.Time
 }
 
 func New(opts Options) *Server {

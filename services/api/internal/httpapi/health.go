@@ -22,7 +22,18 @@ func (s *Server) Health(ctx context.Context) health.Report {
 		// real heartbeat state still answers the question that matters.
 		counts = map[string]int{}
 	}
-	return s.registry.Snapshot(now, now.Sub(s.started), s.cfg.Version, counts)
+	// time.Since, not now.Sub(s.started): Go carries a monotonic reading on the
+	// result of time.Now() and uses it for subtraction only when BOTH operands
+	// still have one. `now` above has been through .UTC(), which strips it, so
+	// now.Sub(s.started) silently degraded to wall-clock arithmetic and reported
+	// every correction to the system clock as uptime.
+	//
+	// That is not hypothetical on this hardware. A Pi has no RTC: it boots with
+	// whatever fake-hwclock saved, the api starts, and systemd-timesyncd jumps
+	// the clock forward when the network appears. Measured on the unit on
+	// 2026-08-17 -- /health claimed uptime_s 35727 (9h55m) for a process that
+	// had been running 2h04m, inflated by exactly the 7h51m NTP correction.
+	return s.registry.Snapshot(now, time.Since(s.started), s.cfg.Version, counts)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
