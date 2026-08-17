@@ -45,8 +45,16 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
     exit 0
 fi
 
-if [ -z "${TS_AUTHKEY:-}" ]; then
-    note "TS_AUTHKEY is not set -- skipping tailnet join"
+# A container that has already joined keeps its node key here. Sessions resume
+# against a warm container often enough for this to matter: `SessionStart` fires
+# again with the daemon dead but the credential still on disk, and reconnecting
+# from it needs no key at all. An earlier revision exited whenever TS_AUTHKEY
+# was unset and left a resumed session with no tailnet it could have had for
+# free -- observed on a real resume, not theorised.
+TS_STATE=/var/lib/tailscale/tailscaled.state
+
+if [ -z "${TS_AUTHKEY:-}" ] && [ ! -s "$TS_STATE" ]; then
+    note "TS_AUTHKEY is not set and no saved node state exists -- skipping tailnet join"
     note "add it as a secret environment variable to connect cloud sessions to the Pi"
     note "setup: docs/ops/08-cloud-tailscale.md"
     exit 0
@@ -100,7 +108,7 @@ if ! tailscale status >/dev/null 2>&1 && ! pgrep -x tailscaled >/dev/null 2>&1; 
     # setsid detaches from the hook's process group: the daemon has to outlive
     # this script for the rest of the session to have a tailnet at all.
     setsid nohup tailscaled \
-        --state=/var/lib/tailscale/tailscaled.state \
+        --state="$TS_STATE" \
         --statedir=/var/lib/tailscale \
         --socket=/var/run/tailscale/tailscaled.sock \
         --tun=tailscale0 \
@@ -139,6 +147,10 @@ done
 
 if [ "$STATE" = "Running" ]; then
     note "already connected as $TS_HOSTNAME"
+elif [ -z "${TS_AUTHKEY:-}" ]; then
+    # Reached only when saved state exists but no longer authenticates -- the
+    # node was removed from the tailnet, or an ephemeral node was reaped.
+    bail "saved node state is $STATE and TS_AUTHKEY is not set to re-join"
 else
     note "authenticating to the tailnet as $TS_HOSTNAME"
     # --accept-dns=false: MagicDNS would rewrite /etc/resolv.conf, and this
@@ -166,8 +178,16 @@ note "this container is $SELF_IP ($TS_HOSTNAME)"
 # ---------------------------------------------------------------- locate Pi
 
 # Resolved from the peer list rather than DNS, since MagicDNS is off above.
-PI_IP="$(tailscale status 2>/dev/null |
-         awk -v n="$PI_NAME" '$2 == n && $1 ~ /^100\./ { print $1; exit }')"
+# The netmap lands a few seconds after the daemon reports Running -- measured at
+# about ten. Polling matters because the alternative is telling the operator
+# their Pi is offline while it sits there answering pings.
+PI_IP=""
+for _ in $(seq 1 20); do
+    PI_IP="$(tailscale status 2>/dev/null |
+             awk -v n="$PI_NAME" '$2 == n && $1 ~ /^100\./ { print $1; exit }')"
+    [ -n "$PI_IP" ] && break
+    sleep 1
+done
 
 if [ -z "$PI_IP" ]; then
     note "no tailnet peer named '$PI_NAME' -- is the Pi powered on and joined?"

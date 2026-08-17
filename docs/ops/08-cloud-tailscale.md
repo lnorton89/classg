@@ -117,9 +117,17 @@ The hook never fails a session. A container with no tailnet still runs the test
 suites, so every failure path prints a reason and exits 0. Read the
 `[tailscale]` lines at session start:
 
+A resumed session is worth understanding before you read that table. `SessionStart`
+fires again on resume, and a warm container comes back with `tailscaled` dead but
+its node key still on disk — so the hook restarts the daemon and reconnects from
+saved state, with **no `TS_AUTHKEY` involved**. A key is only ever needed to join
+the first time, or to re-join after the node has been removed from the tailnet.
+
+
 | Message | Meaning |
 |---|---|
-| `TS_AUTHKEY is not set` | No key in the environment. Everything else still works; you just have no Pi. |
+| `TS_AUTHKEY is not set and no saved node state exists` | No key in the environment, and this container has never joined. Everything else still works; you just have no Pi. |
+| `saved node state is <state> and TS_AUTHKEY is not set to re-join` | The container joined once, but the node key no longer authenticates — usually an ephemeral node that was reaped. Needs a key. |
 | `tailscale up failed (expired, already-used, or untagged auth key?)` | Mint a new key. A non-reusable key that worked yesterday will do this today. |
 | `no tailnet peer named 'pisdr'` | The Pi is powered off, or off the tailnet. The message lists the peers it did see. |
 | `is listed but did not answer a ping` | The control plane still has a stale record of a node that has since gone away. |
