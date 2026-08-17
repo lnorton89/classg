@@ -259,7 +259,8 @@ def run_capture(
     try:
         while should_run():
             spec = hopper.next_channel()
-            if set_channel(iface, spec.channel):
+            hop_ok = set_channel(iface, spec.channel)
+            if hop_ok:
                 consecutive_channel_errors = 0
             else:
                 stats.channel_errors += 1
@@ -352,9 +353,22 @@ def run_capture(
             # Without this the per-channel beacon counts stayed empty for the
             # whole run while the total climbed into the thousands, so the
             # channel weights in channels.yaml had no evidence behind them.
-            hopper.on_beacon(spec.channel, pipeline.stats.beacons - beacons_at_dwell_start)
-            if saw_drone_this_dwell:
-                hopper.on_drone_detected(spec.channel)
+            #
+            # Only when the retune actually succeeded, though. A failed hop
+            # leaves the radio on the PREVIOUS channel, and the dwell that
+            # follows hears that channel's traffic -- crediting it to the
+            # channel we failed to reach is how ch12 and ch13 accumulated
+            # evidence on a US regdomain that forbids them outright. The
+            # weights in channels.yaml are meant to be tuned from this, so
+            # quietly wrong numbers here are worse than missing ones.
+            #
+            # record_dwell is deliberately still called: the hopper did schedule
+            # that slot and the time was really spent, which is what the
+            # efficiency figures measure.
+            if hop_ok:
+                hopper.on_beacon(spec.channel, pipeline.stats.beacons - beacons_at_dwell_start)
+                if saw_drone_this_dwell:
+                    hopper.on_drone_detected(spec.channel)
 
             now = time.monotonic()
             if now - last_heartbeat >= heartbeat_s:

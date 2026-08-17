@@ -228,6 +228,29 @@ class TestFailures:
         assert stats.channel_errors == 1
         assert stats.dwells == 1, "the loop must keep going"
 
+    def test_a_failed_hop_does_not_credit_beacons_to_the_channel(self, monkeypatch):
+        """A failed retune leaves the radio on the PREVIOUS channel.
+
+        The dwell still happens and still hears traffic, but it is the old
+        channel's traffic. Crediting it to the channel we never reached is how
+        ch12 and ch13 accumulated beacon evidence on a US regdomain that
+        forbids them -- and `config/channels.yaml` says to tune the weights
+        from exactly these counts, so a wrong number is worse than none.
+        """
+        monkeypatch.setattr(capture, "set_channel", lambda iface, ch: False)
+        monkeypatch.setattr(capture, "interface_exists", lambda iface: True)
+
+        hopper = make_hopper()
+        stats, _, pipeline, hopper = run_once(FakeRadio([drone_frame()]), hopper)
+
+        assert stats.channel_errors == 1
+        assert pipeline.stats.beacons >= 1, "the frame was still received"
+        assert hopper.stats.beacons == {}, (
+            "beacons heard on the old channel were credited to the one the hop "
+            "failed to reach"
+        )
+        assert hopper.stats.drone_hits == {}, "same for the drone-hit evidence"
+
     def test_malformed_frames_do_not_stop_the_loop(self):
         radio = FakeRadio([b"\x00\x01\x02", struct.pack("<I", 0xDEADBEEF), drone_frame()])
         stats, pub, _, _ = run_once(radio)
