@@ -99,7 +99,7 @@ The hook exports two variables into the session:
 ```bash
 curl -s "$CLASSG_PI_API/api/v1/health" | jq
 curl -s "$CLASSG_PI_API/api/v1/sensors" | jq
-ssh "pi@$CLASSG_PI_IP"
+tailscale ssh "admin@$CLASSG_PI_IP"
 ```
 
 Note that `:8081` serves **only** the API, at `/api/v1` — the Pi runs with
@@ -110,6 +110,59 @@ MagicDNS is deliberately **off** (`--accept-dns=false`): it would rewrite
 `/etc/resolv.conf`, and the container's DNS is wired to a proxy the rest of the
 session depends on. The Pi is resolved from the peer list instead, which is why
 you get an IP in a variable rather than a name.
+
+## Shell access, without distributing keys
+
+Use **Tailscale SSH**, not `authorized_keys`. Every session is a container that
+did not exist an hour ago and will not exist tomorrow, so an ordinary keypair
+would have to be minted and appended to the Pi on every session, leaving a
+growing pile of dead keys on the one device in this project that is supposed to
+sit quietly and listen. Tailscale SSH moves the decision into the tailnet
+policy, where revoking access is one edit and no key material ever moves.
+
+Two things have to be true, and the first without the second looks like a
+broken Pi rather than an unfinished setup.
+
+**On the Pi**, enable the SSH server:
+
+```bash
+sudo tailscale set --ssh=true
+```
+
+Use `set`, not `tailscale up --ssh`. `up` resets any preference absent from that
+command line, so on a Pi configured over months it can silently drop advertised
+routes or an exit-node setting. `set` changes the one field.
+
+**In the [ACL policy](https://login.tailscale.com/admin/acls)**, permit it.
+Tailscale SSH is deny-by-default: with the server running and no rule, the Pi
+advertises host keys and still refuses every connection with
+`tailnet policy does not permit you to SSH as user "…"`.
+
+```jsonc
+"ssh": [
+  {
+    "action": "accept",          // not "check" -- no human is present to re-auth
+    "src":    ["autogroup:member"],
+    "dst":    ["autogroup:self"],
+    "users":  ["admin"],         // the login user on pisdr, not "pi"
+  },
+],
+```
+
+Then, from a session:
+
+```bash
+tailscale ssh admin@"$CLASSG_PI_IP" 'systemctl list-units "classg*"'
+```
+
+**This rule stops covering cloud sessions once they use the tagged auth key.**
+`autogroup:member` and `autogroup:self` match devices with an owner, and a node
+that authenticated with `tag:claude-cloud` has none — it is owned by the tag.
+Moving to the tagged key therefore needs a second rule with
+`src: ["tag:claude-cloud"]` and a `dst` that a tagged source can name, which in
+practice means tagging `pisdr` too. Tagging transfers a device's ownership to
+the tag and changes which existing rules apply to it, so do that deliberately
+rather than as a side effect of setting up a dev convenience.
 
 ## When it does not work
 
@@ -132,6 +185,7 @@ the first time, or to re-join after the node has been removed from the tailnet.
 | `no tailnet peer named 'pisdr'` | The Pi is powered off, or off the tailnet. The message lists the peers it did see. |
 | `is listed but did not answer a ping` | The control plane still has a stale record of a node that has since gone away. |
 | `not root` / `/dev/net/tun is missing` | The container cannot create a TUN device. Nothing to be done from inside the repository. |
+| `tailnet policy does not permit you to SSH as user "…"` | The SSH server is running but no ACL rule matches. Not a Pi fault — see [Shell access](#shell-access-without-distributing-keys). |
 
 If the Pi is renamed in Tailscale, set `CLASSG_PI_TAILSCALE_NAME` rather than
 editing the hook.
