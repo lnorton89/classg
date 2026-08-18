@@ -56,6 +56,24 @@ curl -X PUT localhost:8081/api/v1/config/settings \
 Changing retention should not mean editing a file and restarting a detector that is currently
 watching the sky.
 
+**Most of these have a control in the web app now**, which is where an operator should reach
+them rather than through `curl`:
+
+| Setting | Where |
+|---|---|
+| `api.expose_operator_location` | Settings → Storage |
+| `retention.*`, `telemetry.interval` | Settings → Storage |
+| `sensors.stale_after`, `fusion.track_ttl`, `fusion.max_history`, `spectrum.sweep_timeout` | Settings → Calibration |
+| `map.receiver_position`, the channel plan, fusion weights | Settings → Calibration |
+| `fusion.net_adsb*`, `fusion.terrain*`, `sensors.oui_registry`, `fusion.aircraft_db` | Settings → External data |
+| `hooks.allow_private_targets` | Administration → Outbound |
+| `monitoring.enabled` | The status control in the header |
+
+The rest are deployment topology — bus endpoints, directories, binary paths, the sensor
+restart template, the expected-sensor list — and are deliberately not editable from a web page.
+A text box that can point the bus somewhere wrong is a way to make a unit unreachable from the
+unit.
+
 ## Tier 3 — `config/defaults.yaml`: the seed
 
 Seeds the database on first run, and is the **entire** configuration when
@@ -216,6 +234,22 @@ instead of reporting a false success.
   that is fitted: once a sensor has heartbeated, going quiet degrades health
   whether it was declared optional or not.
 - Keep the ZMQ endpoints bound to loopback or a trusted private network.
+- **Know the way back in before you need it.** A unit whose only administrator
+  account is lost, disabled or forgotten has no console recovery and no default
+  password. `classg-api user` is the way back — it is a subcommand of the server
+  binary, so run it wherever the database is:
+
+  ```bash
+  docker exec -i classg-api classg-api user list
+  docker exec -i classg-api classg-api user add --username you --role admin
+  docker exec -i classg-api classg-api user passwd --username you
+  ```
+
+  Without `--password-stdin` it generates one and prints it once; nothing stores
+  it in plaintext, so a lost password is reset rather than recovered. Passwords
+  are never taken as an argument, because a command line is visible in `ps` and
+  kept in shell history. There is no `delete`: removing an account goes through
+  the admin API, where it is authenticated and where the last-admin guard lives.
 - **Leave `CLASSG_AUTH_MODE` at `required`.** On first start the unit has no
   accounts and serves only the setup screen until you create the first
   administrator; there is no default password. `off` exists for a bench unit and

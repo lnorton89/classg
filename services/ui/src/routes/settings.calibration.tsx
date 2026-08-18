@@ -487,11 +487,10 @@ function FusionWeightsEditor() {
     mutationFn: (body: FusionWeights) => api.putWeights(body),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.weights }),
   })
-  const notice = save.isSuccess
-    ? save.data.restart_required
-      ? 'saved-restart'
-      : 'saved'
-    : null
+  // No restart_required branch here, unlike every other editor on this page:
+  // fusion has no path to these values at all, so "restart to apply" would be
+  // a promise the system cannot keep.
+  const saved = save.isSuccess
 
   if (!draft) return null
 
@@ -531,6 +530,11 @@ function FusionWeightsEditor() {
           accumulate but never reach certainty, and no single class can be gamed into a false
           confirm.
         </p>
+        <p className="text-warn mt-2 text-xs">
+          Recorded, not applied. Fusion runs the weights compiled into it and reads nothing back
+          from here, so editing these changes the intended plan rather than the confidence of
+          any track on screen — including after a restart.
+        </p>
       </CardHeader>
       <CardContent>
         {apiError ? (
@@ -539,11 +543,9 @@ function FusionWeightsEditor() {
             {apiError.field ? ` (field: ${apiError.field})` : ''}
           </Alert>
         ) : null}
-        {notice ? (
-          <Alert tone="info" title="Saved" className="mb-3">
-            {notice === 'saved-restart'
-              ? 'Fusion must be restarted for this to take effect.'
-              : 'Applied without a restart.'}
+        {saved ? (
+          <Alert tone="warn" title="Saved — not applied" className="mb-3">
+            Stored as the intended plan. The confidence numbers on screen are unchanged.
           </Alert>
         ) : null}
 

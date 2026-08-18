@@ -152,13 +152,19 @@ Deliberate properties:
 - **Confidence is not the only gate.** Classes C, D and H also cannot move a track past
   TENTATIVE at all — see the lifecycle in
   [overview.md](overview.md#detection--track-lifecycle). That rule keys on the class, not on
-  the weight, precisely because weights are configuration: retuning C upward must not quietly
-  turn every access point built by a drone manufacturer into a confirmed aircraft.
+  the weight, precisely because weights are meant to be tunable: retuning C upward must not
+  quietly turn every access point built by a drone manufacturer into a confirmed aircraft.
 - **A + B together ≈ 0.80**, and adding C reaches 0.82. Correlated evidence from the same
   sensor cannot manufacture certainty.
-- **Weights are configuration**, in `services/fusion/config/weights.yaml`. They are calibrated
-  hypotheses, not physical constants — revise them against measured false-positive rates once
-  the test corpus exists.
+- **Weights are calibrated hypotheses, not physical constants** — revise them against measured
+  false-positive rates once the test corpus exists.
+- **They are not configuration yet, and there is no weights file.** The running values are
+  `fusion.DefaultWeights()` in [detection.go](../../services/fusion/detection.go), compiled in.
+  `PUT /config/weights` validates a plan and stores it in the API's database, but fusion
+  subscribes to nothing ([ADR-0002](adr/0002-message-bus-zeromq.md)) and reads no weights file,
+  so a saved plan records what *should* be running — restarting fusion will not apply it.
+  Closing the gap means giving fusion a way to read the store; until then the stored plan is a
+  note to the next person, and the calibration page says so.
 
 **Independence is assumed and is partly false** — A and B both come from the same Wi-Fi radio
 and the same aircraft, so they aren't independent evidence in a strict Bayesian sense. Noisy-OR

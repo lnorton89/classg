@@ -196,8 +196,8 @@ classg/
 │   ├── sensor-sdr/     Rust: IQ streaming, FFT, energy detection
 │   ├── sensor-ble/     Python: BlueZ / Sniffle BLE Remote ID (Milestone 4, not yet implemented)
 │   ├── fusion/         Go: detection→track correlation, scoring
-│   ├── api/            Go: REST + WebSocket
-│   └── ui/             Vite + MapLibre
+│   ├── api/            Go: REST + GraphQL + WebSocket, accounts and sessions
+│   └── ui/             React + MapLibre operator console
 ├── config/             Seed defaults for Tier 2 settings
 ├── captures/           PCAP / IQ corpus (gitignored, see captures/README.md)
 ├── scripts/            Bring-up, data-fetch, and diagnostic helpers

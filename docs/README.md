@@ -49,6 +49,7 @@ If you read three documents, read these:
 |---|---|
 | [Roadmap](planning/roadmap.md) | Milestones 0–5 with exit criteria |
 | [Test plan](planning/test-plan.md) | Five test layers, from unit tests to flight tests |
+| [Brand identity](planning/brand-identity.md) | The mark, the wordmark, the three colours, and where the source assets live |
 
 ## Operations
 
@@ -66,6 +67,7 @@ If you read three documents, read these:
 | [09 — Deployment](ops/09-deployment.md) | Install, run, and update the stack on a real unit: Compose web tier, systemd sensors |
 | [10 — Continuous deployment](ops/10-continuous-deployment.md) | Deploy `main` automatically when CI is green, and why it is pull-based and opt-in |
 | [11 — Self-healing](ops/11-self-healing.md) | What survives a reboot, and the bounded watchdog that retries what systemd has given up on |
+| [12 — Spectrum sweeps](ops/12-spectrum-sweeps.md) | The host agent that sweeps on the API's behalf, and the shared-group permission the exchange needs |
 
 ## Development
 

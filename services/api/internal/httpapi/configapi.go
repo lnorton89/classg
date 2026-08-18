@@ -202,8 +202,12 @@ func (s *Server) handlePutWeights(w http.ResponseWriter, r *http.Request) {
 		fail(w, apierr.Internal("saving weights failed"))
 		return
 	}
-	// Same reasoning as channels: fusion reads weights.yaml at startup and the
-	// api cannot push to it.
+	// Like channels, only worse: fusion does not read a weights file at all. It
+	// starts from fusion.DefaultWeights(), compiled in, and has no path to this
+	// plan -- so a restart will not apply it either, and restart_required is
+	// understating it rather than describing it. What is stored here is what
+	// the weights SHOULD be. The calibration page says exactly that instead of
+	// showing a saved value as though it were live; see data-model.md.
 	writeJSON(w, http.StatusOK, configResponse{Value: plan, RestartRequired: true})
 }
 

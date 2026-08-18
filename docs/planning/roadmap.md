@@ -195,6 +195,8 @@ both transports produces exactly **one** track, not two.
 - [x] CI-gated pull deploy and a self-healing watchdog on the unit — [10-continuous-deployment.md](../ops/10-continuous-deployment.md), [11-self-healing.md](../ops/11-self-healing.md)
 - [x] Read-only GraphQL beside REST — `internal/graphqlapi`, for "these tracks and the detections that fed each" in one round trip; no mutations and no admin surface, [api-contract.md](../architecture/api-contract.md#graphql)
 - [x] Recorder-style review: a Timeline of tracks as events on a band of time, and a Storage page carrying disk, fill rate and the retention horizons together
+- [x] Spectrum sweeps driven from the web app on a containerised unit — the API cannot reach USB from inside a container, so a host agent takes requests through a shared state directory and writes results back: [12-spectrum-sweeps.md](../ops/12-spectrum-sweeps.md)
+- [x] A console that keeps itself current — a finished sweep or capture arrives on the stream rather than waiting for a reload, banners about finished work expire on their own, and a newly deployed build applies itself once nothing is mid-sweep or mid-capture
 - [x] Config validation on startup with clear errors — all four services: `api` accumulates every fault before exiting (`config.go`), `sensor-sdr` returns `Result<_, Vec<String>>` the same way, `fusion` names the key and the value it rejected and range-checks the receiver position, `sensor-wifi` gets it from argparse type conversion, which applies to environment-supplied defaults too
 
 Bookworm ships systemd 252, which has no `RestartSteps`, so the backoff is

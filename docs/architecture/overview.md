@@ -44,13 +44,30 @@
   ┌───────────┐      ┌─────────────┐
   │    api    │ Go   │   storage   │  libSQL / Turso
   │ REST + WS │◄─────┤  + WAL      │
-  └─────┬─────┘      └─────────────┘
-        │ :8081
-        ▼
+  │ + GraphQL │      └─────────────┘
+  └──┬─────┬──┘
+     │     │ files in .agent-state/    the API runs in a container and
+     │     ▼                           cannot run anything on the host
+     │  ┌──────────────────────────────────────────┐
+     │  │  host agents          systemd, on the Pi │
+     │  │  · pi-autodeploy    CI-gated pull deploy │
+     │  │  · classg-watchdog  bounded self-repair  │
+     │  │  · classg-sweep-agent  borrows the radio │
+     │  └──────────────────────────────────────────┘
+     │ :8081
+     ▼
   ┌───────────┐
   │    ui     │  Vite + MapLibre
   └───────────┘
 ```
+
+The three host agents are not part of the detection path, and deliberately do
+not talk to the API over HTTP. They exchange **files** in one directory: the API
+writes a request marker, an agent picks it up on its own schedule and writes its
+state back. That is what lets a web-facing process ask for a deploy, a repair or
+a sweep without ever being able to run anything on the host —
+[10](../ops/10-continuous-deployment.md), [11](../ops/11-self-healing.md),
+[12](../ops/12-spectrum-sweeps.md).
 
 ## Why these boundaries
 

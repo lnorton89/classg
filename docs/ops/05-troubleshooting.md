@@ -173,6 +173,45 @@ sudo apt purge rtl-sdr librtlsdr0 librtlsdr-dev   # then build the fork
 
 ---
 
+## "I can't sign in"
+
+The unit answers, the map never loads, and every page reports not being signed
+in. Work outward from what the API says about itself — `/health` needs no
+session, so it answers even when nothing else will:
+
+```bash
+curl -s localhost:8081/api/v1/health | head -c 200   # is the API up at all?
+curl -s localhost:8081/api/v1/auth/me                # who does it think you are?
+```
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "Sign-in failed" on a password you are sure of | One message covers a wrong username and a wrong password deliberately, so this does not tell you which | Reset it on the box: `classg-api user passwd --username U` |
+| No accounts exist and the setup form is gone | Setup only runs while the unit has no administrator; after that `POST /auth/setup` is a `409` | `classg-api user add --username U --role admin` |
+| Signed in, then signed out again in a few hours | `CLASSG_SESSION_TTL`, sliding, 12h by default | Raise it, or accept it — an unattended console that stays open forever is the thing the default is guarding against |
+| The SSO button returns to the login page with an error | Provider rejected the exchange; the reason is in the `error` parameter and in the API log | Usually `CLASSG_OIDC_REDIRECT_URL` not matching what is registered at the provider, exactly, including scheme and port |
+| Everyone is signed out at once, and the accounts are gone too | `CLASSG_STORE=memory` — sessions and users live in the database, so on this store they last exactly as long as the process | Use `libsql` on anything that is not a throwaway dev run |
+| Everyone is signed out at once, accounts intact | An admin revoked the sessions, or they expired together | Nothing to fix; sign in again |
+
+`classg-api user` reads the same configuration the server does, so run it where
+the server runs. On a containerised unit that means inside the container, which
+is where the database is:
+
+```bash
+docker exec -i classg-api classg-api user list
+docker exec -i classg-api classg-api user passwd --username operator
+```
+
+It never takes a password as an argument — a command line is visible in `ps`
+and lands in shell history. Without `--password-stdin` it generates a strong one
+and prints it once.
+
+**`CLASSG_AUTH_MODE=off` is not a fix.** It makes every endpoint public to
+anything that can reach the port, including the admin surface. It exists for a
+bench with no network. A unit on a tailnet is not that.
+
+---
+
 ## Useful one-liners
 
 ```bash

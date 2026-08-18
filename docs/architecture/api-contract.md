@@ -255,8 +255,14 @@ tracks, not raw detections.
 Subscribe on connect:
 
 ```jsonc
-{ "type": "subscribe", "topics": ["tracks", "health", "detections"] }
+{ "type": "subscribe", "topics": ["tracks", "health", "detections", "captures", "spectrum"] }
 ```
+
+**Subscribe to everything you handle.** The server filters by topic and drops
+what you did not ask for, silently — which is not a hypothetical: the web app
+handled `capture.status` for months while never subscribing to `captures`, so
+that handler was dead code and a running capture only advanced when some query
+happened to refetch.
 
 Server frames — every frame has `type` and `ts`:
 
@@ -265,8 +271,21 @@ Server frames — every frame has `type` and `ts`:
 { "type": "track.closed",  "ts": "...", "track_id": "..." }
 { "type": "detection",     "ts": "...", "detection": { /* Detection */ } }
 { "type": "health",        "ts": "...", "health": { /* as GET /health */ } }
+{ "type": "monitoring",    "ts": "...", "monitoring": { /* as GET /monitoring */ } }
 { "type": "capture.status","ts": "...", "capture": { /* as GET /captures/{id} */ } }
+{ "type": "sweep.status",  "ts": "...", "sweep": { /* the RECORD, never its bins */ } }
 ```
+
+`monitoring` rides the `health` topic rather than needing its own: whether the
+system is recording is part of whether it is working, and a client that cares
+about one always cares about the other.
+
+`sweep.status` carries the sweep **record** and never its measurement. A
+completed wideband sweep is over a megabyte of bins, and pushing that down
+every open socket to announce "it finished" would cost more than the sweep did
+— fetch `GET /spectrum/sweeps/{id}` for the trace. It is published *after* the
+bins are stored, so a client that refetches immediately cannot win a race
+against the write and cache an empty answer.
 
 Requirements:
 - Server sends `{"type":"ping"}` every 30 s; clients reply `{"type":"pong"}`.
@@ -478,6 +497,16 @@ parser.
 
 `PUT` validates and returns `400` with per-field errors on failure. Changes take effect
 without a restart where possible; the response includes `"restart_required": bool`.
+
+Both are `true` today, for different reasons, and the weights one is weaker than it looks:
+
+- **Channels.** The hopper reads `channels.yaml` once at startup and sensors subscribe to
+  nothing ([ADR-0002](adr/0002-message-bus-zeromq.md)), so a restart genuinely applies the
+  stored plan.
+- **Weights.** Fusion does not read a weights file at all — it starts from
+  `fusion.DefaultWeights()`, compiled in. A stored plan is a record of intent that **no
+  restart will apply**; see [data-model.md](data-model.md#confidence-scoring). The calibration
+  page says so rather than showing a saved value as though it were live.
 
 ---
 

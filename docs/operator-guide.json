@@ -122,25 +122,30 @@
       "title": "Go API",
       "area": "services/api",
       "treePath": ["services", "api"],
-      "summary": "REST, WebSocket, persistence, capture control, health aggregation, and static UI delivery.",
+      "summary": "REST, GraphQL, WebSocket, persistence, capture and sweep control, health aggregation, and static UI delivery.",
       "sections": [
         {
           "title": "Architecture",
           "description": "The API remains available when radios or fusion are down so it can report degraded coverage.",
           "items": [
-            { "title": "REST and stream", "body": "Versioned endpoints expose tracks, detections, sensors, health, captures, configuration, and a live WebSocket stream." },
+            { "title": "REST and stream", "body": "Versioned endpoints expose tracks, detections, sensors, health, telemetry, captures, spectrum sweeps, configuration, and a live WebSocket stream. The stream sends only the topics a client subscribes to." },
+            { "title": "GraphQL", "body": "One read-only viewer-level endpoint at /api/v1/graphql answers nested questions such as tracks with their detections in a single round trip. Writes and the whole administration surface stay on REST." },
+            { "title": "Sessions and roles", "body": "Opaque session cookies over three ordered roles: viewer reads, operator acts on captures and sweeps, admin configures the machine. Optional OIDC single sign-on sits alongside local accounts." },
             { "title": "Storage", "body": "Embedded libSQL is the local default with optional Turso synchronization; an in-memory backend supports development and tests." },
-            { "title": "Static application", "body": "The built Vite bundle is served with SPA fallback, while missing assets retain real 404 responses." }
+            { "title": "Static application", "body": "The built Vite bundle is served with SPA fallback, while missing assets retain real 404 responses." },
+            { "title": "Health is public", "body": "GET /health and /metrics answer without a session, because a unit that reports its health only to authenticated callers cannot be watched by the thing that notices it died. Neither carries positions or identities." }
           ]
         },
         {
           "title": "Environment variables",
-          "description": "API configuration is grouped by server, storage, streams, operations, and retention.",
+          "description": "API configuration is grouped by server, storage, streams, operations, retention, sign-in, and host agents.",
           "items": [
             { "title": "Server and storage", "body": "CLASSG_LISTEN, CLASSG_VERSION, CLASSG_STORE, CLASSG_DB, CLASSG_TURSO_URL, CLASSG_TURSO_AUTH_TOKEN, and CLASSG_TURSO_SYNC_INTERVAL configure the process and database." },
             { "title": "Streams and health", "body": "CLASSG_TRACK_ENDPOINT, CLASSG_DETECTION_ENDPOINT, topic variables, CLASSG_EXPECTED_SENSORS, and CLASSG_SENSOR_STALE_AFTER define live inputs and coverage health." },
             { "title": "UI and capture control", "body": "CLASSG_UI_DIR, CLASSG_CAPTURE_DIR, CLASSG_SENSOR_WIFI_DIR, CLASSG_PYTHON, CLASSG_CAPTURE_ALLOW_UNPRIVILEGED, and CLASSG_SENSOR_RESTART_COMMAND configure operator actions." },
-            { "title": "Privacy and retention", "body": "CLASSG_EXPOSE_OPERATOR_LOCATION, CLASSG_RETENTION_DETECTIONS, CLASSG_RETENTION_TRACKS, CLASSG_RETENTION_INTERVAL, CLASSG_MAX_HISTORY, and CLASSG_LOG_LEVEL govern exposure and storage bounds.", "path": ".env.example" }
+            { "title": "Privacy and retention", "body": "CLASSG_EXPOSE_OPERATOR_LOCATION, CLASSG_RETENTION_DETECTIONS, CLASSG_RETENTION_TRACKS, CLASSG_RETENTION_TELEMETRY, CLASSG_RETENTION_SWEEPS, CLASSG_RETENTION_INTERVAL, CLASSG_MAX_HISTORY, and CLASSG_LOG_LEVEL govern exposure and storage bounds." },
+            { "title": "Sign-in and mail", "body": "CLASSG_AUTH_MODE, CLASSG_SESSION_TTL, the CLASSG_OIDC_ variables, and the CLASSG_SMTP_ variables are bootstrap rather than database settings, so a unit cannot have its own authentication switched off through its own web interface.", "path": ".env.example" },
+            { "title": "Host agents", "body": "CLASSG_SDR_BIN names a sweep binary the API may execute directly; CLASSG_DEPLOY_STATE_DIR is the directory shared with the host deploy and sweep agents. Each is empty by default and the affected feature reports itself unavailable rather than failing.", "path": "docs/ops/12-spectrum-sweeps.md" }
           ]
         },
         {
@@ -149,7 +154,8 @@
           "items": [
             { "title": "Run locally", "body": "Use an ephemeral store while developing against the UI.", "command": "cd services/api\nCLASSG_STORE=memory go run ./cmd/classg-api" },
             { "title": "Verify", "body": "Run formatting, vet, and the HTTP/WebSocket/store suites.", "command": "cd services/api\ngo vet ./...\ngo test ./..." },
-            { "title": "Contract", "body": "The normative v1 request, response, error, and stream shapes.", "path": "docs/architecture/api-contract.md" }
+            { "title": "Contract", "body": "The normative v1 request, response, error, and stream shapes, including the GraphQL schema and its cost limits.", "path": "docs/architecture/api-contract.md" },
+            { "title": "Recover access", "body": "Accounts can be created and passwords reset from a shell on the unit when nobody can sign in. The password is read from standard input rather than an argument, because arguments are visible in the process list.", "command": "classg-api user list\nclassg-api user passwd --username operator" }
           ]
         }
       ]
@@ -159,15 +165,19 @@
       "title": "Operator UI",
       "area": "services/ui",
       "treePath": ["services", "ui"],
-      "summary": "A static React and MapLibre console for live airspace, evidence, health, captures, and configuration.",
+      "summary": "A static React and MapLibre console for live airspace, evidence, history, spectrum, health, captures, and administration.",
       "sections": [
         {
           "title": "Architecture",
           "description": "Every view is designed around evidence and coverage rather than invented threat labels.",
           "items": [
-            { "title": "Live map", "body": "Plots aircraft, operators when supplied by policy, trails, range rings, and visually distinct ADS-B traffic." },
+            { "title": "Live map", "body": "Plots aircraft, operators when supplied by policy, trails, range rings, and visually distinct ADS-B traffic, beside a resizable detail pane." },
             { "title": "Tracks and evidence", "body": "Shows identity, lifecycle, position history, RSSI, and the exact evidence behind confidence." },
-            { "title": "Operations", "body": "Sensor health, capture workflow, configuration editors, and this documentation are available without a Node runtime in deployment." }
+            { "title": "Timeline", "body": "Reads recorded history back: what was seen, when, and which sensor saw it, over a window rather than the live moment." },
+            { "title": "Spectrum", "body": "Requests a band sweep and renders the returned bins as energy against frequency. It measures, it does not identify." },
+            { "title": "Operations", "body": "Sensor health, capture workflow, configuration editors, and this documentation are available without a Node runtime in deployment." },
+            { "title": "Administration", "body": "Accounts and sessions, outbound hooks and their delivery history, deployment status and control, and the host watchdog, all gated on the admin role." },
+            { "title": "Live by default", "body": "Views follow the WebSocket rather than waiting to be reloaded, banners about finished work close themselves, and a newly deployed build applies itself once nothing is mid-sweep or mid-capture." }
           ]
         },
         {
@@ -353,7 +363,8 @@
           "items": [
             { "title": "Local verification", "body": "Run all language suites through the repository targets.", "command": "make test\nmake lint\nmake build-ui" },
             { "title": "Containers", "body": "Compose covers the web tier and configuration wiring; USB and monitor-mode setup remain explicit host responsibilities.", "path": "docker/docker-compose.yml" },
-            { "title": "Pi operations", "body": "Installation, drivers, tuning, and troubleshooting procedures.", "path": "docs/ops/01-pi-setup.md" }
+            { "title": "Pi operations", "body": "Installation, drivers, tuning, and troubleshooting procedures.", "path": "docs/ops/01-pi-setup.md" },
+            { "title": "Host agents", "body": "Two systemd services run outside the containers: one deploys new commits once their CI is green, the other performs spectrum sweeps on behalf of an API that cannot reach USB. Both exchange files through one shared directory.", "path": "docs/ops/12-spectrum-sweeps.md" }
           ]
         }
       ]

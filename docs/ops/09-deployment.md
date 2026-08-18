@@ -97,16 +97,23 @@ sudo usermod -aG plugdev dump1090      # without this it runs happily with no ra
 sudo systemctl restart dump1090-mutability
 
 cd services/sensor-sdr
-cargo build --release
+cargo build --release --features rtlsdr
 cd ../..
 ```
 
-Plain `cargo build --release` is all the deployed path needs — the `adsb`
-subcommand never opens the radio. The `rtlsdr` feature (for `probe --open`)
-links the RTL-SDR Blog fork of librtlsdr, which must already be built and
-installed per [03-sdr-setup.md](03-sdr-setup.md); `build.rs` asks `pkg-config`
-and falls back to `/usr/local/lib`, or take `RTLSDR_LIB_DIR` if it is
-somewhere else.
+**Build with `--features rtlsdr` on a unit that has a radio.** The ADS-B path
+does not need it — the `adsb` subcommand consumes dump1090's output and never
+opens the device — but the sweep engine and `probe --open` do, and without the
+feature they are not merely disabled, they are absent. The binary builds, runs,
+serves ADS-B perfectly, and answers `bands` and `sweep` with nothing, so the
+Spectrum page reports a unit that cannot sweep and every explanation points at
+the radio. That is the failure this line exists to prevent.
+
+The feature links the RTL-SDR Blog fork of librtlsdr, which must already be
+built and installed per [03-sdr-setup.md](03-sdr-setup.md); `build.rs` asks
+`pkg-config` and falls back to `/usr/local/lib`, or takes `RTLSDR_LIB_DIR` if it
+is somewhere else. On a build host with no radio and no librtlsdr, plain
+`cargo build --release` is still the right command.
 
 ### 4. Systemd units
 
@@ -155,8 +162,21 @@ RTC module, not software.
 
 ## Updating a running unit
 
+On a unit with the deploy agent installed ([10](10-continuous-deployment.md)),
+the answer is usually **nothing**: it pulls from `main` on a timer and deploys
+any commit whose CI is green. Use `./scripts/pi-autodeploy.sh --once` to make it
+happen now, or `--force` to rebuild everything at the current commit.
+
+Updating by hand still works and is sometimes what you want, but know what it
+costs. A manual `git pull` leaves the tree current, so the agent's next run sees
+`LOCAL == REMOTE`, reports "up to date", and **does not rebuild anything** — the
+SDR binary on this unit was two days behind the source that way, through runs
+that all called themselves successful. The agent compares artefacts against
+their sources now and repairs that, but it does so on its own schedule; if you
+pulled by hand, rebuild by hand.
+
 ```bash
-cd ~/classg && git pull
+cd ~/classg && git pull && git submodule update --init --recursive
 ```
 
 Then rebuild what the pull touched:
@@ -165,7 +185,8 @@ Then rebuild what the pull touched:
 |---|---|
 | `services/api`, `services/fusion`, `services/ui` | `docker compose --env-file .env -f docker/docker-compose.yml up -d --build api` (or `fusion`, `ui`; `make compose-up` rebuilds whatever changed across all three) |
 | `services/sensor-wifi` | `cd services/sensor-wifi && .venv/bin/python -m pip install -e '.[replay]'` then `sudo systemctl restart classg-sensor-wifi`. The pip step only matters when dependencies changed — the unit runs the checkout's source directly — but it is cheap and skipping it is how a dependency bump ships untested |
-| `services/sensor-sdr` | `cd services/sensor-sdr && cargo build --release` then `sudo systemctl restart classg-sensor-sdr`. The unit runs `target/release/`, so an un-rebuilt binary keeps running yesterday's code while the source says otherwise |
+| `services/sensor-sdr` | `cd services/sensor-sdr && cargo build --release --features rtlsdr` then `sudo systemctl restart classg-sensor-sdr`. **The feature flag is not optional on a unit with a radio** — without it the binary builds and runs and has no sweep engine, so `bands` and `sweep` are simply absent and the Spectrum page reports the unit as unable to sweep. The unit runs `target/release/`, so an un-rebuilt binary keeps running yesterday's code while the source says otherwise |
+| `tools/pi-dash` | `cd tools/pi-dash && cargo build --release`. It is a submodule: `git pull` moves the *pointer*, and `git submodule update --init --recursive` is what moves the checkout. A pull without it leaves the pin ahead of the files, and the dashboard keeps running the old build |
 | `deploy/systemd/*.service.in` | `sudo ./deploy/systemd/install.sh wlan1 && sudo systemctl restart classg-sensor-wifi classg-sensor-sdr` — the installed units are rendered snapshots |
 | `schemas/` | All of the above. The schema is the one contract all four languages share; updating one side of the bus and not the other is a silent wire mismatch |
 | `config/defaults.yaml` | Nothing, deliberately: the database is authoritative after first run ([00-configuration.md](00-configuration.md)). Change settings through the API or the UI |
