@@ -40,6 +40,7 @@ from typing import Any
 from .bus import DetectionPublisher
 from .hopper import ChannelHopper
 from .pipeline import Pipeline
+from .survey import SurveySampler
 
 log = logging.getLogger(__name__)
 
@@ -228,11 +229,16 @@ def run_capture(
     watchdog_s: float | None = None,
     should_run: Callable[[], bool] = lambda: True,
     socket_factory: Callable[[str], Any] = open_socket,
+    surveyor: SurveySampler | None = None,
 ) -> CaptureStats:
     """Capture until should_run() goes false.
 
     socket_factory is injectable so the loop can be tested against a fake radio
     without hardware -- see tests/test_capture.py.
+
+    surveyor is the channel-occupancy sampler. None means no survey is taken --
+    which is what the tests want, and what a run on an adapter with no `iw`
+    reduces to anyway.
     """
     stats = CaptureStats()
     if socket_factory is open_socket:
@@ -372,7 +378,8 @@ def run_capture(
 
             now = time.monotonic()
             if now - last_heartbeat >= heartbeat_s:
-                _heartbeat(publisher, stats, pipeline, hopper, iface)
+                _heartbeat(publisher, stats, pipeline, hopper, iface,
+                           surveyor=surveyor)
                 last_heartbeat = now
                 beat.mark()
     finally:
@@ -505,6 +512,7 @@ def _heartbeat(
     iface: str,
     healthy: bool = True,
     reason: str = "",
+    surveyor: SurveySampler | None = None,
 ) -> None:
     detail: dict[str, Any] = {
         "iface": iface,
@@ -523,4 +531,16 @@ def _heartbeat(
     }
     if reason:
         detail["reason"] = reason
+    if surveyor is not None:
+        # Sampled on the heartbeat rather than on its own timer: it is one
+        # bounded subprocess and this is already the once-per-interval moment,
+        # so it costs no extra thread and cannot land mid-dwell.
+        survey = surveyor.sample()
+        if survey:
+            detail["survey"] = survey
+        # Reported even when empty, because "this adapter has no survey" and
+        # "this adapter has not been asked yet" look identical otherwise, and
+        # the spectrum view has to tell an operator which one it is.
+        if surveyor.available is not None:
+            detail["survey_available"] = surveyor.available
     publisher.heartbeat(healthy=healthy, detail=detail)

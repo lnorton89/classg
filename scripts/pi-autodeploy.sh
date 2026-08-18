@@ -695,12 +695,15 @@ rebuild_stale_artefacts || true
 # because Bookworm marks that interpreter externally-managed (PEP 668) and pip
 # refuses outright -- which is what failed the deploy and rolled the unit back.
 #
-# The install is only needed when dependencies or entry points move: the venv
-# holds an EDITABLE install, so a change to a .py file is live on the next
-# restart with no pip involved at all. That is why the restart happens either
-# way, and why a pip failure no longer fails the deploy on its own -- the code
-# is already in place, and refusing to restart would leave the sensor running
-# older code than the tree it is now reporting.
+# The install is only needed when dependencies or entry points move. The source
+# is already what runs, for a stronger reason than the venv's editable install:
+# ExecStart is `python -m classg_wifi.cli` with WorkingDirectory set to the
+# checkout, and `python -m` puts the working directory first on sys.path -- so
+# the checkout wins over any installed copy whatever pip did or did not do.
+#
+# That is what makes "log the failure and restart anyway" correct rather than a
+# gamble. Refusing to restart would leave the sensor running older code than the
+# tree this unit now reports it is on, which is the worse of the two outcomes.
 if changed_in "services/sensor-wifi"; then
     wifi_dir="$REPO_DIR/services/sensor-wifi"
     wifi_python="$wifi_dir/.venv/bin/python"
