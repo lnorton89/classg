@@ -65,7 +65,12 @@ export interface AppUpdateWatcherOptions {
 
 type Listener = (status: UpdateStatus) => void
 
-const DEFAULT_POLL_MS = 30 * 60 * 1000
+// Five minutes, not thirty. This unit deploys itself from main whenever CI
+// goes green, so a build can land at any time and half an hour of running the
+// previous one is half an hour of debugging a fix that is definitely in the
+// repo and definitely not on the screen. The check is one conditional request
+// for the worker script, usually over the Pi's own access point.
+const DEFAULT_POLL_MS = 5 * 60 * 1000
 
 export class AppUpdateWatcher {
   private readonly registration: RegistrationLike

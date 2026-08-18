@@ -1,4 +1,5 @@
-import { AlertTriangleIcon, CheckCircle2Icon, InfoIcon, XCircleIcon } from 'lucide-react'
+import { AlertTriangleIcon, CheckCircle2Icon, InfoIcon, XCircleIcon, XIcon } from 'lucide-react'
+import { useEffect } from 'react'
 import type { ComponentProps, ReactNode } from 'react'
 
 import { cn } from '@/lib/cn'
@@ -31,9 +32,34 @@ export interface AlertProps {
   children?: ReactNode
   className?: string
   action?: ReactNode
+  /**
+   * Called when the operator closes it. Supplying this adds the close control;
+   * omitting it means the banner cannot be dismissed.
+   *
+   * Deliberately opt-in, and NOT available on warn or error. A banner that
+   * says the sky is unwatched has to stay on the screen for as long as it is
+   * true -- letting somebody clear a degraded-sensor warning is the one thing
+   * this whole interface is built to refuse, because an empty map with a dead
+   * sensor must never be able to look like an empty map with a healthy one.
+   * `autoDismissMs` is subject to the same rule.
+   */
+  onDismiss?: () => void
+  /**
+   * Close on its own after this many milliseconds. Only honoured alongside
+   * onDismiss, and only on the tones that are safe to lose.
+   */
+  autoDismissMs?: number
 }
 
-export function Alert({ tone = 'info', title, children, className, action }: AlertProps) {
+export function Alert({
+  tone = 'info',
+  title,
+  children,
+  className,
+  action,
+  onDismiss,
+  autoDismissMs,
+}: AlertProps) {
   const Icon = ALERT_ICONS[tone]
   const toneClass = {
     info: 'border-border bg-muted/40 text-foreground',
@@ -47,6 +73,17 @@ export function Alert({ tone = 'info', title, children, className, action }: Ale
     warn: 'text-warn',
     error: 'text-down',
   }[tone]
+
+  // The rule, enforced here rather than trusted to every caller: only a tone
+  // that carries good or neutral news can be closed or timed out.
+  const dismissible = onDismiss !== undefined && tone !== 'warn' && tone !== 'error'
+  const timeout = dismissible ? autoDismissMs : undefined
+
+  useEffect(() => {
+    if (timeout === undefined || timeout <= 0 || !onDismiss) return
+    const id = setTimeout(onDismiss, timeout)
+    return () => clearTimeout(id)
+  }, [timeout, onDismiss])
 
   return (
     <div
@@ -64,6 +101,20 @@ export function Alert({ tone = 'info', title, children, className, action }: Ale
         ) : null}
       </div>
       {action}
+      {dismissible ? (
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss this message"
+          className={cn(
+            'text-muted-foreground hover:text-foreground hover:bg-foreground/10',
+            '-my-1 -mr-1 shrink-0 rounded-md p-1 transition-colors',
+            'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+          )}
+        >
+          <XIcon className="size-4" aria-hidden />
+        </button>
+      ) : null}
     </div>
   )
 }

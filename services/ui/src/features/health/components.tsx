@@ -7,7 +7,9 @@ import {
   RadioIcon,
   TriangleAlertIcon,
   WifiIcon,
+  XIcon,
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { Badge } from '@/components/ui/badge'
@@ -36,6 +38,21 @@ const SENSOR_ICONS: Record<SensorKind, typeof WifiIcon> = {
  * because "is this thing actually working" is not a question that belongs on a
  * separate page you have to remember to visit.
  */
+/**
+ * Whether this banner may be dismissed, and it is one condition.
+ *
+ * `absenceIsEvidence` is true exactly when the sensors are healthy and an
+ * empty map therefore means an empty sky. That is the reassurance case, it is
+ * on screen most of the time, and it is the one that becomes furniture -- so
+ * it gets a close control and fades on its own.
+ *
+ * Every other state says some part of the sky is unwatched, and those stay
+ * until they stop being true. Being able to clear "no sensor coverage" would
+ * make an empty map with a dead sensor look like an empty map with a healthy
+ * one, which is the single failure this whole interface is built to refuse.
+ */
+const QUIET_SKY_DISMISS_MS = 20_000
+
 export function SkyStateBanner({
   state,
   className,
@@ -45,6 +62,21 @@ export function SkyStateBanner({
   className?: string
   action?: ReactNode
 }) {
+  // Keyed on the state's KIND, so dismissing "quiet sky" does not also hide
+  // the "coverage degraded" that replaces it a minute later. Any change in
+  // what the banner says brings it back.
+  const [dismissedKind, setDismissedKind] = useState<string | null>(null)
+  const dismissible = state.absenceIsEvidence
+  const dismissed = dismissible && dismissedKind === state.kind
+
+  useEffect(() => {
+    if (!dismissible) return
+    const id = setTimeout(() => setDismissedKind(state.kind), QUIET_SKY_DISMISS_MS)
+    return () => clearTimeout(id)
+  }, [dismissible, state.kind])
+
+  if (dismissed) return null
+
   // Opaque, with severity carried by a left accent bar rather than a wash.
   // This banner sits ON TOP OF THE MAP on the Live route, and a 12-18% tint
   // over satellite imagery left the detail line -- the sentence saying whether
@@ -90,6 +122,20 @@ export function SkyStateBanner({
         <p className="text-foreground/75 mt-0.5 text-xs leading-snug">{state.detail}</p>
       </div>
       {action}
+      {dismissible ? (
+        <button
+          type="button"
+          onClick={() => setDismissedKind(state.kind)}
+          aria-label="Dismiss until the sky state changes"
+          className={cn(
+            'text-muted-foreground hover:text-foreground hover:bg-foreground/10',
+            '-my-1 -mr-1 shrink-0 rounded-md p-1 transition-colors',
+            'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+          )}
+        >
+          <XIcon className="size-4" aria-hidden />
+        </button>
+      ) : null}
     </div>
   )
 }

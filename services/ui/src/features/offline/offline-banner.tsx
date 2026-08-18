@@ -53,35 +53,55 @@ export function OfflineBanner() {
 }
 
 /**
- * "There is a newer build on the unit."
+ * "There is a newer build on the unit" — and, usually, it takes it.
  *
- * Polite rather than assertive, and it never applies itself: reloading takes
- * the map back to its default view and drops the operator's current selection,
- * which is a rude thing to do to somebody mid-observation. See `app-update.ts`
- * for why the new worker waits instead of skipping.
+ * It used to sit here until somebody pressed Reload, which on a console left
+ * open on a wall for days meant running a build from three deploys ago with a
+ * banner nobody had read. The unit deploys itself whenever CI goes green, so
+ * that gap is now the normal case rather than the rare one.
+ *
+ * It still does not apply blindly. `auto-apply.ts` holds the policy and the
+ * reasoning: immediately when the tab is hidden and nobody loses anything,
+ * after a visible countdown when somebody is looking, and not at all while a
+ * sweep or a capture is running -- a reload mid-sweep spends the operator's
+ * ADS-B outage on the console updating itself and loses the measurement it
+ * was paid for. The countdown is the consent, and "Keep this one" is the veto.
  */
 export function AppUpdateBanner() {
-  const { status, apply } = useAppUpdate()
+  const { status, apply, decline, secondsLeft, holdReason } = useAppUpdate()
   if (status === 'idle') return null
 
   const applying = status === 'applying'
+  const counting = secondsLeft !== null && secondsLeft > 0
 
   return (
     <div
       role="status"
       aria-live="polite"
       data-update-status={status}
+      data-seconds-left={secondsLeft ?? undefined}
       className="safe-x border-border bg-card flex items-center gap-3 border-t px-3 py-2 sm:px-4"
     >
       <CloudDownloadIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
       <p className="min-w-0 flex-1 text-xs leading-snug">
         <span className="text-foreground font-semibold">A newer ClassG build is ready.</span>{' '}
         <span className="text-muted-foreground">
-          Reloading takes a moment and returns the map to its default view.
+          {applying
+            ? 'Reloading now.'
+            : counting
+              ? `Updating in ${secondsLeft}s — this returns the map to its default view.`
+              : holdReason
+                ? `Waiting: ${holdReason}.`
+                : 'Reloading takes a moment and returns the map to its default view.'}
         </span>
       </p>
+      {counting ? (
+        <Button variant="ghost" size="sm" onClick={decline}>
+          Keep this one
+        </Button>
+      ) : null}
       <Button variant="outline" size="sm" onClick={apply} disabled={applying}>
-        {applying ? 'Reloading…' : 'Reload'}
+        {applying ? 'Reloading…' : counting ? 'Now' : 'Reload'}
       </Button>
     </div>
   )
