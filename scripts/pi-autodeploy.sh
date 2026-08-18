@@ -33,6 +33,18 @@ GH_REPO="${CLASSG_GH_REPO:-lnorton89/classg}"
 # construction rather than by configuration.
 STATE_DIR="${CLASSG_DEPLOY_STATE:-$REPO_DIR/.agent-state}"
 LOG_TAG="classg-autodeploy"
+
+# rustup installs into ~/.cargo/bin, which is on an interactive shell's PATH via
+# a line in .bashrc and on a systemd unit's PATH via nothing at all. Without
+# this, `cargo build` under the timer fails with "command not found", the SDR
+# sensor step sets DEPLOY_OK=0, and a deploy that was otherwise fine rolls
+# itself back -- reporting a build failure for a compiler it never found.
+CARGO_BIN="${HOME:-$(getent passwd "$(id -u)" | cut -d: -f6)}/.cargo/bin"
+case ":$PATH:" in
+    *":$CARGO_BIN:"*) ;;
+    *) [ -d "$CARGO_BIN" ] && PATH="$CARGO_BIN:$PATH" ;;
+esac
+export PATH
 STATE_JSON="$STATE_DIR/deploy-state.json"
 REQUEST_FILE="$STATE_DIR/deploy-requested"
 
@@ -289,6 +301,27 @@ fi
 
 changed_in() { printf '%s\n' "$CHANGED" | grep -q "^$1"; }
 
+# Is a release binary older than the sources it was built from?
+#
+# Change detection compares the SHA before the merge with the SHA after, which
+# is exactly wrong once somebody has merged by hand on the box: the tree is
+# current, LOCAL == REMOTE, this script reports "up to date", and the release
+# binary is still whatever was built days ago. Not hypothetical -- this unit ran
+# a classg-sensor-sdr that predated the `bands` and `sweep` subcommands for two
+# days while every deploy run called itself current, because the commits that
+# added them arrived through a manual merge rather than through here.
+#
+# Comparing the artefact against its inputs catches that; comparing two SHAs
+# never can. Mtimes are good enough for the question being asked -- a rebuild
+# that was not needed costs minutes, a missed one costs a feature that silently
+# is not there.
+stale_bin() {
+    local bin="$1"
+    shift
+    [ -x "$bin" ] || return 0
+    [ -n "$(find "$@" -newer "$bin" -print -quit 2>/dev/null)" ]
+}
+
 # Submodule pointers, captured before the merge so a moved pointer is
 # detectable afterwards. `git diff --name-only` does list a submodule path when
 # its pointer moves, but not when the submodule is simply uninitialised -- and
@@ -336,8 +369,15 @@ fi
 
 # The Rust sensor. Only when it changed: a release build on a Pi is minutes, and
 # spending them to install a UI change would take ADS-B down for nothing.
-if changed_in "services/sensor-sdr"; then
-    log "rebuilding the SDR sensor (this takes a few minutes on a Pi)"
+SDR_DIR="$REPO_DIR/services/sensor-sdr"
+if changed_in "services/sensor-sdr" ||
+    stale_bin "$SDR_DIR/target/release/classg-sensor-sdr" \
+        "$SDR_DIR/src" "$SDR_DIR/Cargo.toml" "$SDR_DIR/Cargo.lock"; then
+    if changed_in "services/sensor-sdr"; then
+        log "rebuilding the SDR sensor (this takes a few minutes on a Pi)"
+    else
+        log "rebuilding the SDR sensor: the binary is older than its sources"
+    fi
     if (cd services/sensor-sdr && cargo build --release --features rtlsdr 2>&1 | tail -5 | while read -r l; do log "  $l"; done); then
         sudo systemctl restart classg-sensor-sdr.service && log "classg-sensor-sdr restarted"
     else
@@ -358,9 +398,11 @@ fi
 PIDASH_AFTER=$(submodule_sha tools/pi-dash)
 PIDASH_BIN="$REPO_DIR/tools/pi-dash/target/release/pi-dash"
 if [ -d "$REPO_DIR/tools/pi-dash" ] &&
-    { [ "$PIDASH_BEFORE" != "$PIDASH_AFTER" ] || [ ! -x "$PIDASH_BIN" ]; }; then
+    { [ "$PIDASH_BEFORE" != "$PIDASH_AFTER" ] ||
+        stale_bin "$PIDASH_BIN" "$REPO_DIR/tools/pi-dash/src" \
+            "$REPO_DIR/tools/pi-dash/Cargo.toml"; }; then
     if [ "$PIDASH_BEFORE" = "$PIDASH_AFTER" ]; then
-        log "rebuilding pi-dash (no binary present)"
+        log "rebuilding pi-dash (the binary is missing or older than its sources)"
     else
         log "rebuilding pi-dash (${PIDASH_BEFORE:0:8} -> ${PIDASH_AFTER:0:8})"
     fi

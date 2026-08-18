@@ -15,9 +15,12 @@
 # It yields the radio, and that is the part worth understanding. dump1090 owns
 # the dongle on a working unit (ADR-0008) and a sweep cannot share it, so a
 # sweep stops dump1090, measures, and starts it again -- ADS-B is blind for the
-# duration. The web app says so before the button is pressed. dump1090 is
-# restarted in a trap, so it comes back even if the sweep dies, the agent is
-# killed, or the tune fails halfway.
+# duration. The web app says so before the button is pressed.
+#
+# Restoring it is handled in three places because "the sweep ended" has three
+# shapes: the sweep returned, systemd stopped the agent mid-measurement, or the
+# agent was killed outright. Traps cover the first two; the unit's ExecStopPost
+# covers the third, since nothing in this file runs after SIGKILL.
 
 set -uo pipefail
 
@@ -36,6 +39,18 @@ log() {
     printf '%s %s\n' "$(date -Is)" "$*"
     logger -t "$LOG_TAG" -- "$*" 2>/dev/null || true
 }
+
+# One place that knows whether the radio is ours, so restoring it twice is a
+# no-op and restoring it when we never took it does nothing.
+DUMP1090_YIELDED=0
+restore_radio() {
+    [ "$DUMP1090_YIELDED" -eq 1 ] || return 0
+    DUMP1090_YIELDED=0
+    sudo systemctl start "$DUMP1090_UNIT" 2>/dev/null && log "restarted $DUMP1090_UNIT"
+}
+trap 'restore_radio; exit 143' TERM
+trap 'restore_radio; exit 130' INT
+trap 'restore_radio' EXIT
 
 ONESHOT=0
 for arg in "$@"; do
@@ -99,16 +114,15 @@ run_sweep() {
     log "sweep $id requested for band $band"
 
     # Yield the radio. dump1090 owns it on a working unit and a sweep cannot
-    # share it. The trap is what makes this safe: ADS-B comes back even if the
-    # sweep dies, the tune fails, or this agent is killed mid-measurement.
-    local restore=0
+    # share it. The RETURN trap covers the sweep dying or the tune failing
+    # halfway; the signal traps above cover systemd stopping the agent while a
+    # measurement is in flight.
     if systemctl is-active --quiet "$DUMP1090_UNIT" 2>/dev/null; then
         log "stopping $DUMP1090_UNIT for the sweep -- ADS-B is blind until it returns"
         if sudo systemctl stop "$DUMP1090_UNIT" 2>/dev/null; then
-            restore=1
+            DUMP1090_YIELDED=1
             publish_agent_state "sweep $id"
-            # shellcheck disable=SC2064
-            trap "sudo systemctl start '$DUMP1090_UNIT' 2>/dev/null; log 'restarted $DUMP1090_UNIT'" RETURN
+            trap restore_radio RETURN
         else
             write_result "$id" error "could not stop $DUMP1090_UNIT to free the radio"
             return
@@ -131,7 +145,7 @@ run_sweep() {
         log "sweep $id failed: ${err:-status $rc}"
     fi
 
-    [ "$restore" -eq 1 ] && publish_agent_state ""
+    publish_agent_state ""
     return 0
 }
 
