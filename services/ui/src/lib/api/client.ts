@@ -24,6 +24,7 @@ import type {
   SetupRequest,
   UpdateUserRequest,
   UsersResponse,
+  WatchdogStatus,
   Capture,
   CaptureReport,
   CapturesResponse,
@@ -325,6 +326,10 @@ export const api = {
 
   hookDeliveries(): Promise<HookDeliveriesResponse> {
     return request<HookDeliveriesResponse>('/admin/hook-deliveries')
+  },
+
+  watchdog(): Promise<WatchdogStatus> {
+    return request<WatchdogStatus>('/admin/watchdog')
   },
 
   deployment(): Promise<DeploymentStatus> {

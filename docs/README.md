@@ -65,6 +65,7 @@ If you read three documents, read these:
 | [08 — Cloud sessions](ops/08-cloud-tailscale.md) | Reach the Pi over Tailscale from Claude Code on the web |
 | [09 — Deployment](ops/09-deployment.md) | Install, run, and update the stack on a real unit: Compose web tier, systemd sensors |
 | [10 — Continuous deployment](ops/10-continuous-deployment.md) | Deploy `main` automatically when CI is green, and why it is pull-based and opt-in |
+| [11 — Self-healing](ops/11-self-healing.md) | What survives a reboot, and the bounded watchdog that retries what systemd has given up on |
 
 ## Development
 

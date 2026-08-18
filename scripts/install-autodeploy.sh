@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Install the auto-deploy timer on this unit.
+# Install the host-side agents on this unit: the watchdog, and optionally
+# auto-deploy.
 #
 # Deliberately a separate, explicit step rather than something `make deploy`
 # turns on. Automatic deployment to a live detection unit means the unit stops

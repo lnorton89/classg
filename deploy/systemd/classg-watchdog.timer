@@ -1,0 +1,23 @@
+[Unit]
+Description=ClassG: check whether anything needs repairing
+Documentation=https://github.com/lnorton89/classg/blob/main/docs/ops/11-self-healing.md
+
+[Timer]
+# Two minutes after boot, then every two minutes.
+#
+# Soon after boot on purpose: the case this exists for is a USB adapter that
+# enumerates a few seconds late, where the sensor unit spends its five restarts
+# in twenty-five seconds and stays failed. Waiting ten minutes to notice that
+# would mean ten minutes of not detecting anything.
+#
+# Every two minutes is cheap -- the pass is a handful of systemctl calls and one
+# HTTP request when nothing is wrong. The escalating backoff inside the script,
+# not the timer interval, is what stops it hammering a broken unit.
+OnBootSec=2min
+OnUnitActiveSec=2min
+
+# A unit that was powered off runs once on the next boot rather than not at all.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

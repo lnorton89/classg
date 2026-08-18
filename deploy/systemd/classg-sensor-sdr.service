@@ -1,0 +1,39 @@
+[Unit]
+Description=ClassG SDR sensor (ADS-B via dump1090)
+Documentation=file:///home/admin/classg/docs/architecture/adr/0008-adsb-via-dump1090.md
+After=network-online.target dump1090-mutability.service
+Wants=network-online.target
+
+# Wants, not Requires. dump1090 being down is a state this sensor is built to
+# report -- it reconnects with backoff and heartbeats unhealthy while it waits
+# (ADR-0003). Requires= would instead stop this unit whenever dump1090 stopped,
+# which replaces a visible degraded sensor with an absent one.
+Wants=dump1090-mutability.service
+
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+
+# Not root, and not in plugdev either: dump1090 owns the radio (ADR-0008) and
+# this process only reads a TCP socket. A sensor that never touches the device
+# has no business holding permission to.
+User=admin
+WorkingDirectory=/home/admin/classg/services/sensor-sdr
+EnvironmentFile=/home/admin/classg/.env
+
+# The web tier publishes fusion's 5556 on the host and fusion listens there, so
+# both sensors connect outward. Two publishers cannot bind the same endpoint,
+# which is what makes connect the right default rather than a workaround.
+Environment=CLASSG_SDR_SOCKET_MODE=connect
+
+ExecStart=/home/admin/classg/services/sensor-sdr/target/release/classg-sensor-sdr adsb
+
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

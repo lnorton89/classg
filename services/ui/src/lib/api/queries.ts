@@ -25,6 +25,7 @@ export const queryKeys = {
   hookRules: ['admin', 'hooks'] as const,
   hookDeliveries: ['admin', 'hook-deliveries'] as const,
   deployment: ['admin', 'deployment'] as const,
+  watchdog: ['admin', 'watchdog'] as const,
   spectrumBands: ['spectrum', 'bands'] as const,
   spectrumSweeps: ['spectrum', 'sweeps'] as const,
   spectrumSweep: (id: string, bins: number) => ['spectrum', 'sweep', id, bins] as const,
@@ -217,6 +218,21 @@ export const deploymentQuery = () =>
     queryFn: () => api.deployment(),
     staleTime: 5_000,
     refetchInterval: (query) => (query.state.data?.deploy_requested ? 10_000 : 60_000),
+  })
+
+/**
+ * Self-repair state.
+ *
+ * Polled at roughly the watchdog's own cadence. Faster would show the same
+ * answer repeatedly; much slower would mean a unit that has given up on a
+ * sensor sits there looking fine for minutes.
+ */
+export const watchdogQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.watchdog,
+    queryFn: () => api.watchdog(),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
   })
 
 export const usersQuery = () =>

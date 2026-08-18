@@ -234,6 +234,7 @@ func (s *Server) routes() http.Handler {
 	admin("GET "+BasePath+"/admin/deployment", s.handleDeploymentStatus)
 	admin("POST "+BasePath+"/admin/deployment/deploy", s.handleRequestDeploy)
 	admin("DELETE "+BasePath+"/admin/deployment/deploy", s.handleCancelDeploy)
+	admin("GET "+BasePath+"/admin/watchdog", s.handleWatchdogStatus)
 
 	admin("GET "+BasePath+"/admin/sessions", s.handleListSessions)
 	admin("DELETE "+BasePath+"/admin/sessions/{session_id}", s.handleRevokeSession)

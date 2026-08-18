@@ -53,6 +53,11 @@ func (s *Server) handleRequestDeploy(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleWatchdogStatus reports what the self-repair agent has been doing.
+func (s *Server) handleWatchdogStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.deploy.Watchdog())
+}
+
 func (s *Server) handleCancelDeploy(w http.ResponseWriter, r *http.Request) {
 	if !s.deploy.Enabled() {
 		fail(w, apierr.Conflict("this unit has no deploy agent configured"))

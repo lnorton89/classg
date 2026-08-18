@@ -1,4 +1,9 @@
-// Package deploy reports what this unit is running and asks for a deploy.
+// Package deploy reads the state that host-side agents publish, and asks them
+// to do things.
+//
+// Two agents share the mechanism: the deploy agent, which updates what this
+// unit runs, and the watchdog, which tries to keep what is already there
+// running.
 //
 // The constraint that shapes all of it: **the API runs in a container.** It
 // cannot run systemctl on the host, cannot read the host journal, and must not
@@ -170,4 +175,74 @@ func (r Reader) requested() bool {
 	}
 	_, err := os.Stat(filepath.Join(r.Dir, requestFile))
 	return err == nil
+}
+
+// --- watchdog ---------------------------------------------------------------
+
+// WatchdogState is what the self-repair agent last did.
+//
+// Same exchange as the deploy agent, same directory, and for the same reason:
+// the API is containerised and has no business being able to restart host
+// units. It reads what the watchdog wrote and nothing more.
+type WatchdogState struct {
+	LastCheckAt time.Time `json:"last_check_at,omitempty"`
+	// ActionsTaken in the last pass. Zero is the healthy case.
+	ActionsTaken int `json:"actions_taken"`
+	// NeedsHands names anything the watchdog has stopped trying to repair.
+	//
+	// This is the field that matters. A watchdog that retries for ever turns a
+	// dead adapter into a mystery; this one climbs a bounded ladder and then
+	// says so, and that message needs to reach a person.
+	NeedsHands string `json:"needs_hands,omitempty"`
+
+	APIHealthy         bool `json:"api_healthy"`
+	WifiAdapterPresent bool `json:"wifi_adapter_present"`
+	SDRPresent         bool `json:"sdr_present"`
+
+	Log []string `json:"log,omitempty"`
+}
+
+// WatchdogStatus is WatchdogState plus what the API can work out itself.
+type WatchdogStatus struct {
+	Configured bool   `json:"configured"`
+	Reason     string `json:"reason,omitempty"`
+	WatchdogState
+	// StateAgeS is how long since the last pass. The timer runs every two
+	// minutes, so a large value means the watchdog itself is not running --
+	// which is exactly the failure nothing else would notice.
+	StateAgeS *int64 `json:"state_age_s,omitempty"`
+}
+
+const watchdogFile = "watchdog-state.json"
+
+// Watchdog reads the self-repair agent's state.
+func (r Reader) Watchdog() WatchdogStatus {
+	if !r.Enabled() {
+		return WatchdogStatus{
+			Reason: "no state directory is configured (CLASSG_DEPLOY_STATE_DIR)",
+		}
+	}
+
+	raw, err := os.ReadFile(filepath.Join(r.Dir, watchdogFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return WatchdogStatus{
+			Reason: "the watchdog has not run on this unit. Install it with " +
+				"scripts/install-watchdog.sh.",
+		}
+	}
+	if err != nil {
+		return WatchdogStatus{Reason: "cannot read the watchdog state: " + err.Error()}
+	}
+
+	var st WatchdogState
+	if err := json.Unmarshal(raw, &st); err != nil {
+		return WatchdogStatus{Reason: "the watchdog state file is not valid JSON: " + err.Error()}
+	}
+
+	out := WatchdogStatus{Configured: true, WatchdogState: st}
+	if !st.LastCheckAt.IsZero() {
+		age := int64(r.now().Sub(st.LastCheckAt).Seconds())
+		out.StateAgeS = &age
+	}
+	return out
 }

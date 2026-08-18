@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 
 import { AdminUsers } from '@/features/auth/admin-users'
 import { DeploymentPanel } from '@/features/deploy/deployment-panel'
+import { WatchdogPanel } from '@/features/deploy/watchdog-panel'
 import { HooksPanel } from '@/features/hooks/hooks-panel'
 import { useHasRole } from '@/features/auth/use-auth'
 
@@ -33,6 +34,7 @@ function AdminRoute() {
         Who can use this receiver, and who is using it right now.
       </p>
       <div className="space-y-4">
+        <WatchdogPanel />
         <DeploymentPanel />
         <HooksPanel />
         <AdminUsers />

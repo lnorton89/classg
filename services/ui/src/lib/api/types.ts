@@ -706,3 +706,20 @@ export interface DeploymentStatus {
   state_age_s?: number
   log?: string[]
 }
+
+export interface WatchdogStatus {
+  configured: boolean
+  reason?: string
+  last_check_at?: string
+  actions_taken: number
+  /** Anything the watchdog has stopped trying to repair. The field that matters:
+   *  a bounded watchdog's way of telling a person it has given up. */
+  needs_hands?: string
+  api_healthy: boolean
+  wifi_adapter_present: boolean
+  sdr_present: boolean
+  /** Seconds since the last pass. The timer runs every two minutes, so a large
+   *  value means the watchdog itself is not running. */
+  state_age_s?: number
+  log?: string[]
+}

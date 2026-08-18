@@ -1,0 +1,20 @@
+[Unit]
+Description=ClassG: notice a broken stack and try a bounded repair
+Documentation=https://github.com/lnorton89/classg/blob/main/docs/ops/11-self-healing.md
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=admin
+WorkingDirectory=/home/admin/classg
+ExecStart=/home/admin/classg/scripts/classg-watchdog.sh
+
+# Bounded hard. A watchdog that hangs is worse than no watchdog: it stops
+# noticing anything while looking like it is still running.
+TimeoutStartSec=5min
+
+Environment=CLASSG_PI_API=http://127.0.0.1:8081
+
+[Install]
+WantedBy=multi-user.target
