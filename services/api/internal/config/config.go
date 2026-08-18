@@ -143,6 +143,7 @@ type Config struct {
 	RetentionSweeps         time.Duration
 	RetentionHookDeliveries time.Duration
 	HooksAllowPrivate       bool
+	DeployStateDir          string
 	TelemetryInterval       time.Duration
 	RetentionInterval       time.Duration
 
@@ -387,6 +388,7 @@ func Assemble(b *Bootstrap, s *settings.Settings) (*Config, error) {
 		RetentionSweeps:         s.Duration("retention.sweeps"),
 		RetentionHookDeliveries: s.Duration("retention.hook_deliveries"),
 		HooksAllowPrivate:       s.Bool("hooks.allow_private_targets"),
+		DeployStateDir:          s.String("deploy.state_dir"),
 		TelemetryInterval:       s.Duration("telemetry.interval"),
 		RetentionInterval:       s.Duration("retention.interval"),
 

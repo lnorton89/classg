@@ -639,3 +639,164 @@ that never had authentication.
 | `unauthenticated` | 401 | No session, or it expired. Show the login screen. |
 | `forbidden` | 403 | Logged in, wrong role. **Do not** bounce to login — the session is fine. |
 | `setup_required` | 409 | No accounts exist yet. Show the setup screen. |
+
+---
+
+## Hooks
+
+"When X happens, do Y." Admin-only, all of it — a hook is an egress path that
+can send what this box sees to an arbitrary URL or mailbox, so configuring one
+is administration of the machine rather than operation of it.
+
+### `GET /admin/hooks`
+```jsonc
+{ "rules": [ {
+    "rule_id": "01J8…", "name": "Drone confirmed", "enabled": true,
+    "event": "track.confirmed",
+    "min_confidence": 0.7, "only_drones": true,
+    "classes": ["A","B"], "sensor_kinds": ["wifi"],
+    "cooldown_s": 300,
+    "action": "webhook",
+    "config": { "url": "https://…", "authorization": "••••••••" },
+    "last_fired_at": "…", "fire_count": 12
+  } ],
+  "events": [ { "event": "track.confirmed", "description": "…" } ],
+  "smtp_configured": true }
+```
+
+`events` comes from the server so a client does not keep its own copy of the
+closed set and drift from it. `smtp_configured` is there so the UI does not
+offer an email hook on a unit with no mail server and only report the problem
+when an alert fails to arrive.
+
+### Events
+
+| Event | Fires |
+|---|---|
+| `track.confirmed` | A track crossed the confidence threshold. **One alert per aircraft** — this is what most alerting wants. |
+| `track.closed` | A track aged out. |
+| `detection.created` | Every detection. High volume: one aircraft is several a second. |
+| `sensor.unhealthy` · `sensor.recovered` | A sensor's health **changed**. Not every heartbeat. |
+| `capture.completed` · `sweep.completed` | A capture or band sweep finished. |
+
+Events fire on **transitions**, not on every message. A track alerts on
+CONFIRMED rather than on every update; a sensor alerts when `healthy` flips
+rather than on each unhealthy heartbeat — otherwise a dead adapter is six alerts
+a minute for one fault, and a cooldown masking that would mask the recovery too.
+
+### Cooldown
+
+`cooldown_s` suppresses repeats **per rule and per subject** — the track, the
+sensor, the capture. Not per rule.
+
+That distinction is the whole design. One aircraft generates detections several
+times a second; a per-rule cooldown would either flood on the first drone or go
+silent for the second, and going silent for the second is the failure that
+matters. Zero means the default (300s), not "no cooldown" — a rule with no
+cooldown on `detection.created` sends thousands of messages, and nobody means
+that.
+
+Suppressed firings are **recorded**, not dropped silently. "Why did I not get an
+alert" is a question an operator actually asks.
+
+### Actions
+
+`webhook` POSTs JSON. `email` needs `CLASSG_SMTP_*` configured on the unit —
+server credentials are process configuration, not rule configuration, so the
+password is not copied into every rule.
+
+**Webhook targets are checked against SSRF**, by DNS resolution rather than by
+string matching: `localhost`, `127.1`, and a name whose A record is `10.0.0.1`
+are the same problem and only the first two look like it. Redirects are refused
+outright, because a target that 302s to `169.254.169.254` would walk past a
+check performed on the original URL. `hooks.allow_private_targets` opts in for a
+genuinely local target such as Home Assistant.
+
+### Secrets in `config`
+
+Keys named `authorization`, `password`, `token`, `secret`, `bearer_token` or
+`auth_header` are **write-only**. They come back as `"••••••••"` — present, so
+the UI can show that a token is set, never readable.
+
+Send the placeholder back on a `PUT` and it means **unchanged**. Without that
+rule, renaming a hook through the UI would silently overwrite its bearer token
+with bullet characters and the hook would start failing for a reason nobody
+could see.
+
+### `POST /admin/hooks/{rule_id}/test`
+
+Sends one message through the rule immediately, **bypassing the cooldown**, and
+returns the outcome synchronously:
+
+```jsonc
+{ "delivered": false, "response_code": 404, "error": "the target answered 404 Not Found" }
+```
+
+Always `200` — a target that refused the message is a fact about the target, not
+an API failure. The cooldown is bypassed on purpose: a test button that silently
+did nothing because the rule fired ten minutes ago would be worse than no test
+button.
+
+### `GET /admin/hook-deliveries`
+```jsonc
+{ "deliveries": [ {
+    "delivery_id": "…", "rule_name": "Drone confirmed", "event": "track.confirmed",
+    "subject": "01J8…", "status": "delivered",
+    "attempts": 1, "response_code": 200, "created_at": "…", "completed_at": "…"
+  } ],
+  "dropped": 0 }
+```
+
+`status` is `delivered`, `failed`, `pending`, or `suppressed`. `dropped` counts
+events discarded because the dispatch queue was full — surfaced here rather than
+only on `/metrics`, because a silent drop in an alerting system looks exactly
+like nothing happening.
+
+Retries are 2s/4s/8s and bounded. A 4xx is not retried (the target is saying the
+request is wrong; an unchanged retry is noise), except 408 and 429.
+
+**Dispatch never blocks ingest.** Detections arrive off a socket with a
+high-water mark, and a slow webhook must not become backpressure on the thing
+that sees drones.
+
+### Redaction
+
+Hook payloads are built from the **redacted** track, the same value the
+websocket receives. `CLASSG_EXPOSE_OPERATOR_LOCATION=false` strips the operator
+position from a webhook exactly as it does from `/tracks` — a hook is not a door
+around it.
+
+---
+
+## Deployment
+
+`GET|POST|DELETE /admin/deployment[/deploy]` — admin.
+
+**The API cannot deploy anything, by design.** It runs in a container and is
+deliberately given no way to run `systemctl` on the host: handing a web-facing
+process host control would make every bug in this API a host compromise.
+
+So this is a file exchange with the host-side agent
+([docs/ops/10-continuous-deployment.md](../ops/10-continuous-deployment.md)).
+The agent writes its state after every run; the API reads it. `POST .../deploy`
+writes a request marker the agent picks up on its next tick.
+
+```jsonc
+{ "configured": true,
+  "commit": "f30b354…", "commit_subject": "Deploy main to the unit itself…",
+  "last_check_at": "…", "last_result": "up-to-date", "last_reason": "",
+  "remote_commit": "…", "remote_ci": "success",
+  "timer_enabled": true, "update_available": false, "deploy_requested": false,
+  "state_age_s": 214,
+  "log": ["up to date at f30b354d"] }
+```
+
+`state_age_s` matters as much as `timer_enabled`: a large age means the agent is
+not actually running, whatever the flag claims.
+
+`configured: false` with a `reason` is the normal answer on a dev machine or a
+unit that never installed the agent — not an error.
+
+`POST .../deploy` returns `202` and says plainly that it means *queued*, not
+*deploying*: the agent acts within ten minutes and still refuses if CI is not
+green or a measurement is in progress.

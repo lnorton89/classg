@@ -63,3 +63,14 @@ If you read three documents, read these:
 | [07 — External data](ops/07-external-data.md) | Five optional feeds, all off by default, none of them gating detection |
 | [08 — Cloud sessions](ops/08-cloud-tailscale.md) | Reach the Pi over Tailscale from Claude Code on the web |
 | [09 — Deployment](ops/09-deployment.md) | Install, run, and update the stack on a real unit: Compose web tier, systemd sensors |
+| [10 — Continuous deployment](ops/10-continuous-deployment.md) | Deploy `main` automatically when CI is green, and why it is pull-based and opt-in |
+
+## Development
+
+Neither of these was linked from here, which is part of why the rules in them
+kept being rediscovered the hard way.
+
+| Doc | Contents |
+|---|---|
+| [Concurrent agents](dev/concurrent-agents.md) | Why `git add -A` is banned in this repo, and how to recover when it happens anyway |
+| [Dependencies](dev/dependencies.md) | What is pinned, what is deliberately held back and why, and what actually counts as checking a dependency change |

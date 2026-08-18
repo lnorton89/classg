@@ -24,6 +24,7 @@ import (
 	"github.com/classg/api/internal/bus"
 	"github.com/classg/api/internal/capture"
 	"github.com/classg/api/internal/config"
+	"github.com/classg/api/internal/deploy"
 	"github.com/classg/api/internal/health"
 	"github.com/classg/api/internal/hooks"
 	"github.com/classg/api/internal/httpapi"
@@ -268,6 +269,7 @@ func run() error {
 		Spectrum:   sweeps,
 		Auth:       authSvc,
 		Hooks:      hookDispatcher,
+		Deploy:     deploy.Reader{Dir: cfg.DeployStateDir},
 		OIDC:       ssoProvider,
 		Settings:   set,
 		Monitoring: recording,

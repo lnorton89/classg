@@ -92,6 +92,44 @@ group. Note that this is itself root-equivalent on any machine; it is a property
 of the existing setup rather than something auto-deploy introduces, but it is
 worth knowing when deciding whether to enable this at all.
 
+## From the admin page
+
+The web app shows what this unit is running, whether an update is waiting, what
+CI said about it, and the tail of the last agent run — under **Admin →
+Deployment**. There is a button to request a deploy.
+
+**The API cannot deploy anything, and is deliberately not able to.** It runs in
+a container; giving a web-facing process a way to run `systemctl` on the host
+would make every bug in this API a host compromise. So the two talk through
+files in a shared directory:
+
+- the agent writes `deploy-state.json` after every run;
+- the API reads it, and writes `deploy-requested` when someone presses the
+  button;
+- the agent consumes that marker on its next tick and deletes it.
+
+The cost is honest latency: **"Deploy now" means "at the next check"**, up to
+ten minutes, and the UI says so rather than showing a spinner that implies
+otherwise. A requested deploy is still refused if CI is not green or a
+measurement is in progress — the button raises a hand, it does not override the
+gates.
+
+Point both sides at the same directory:
+
+```bash
+# the agent (systemd unit environment, or your shell)
+CLASSG_DEPLOY_STATE=/var/lib/classg/deploy
+
+# the API — bind-mount it into the container in docker/compose.yaml
+CLASSG_DEPLOY_STATE_DIR=/var/lib/classg/deploy
+```
+
+Without it, the panel reports "not configured" and says what to do, which is the
+normal state on a dev machine.
+
+`state_age_s` in the response is worth more than `timer_enabled`: a large age
+means the agent is not actually running, whatever the flag claims.
+
 ## Watching it
 
 ```bash

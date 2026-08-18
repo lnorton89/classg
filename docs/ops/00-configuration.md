@@ -22,6 +22,24 @@ database because they are what makes it reachable.
 | `CLASSG_CONFIG_SEED` | path to the seed file |
 | **`CLASSG_TURSO_URL`** | **secret** — omit for a purely local database |
 | **`CLASSG_TURSO_AUTH_TOKEN`** | **secret** |
+| `CLASSG_AUTH_MODE` | `required` (default) or `off` |
+| `CLASSG_SESSION_TTL` | sliding session lifetime, default `12h` |
+| `CLASSG_OIDC_ISSUER` | SSO discovery root — all four OIDC variables together or none |
+| `CLASSG_OIDC_CLIENT_ID` | |
+| **`CLASSG_OIDC_CLIENT_SECRET`** | **secret** |
+| `CLASSG_OIDC_REDIRECT_URL` | must match what is registered at the provider |
+| `CLASSG_OIDC_AUTO_PROVISION` | create an account on first SSO login, default `false` |
+| `CLASSG_OIDC_ROLE` | role for auto-provisioned accounts — `viewer` or `operator`, never `admin` |
+| `CLASSG_SMTP_HOST` | mail server for email hooks |
+| `CLASSG_SMTP_PORT` | default 587, or 465 with `CLASSG_SMTP_TLS=true` |
+| `CLASSG_SMTP_USERNAME` | |
+| **`CLASSG_SMTP_PASSWORD`** | **secret** |
+| `CLASSG_SMTP_FROM` | envelope sender; required when `CLASSG_SMTP_HOST` is set |
+
+**Authentication and SMTP are Tier 1 rather than Tier 2, and that is not an
+oversight.** A password in the settings table would be readable by anything that
+can read `/config/settings`, and a unit whose auth mode is editable through its
+own web UI can be switched off by whoever already got in.
 
 ## Tier 2 — the database: everything else
 
@@ -198,3 +216,13 @@ instead of reporting a false success.
   that is fitted: once a sensor has heartbeated, going quiet degrades health
   whether it was declared optional or not.
 - Keep the ZMQ endpoints bound to loopback or a trusted private network.
+- **Leave `CLASSG_AUTH_MODE` at `required`.** On first start the unit has no
+  accounts and serves only the setup screen until you create the first
+  administrator; there is no default password. `off` exists for a bench unit and
+  is logged loudly, reported by `/system`, and bannered in the web app.
+- **Leave `hooks.allow_private_targets` off** unless a webhook target genuinely
+  is on the LAN. With it on, a hook can reach this API on loopback and any host
+  on the local network — including a cloud metadata service at 169.254.169.254.
+- If you configure SSO, keep `CLASSG_OIDC_AUTO_PROVISION` off unless the
+  provider only issues tokens to people who should have access. With it on,
+  "SSO configured" means "anyone your IdP will authenticate is a user here".

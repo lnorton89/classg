@@ -17,6 +17,7 @@ import (
 	"github.com/classg/api/internal/auth"
 	"github.com/classg/api/internal/capture"
 	"github.com/classg/api/internal/config"
+	"github.com/classg/api/internal/deploy"
 	"github.com/classg/api/internal/health"
 	"github.com/classg/api/internal/hooks"
 	"github.com/classg/api/internal/hub"
@@ -46,6 +47,7 @@ type Server struct {
 	auth       *auth.Service
 	oidc       *oidcauth.Provider
 	hooks      *hooks.Dispatcher
+	deploy     deploy.Reader
 	sensors    Sensors
 	started    time.Time
 	settings   *settings.Settings
@@ -72,7 +74,10 @@ type Options struct {
 	OIDC *oidcauth.Provider
 	// Hooks may be nil; the endpoints then report the dispatcher as not
 	// running rather than panicking.
-	Hooks   *hooks.Dispatcher
+	Hooks *hooks.Dispatcher
+	// Deploy reads the host-side deploy agent's state. Zero value means this
+	// unit has no agent, which is reported rather than hidden.
+	Deploy  deploy.Reader
 	Sensors Sensors
 	// Started must come from time.Now() and keep its monotonic reading. Passing
 	// a value that has been through .UTC(), .Round(0) or a parse makes uptime
@@ -94,6 +99,7 @@ func New(opts Options) *Server {
 		auth:       opts.Auth,
 		oidc:       opts.OIDC,
 		hooks:      opts.Hooks,
+		deploy:     opts.Deploy,
 		sensors:    opts.Sensors,
 		started:    opts.Started,
 	}
@@ -221,6 +227,13 @@ func (s *Server) routes() http.Handler {
 	admin("DELETE "+BasePath+"/admin/hooks/{rule_id}", s.handleDeleteHookRule)
 	admin("POST "+BasePath+"/admin/hooks/{rule_id}/test", s.handleTestHookRule)
 	admin("GET "+BasePath+"/admin/hook-deliveries", s.handleListHookDeliveries)
+
+	// Deployment. Read is admin rather than viewer: the log can name branches,
+	// commit subjects and failure reasons, which is more about the operator's
+	// infrastructure than about the airspace.
+	admin("GET "+BasePath+"/admin/deployment", s.handleDeploymentStatus)
+	admin("POST "+BasePath+"/admin/deployment/deploy", s.handleRequestDeploy)
+	admin("DELETE "+BasePath+"/admin/deployment/deploy", s.handleCancelDeploy)
 
 	admin("GET "+BasePath+"/admin/sessions", s.handleListSessions)
 	admin("DELETE "+BasePath+"/admin/sessions/{session_id}", s.handleRevokeSession)

@@ -217,6 +217,15 @@ var Defs = []Def{
 			"steps, so this is minutes -- but it is bounded, because a wedged USB device " +
 			"blocks a read forever rather than failing"},
 
+	// --- Deployment
+	//
+	// A directory shared with the host-side deploy agent. The API reads its
+	// state file and writes a request marker; it deliberately has no way to run
+	// a deploy itself. See internal/deploy.
+	{Key: "deploy.state_dir", Env: "CLASSG_DEPLOY_STATE_DIR", Kind: KindString,
+		Default: "", Doc: "directory shared with the host deploy agent; empty disables " +
+			"deployment status and control"},
+
 	// --- Hooks
 	//
 	// SMTP credentials are NOT here -- they are Tier 1 (config.Bootstrap),

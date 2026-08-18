@@ -30,6 +30,8 @@ API="${CLASSG_PI_API:-http://127.0.0.1:8081}"
 GH_REPO="${CLASSG_GH_REPO:-lnorton89/classg}"
 STATE_DIR="${CLASSG_DEPLOY_STATE:-$HOME/.local/state/classg}"
 LOG_TAG="classg-autodeploy"
+STATE_JSON="$STATE_DIR/deploy-state.json"
+REQUEST_FILE="$STATE_DIR/deploy-requested"
 
 DRY_RUN=0
 FORCE=0
@@ -50,8 +52,78 @@ for arg in "$@"; do
     esac
 done
 
-log() { printf '%s %s\n' "$(date -Is)" "$*"; logger -t "$LOG_TAG" -- "$*" 2>/dev/null || true; }
-die() { log "FAILED: $*"; exit 1; }
+# RUN_LOG accumulates the tail the admin page shows. The API cannot read the
+# host journal from inside its container, so the log has to come to it.
+RUN_LOG=""
+log() {
+    printf '%s %s\n' "$(date -Is)" "$*"
+    logger -t "$LOG_TAG" -- "$*" 2>/dev/null || true
+    RUN_LOG="$RUN_LOG$*"$'\n'
+}
+die() { log "FAILED: $*"; write_state "failed" "$*"; exit 1; }
+
+# json_escape handles one line. Enough for what this writes -- log lines, commit
+# subjects, reasons -- and deliberately not a general escaper: backslash, quote,
+# and the control characters that actually turn up.
+json_escape() {
+    printf '%s' "$1" | tr -d '\r' | tr '\t' ' ' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
+
+# json_log_array renders RUN_LOG as a JSON array, one element per line.
+#
+# Built with a loop rather than a sed pipeline. The pipeline version produced
+# [""] on a real run, which is the kind of bug that only shows up once the thing
+# is deployed and someone is looking at an empty log wondering what happened.
+json_log_array() {
+    local first=1 line
+    printf '['
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        [ "$first" -eq 0 ] && printf ', '
+        printf '"%s"' "$(json_escape "$line")"
+        first=0
+    done <<< "$(printf '%s' "$RUN_LOG" | tail -40)"
+    printf ']'
+}
+
+# write_state publishes what just happened, for GET /admin/deployment.
+#
+# Written to a temp file and renamed, so the API never reads a half-written
+# document. rename(2) within a directory is atomic; a plain redirect is not.
+write_state() {
+    local result="$1" reason="${2:-}"
+    local head remote subject commit_at timer_enabled ci
+    head=$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || echo "")
+    remote=$(git -C "$REPO_DIR" rev-parse "origin/$BRANCH" 2>/dev/null || echo "")
+    subject=$(git -C "$REPO_DIR" log -1 --pretty=%s 2>/dev/null || echo "")
+    commit_at=$(git -C "$REPO_DIR" log -1 --pretty=%cI 2>/dev/null || echo "")
+    ci="${REMOTE_CI:-unknown}"
+    if systemctl is-enabled --quiet classg-autodeploy.timer 2>/dev/null; then
+        timer_enabled=true
+    else
+        timer_enabled=false
+    fi
+
+    mkdir -p "$STATE_DIR"
+    {
+        printf '{\n'
+        printf '  "commit": "%s",\n' "$head"
+        printf '  "commit_subject": "%s",\n' "$(json_escape "$subject")"
+        [ -n "$commit_at" ] && printf '  "commit_at": "%s",\n' "$commit_at"
+        printf '  "last_check_at": "%s",\n' "$(date -Iseconds -u | sed 's/+00:00/Z/')"
+        printf '  "last_result": "%s",\n' "$result"
+        printf '  "last_reason": "%s",\n' "$(json_escape "$reason")"
+        [ -n "${DEPLOY_AT:-}" ] && printf '  "last_deploy_at": "%s",\n' "$DEPLOY_AT"
+        [ -n "${DEPLOY_COMMIT:-}" ] && printf '  "last_deploy_commit": "%s",\n' "$DEPLOY_COMMIT"
+        printf '  "last_deploy_ok": %s,\n' "${DEPLOY_OK_JSON:-false}"
+        printf '  "remote_commit": "%s",\n' "$remote"
+        printf '  "remote_ci": "%s",\n' "$ci"
+        printf '  "timer_enabled": %s,\n' "$timer_enabled"
+        printf '  "log": %s\n' "$(json_log_array)"
+        printf '}\n'
+    } > "$STATE_JSON.tmp" 2>/dev/null
+    mv -f "$STATE_JSON.tmp" "$STATE_JSON" 2>/dev/null || true
+}
 
 mkdir -p "$STATE_DIR"
 
@@ -77,8 +149,18 @@ git fetch --quiet origin "$BRANCH" || die "git fetch failed"
 LOCAL=$(git rev-parse HEAD)
 REMOTE=$(git rev-parse "origin/$BRANCH")
 
+# A deploy requested from the admin page. The API cannot run anything on this
+# host -- it writes this marker and we pick it up. Consumed here whatever
+# happens next, so a request that is refused does not retry forever.
+if [ -f "$REQUEST_FILE" ]; then
+    log "a deploy was requested from the admin page: $(tr '\n' ' ' < "$REQUEST_FILE")"
+    rm -f "$REQUEST_FILE"
+    FORCE=1
+fi
+
 if [ "$LOCAL" = "$REMOTE" ] && [ "$FORCE" -eq 0 ]; then
     log "up to date at ${LOCAL:0:8}"
+    write_state "up-to-date" ""
     exit 0
 fi
 
@@ -89,6 +171,7 @@ DIRTY=$(git status --porcelain --untracked-files=no)
 if [ -n "$DIRTY" ]; then
     log "refusing to deploy: $REPO_DIR has uncommitted changes"
     printf '%s\n' "$DIRTY" | while read -r line; do log "  $line"; done
+    write_state "blocked" "the working tree has uncommitted changes"
     exit 1
 fi
 
@@ -105,37 +188,47 @@ else
         -H 'Accept: application/vnd.github+json' \
         "https://api.github.com/repos/$GH_REPO/commits/$REMOTE/check-runs" 2>/dev/null)
 
+    REMOTE_CI="unknown"
     if [ -z "$STATUS_JSON" ]; then
         # Unreachable GitHub is not a reason to deploy blind. The unit keeps
         # running what it has, which is a commit that was green when it landed.
         log "could not reach the GitHub API; leaving this unit on ${LOCAL:0:8}"
+        write_state "blocked" "the GitHub API is unreachable, so CI could not be checked"
         exit 0
     fi
 
     TOTAL=$(printf '%s' "$STATUS_JSON" | grep -o '"total_count"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$')
     TOTAL=${TOTAL:-0}
     if [ "$TOTAL" -eq 0 ]; then
+        REMOTE_CI="pending"
         log "no CI runs recorded for ${REMOTE:0:8} yet; will look again next time"
+        write_state "blocked" "no CI runs recorded for this commit yet"
         exit 0
     fi
 
     # Any run still going means "not yet", not "fine".
     if printf '%s' "$STATUS_JSON" | grep -q '"status"[[:space:]]*:[[:space:]]*"\(queued\|in_progress\)"'; then
+        REMOTE_CI="pending"
         log "CI is still running for ${REMOTE:0:8}; will look again next time"
+        write_state "blocked" "CI is still running for this commit"
         exit 0
     fi
     # Any conclusion that is not success blocks. Listing them explicitly rather
     # than negating "success" means a conclusion GitHub adds later fails closed.
     if printf '%s' "$STATUS_JSON" | grep -q '"conclusion"[[:space:]]*:[[:space:]]*"\(failure\|cancelled\|timed_out\|action_required\|stale\)"'; then
+        REMOTE_CI="failure"
         log "CI is not green for ${REMOTE:0:8}; leaving this unit on ${LOCAL:0:8}"
+        write_state "blocked" "CI is not green for this commit"
         exit 0
     fi
+    REMOTE_CI="success"
     log "CI is green for ${REMOTE:0:8}"
 fi
 
 BUSY=$(busy_reason)
 if [ -n "$BUSY" ]; then
     log "postponing: $BUSY -- a restart mid-measurement throws away the measurement"
+    write_state "blocked" "$BUSY"
     exit 0
 fi
 
@@ -204,9 +297,14 @@ for _ in $(seq 1 30); do
     sleep 2
 done
 
+DEPLOY_AT=$(date -Iseconds -u | sed 's/+00:00/Z/')
+DEPLOY_COMMIT="$REMOTE"
+
 if [ "$HEALTHY" -eq 1 ] && [ "$DEPLOY_OK" -eq 1 ]; then
     log "deployed ${REMOTE:0:8} and the API is answering"
     echo "$REMOTE" > "$STATE_DIR/last-good-sha"
+    DEPLOY_OK_JSON=true
+    write_state "deployed" ""
     exit 0
 fi
 
@@ -221,4 +319,6 @@ if changed_in "services/api" || changed_in "services/fusion" || changed_in "serv
     (cd docker && docker compose up -d --build 2>&1 | tail -5 | while read -r l; do log "  rollback: $l"; done)
 fi
 log "rolled back. This unit stays on ${LOCAL:0:8} until someone looks at ${REMOTE:0:8}."
+DEPLOY_OK_JSON=false
+write_state "failed" "the unit did not come back healthy; rolled back"
 exit 1
