@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/graphql-go/graphql"
 
@@ -378,6 +379,10 @@ func (s *sweepSource) binsError() error {
 	return fmt.Errorf("reading the measurement failed: %w", s.err)
 }
 
+// defaultTelemetryWindow matches the REST handler's, so the two answer the
+// same question when neither is given a bound.
+const defaultTelemetryWindow = 6 * time.Hour
+
 func (r *resolvers) telemetry(p graphql.ResolveParams) (any, error) {
 	q := store.TelemetryQuery{}
 	var err error
@@ -386,6 +391,22 @@ func (r *resolvers) telemetry(p graphql.ResolveParams) (any, error) {
 	}
 	if q.Until, err = timeArg(p.Args, "until"); err != nil {
 		return nil, fmt.Errorf("until: %w", err)
+	}
+
+	// Both bounds are INCLUSIVE and the store compares against them literally,
+	// so an unset Until is the year 1 and filters out every sample ever
+	// recorded. Sending zero values straight through made this query return an
+	// empty list always, which reads exactly like a unit that has recorded no
+	// telemetry. The REST handler has always defaulted these; this now does
+	// too, to the same window.
+	if q.Until.IsZero() {
+		q.Until = time.Now().UTC()
+	}
+	if q.Since.IsZero() {
+		q.Since = q.Until.Add(-defaultTelemetryWindow)
+	}
+	if q.Since.After(q.Until) {
+		return nil, errors.New("since must be before until")
 	}
 	if q.Limit, err = limitArg(p.Args, store.DefaultLimit); err != nil {
 		return nil, err

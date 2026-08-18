@@ -3,6 +3,9 @@ package graphqlapi
 import (
 	"github.com/graphql-go/graphql"
 	"github.com/graphql-go/graphql/language/ast"
+
+	"github.com/classg/api/internal/model"
+	"github.com/classg/api/internal/store"
 )
 
 // Health, system, sensors, captures and spectrum, as GraphQL types.
@@ -58,17 +61,63 @@ var healthType = graphql.NewObject(graphql.ObjectConfig{
 // sensorRecordType is the stored last-known state, which outlives a restart.
 // healthSensorType is the live view; the two differ and conflating them would
 // make "healthy" mean two things.
+//
+// Every field here has an EXPLICIT resolver, unlike the schemas/ domain types
+// which are read through their json tags. store.SensorRecord has no json tags
+// -- it is a persistence type, not a wire type, and it should not grow them to
+// suit a query language. Leaving it to the default resolver is what shipped:
+// it matched neither the Go field name nor a tag, returned nil for every
+// field, and because sensor_id is non-null that nulled the ENTIRE response.
+// One untagged struct took out the whole query, and it reached the unit
+// because the test harness had no sensors registered, so `sensors` returned an
+// empty list and passed.
 var sensorRecordType = graphql.NewObject(graphql.ObjectConfig{
 	Name: "SensorRecord",
 	Fields: graphql.Fields{
-		"sensor_id":      &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-		"sensor_kind":    &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-		"last_heartbeat": &graphql.Field{Type: graphql.DateTime},
-		"healthy":        &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)},
-		"reason":         &graphql.Field{Type: graphql.String},
-		"detail":         &graphql.Field{Type: jsonScalar},
+		"sensor_id": &graphql.Field{
+			Type:    graphql.NewNonNull(graphql.String),
+			Resolve: sensorField(func(r store.SensorRecord) any { return r.SensorID }),
+		},
+		"sensor_kind": &graphql.Field{
+			Type:    graphql.NewNonNull(graphql.String),
+			Resolve: sensorField(func(r store.SensorRecord) any { return r.SensorKind }),
+		},
+		"last_heartbeat": &graphql.Field{
+			Type: graphql.DateTime,
+			Resolve: sensorField(func(r store.SensorRecord) any {
+				// Zero means "never reported", which is a different fact from
+				// "reported in year 1" -- the same trap Go's omitempty set for
+				// the deploy timestamps.
+				if r.LastHeartbeat.IsZero() {
+					return nil
+				}
+				return r.LastHeartbeat
+			}),
+		},
+		"healthy": &graphql.Field{
+			Type:    graphql.NewNonNull(graphql.Boolean),
+			Resolve: sensorField(func(r store.SensorRecord) any { return r.Healthy }),
+		},
+		"reason": &graphql.Field{
+			Type:    graphql.String,
+			Resolve: sensorField(func(r store.SensorRecord) any { return r.Reason }),
+		},
+		"detail": &graphql.Field{
+			Type:    jsonScalar,
+			Resolve: sensorField(func(r store.SensorRecord) any { return r.Detail }),
+		},
 	},
 })
+
+func sensorField(pick func(store.SensorRecord) any) graphql.FieldResolveFn {
+	return func(p graphql.ResolveParams) (any, error) {
+		rec, ok := p.Source.(store.SensorRecord)
+		if !ok {
+			return nil, nil
+		}
+		return pick(rec), nil
+	}
+}
 
 var buildType = graphql.NewObject(graphql.ObjectConfig{
 	Name: "Build",
@@ -189,23 +238,97 @@ var bandsType = graphql.NewObject(graphql.ObjectConfig{
 // Every dBFS field is nullable. A missing noise floor is not a floor of
 // 0 dBFS -- that reads as a full-scale signal across the whole band, which is
 // the most alarming possible way to render "we did not measure".
+//
+// Explicit resolvers, and here the reason is a second shape of the same trap
+// that caught SensorRecord. These fields are shared by two types: Sweep, whose
+// source is a model.SpectrumSweep, and SweepDetail, whose source is a
+// *sweepSource that EMBEDS one. The default resolver does not descend into an
+// embedded struct -- it walks the top-level fields, finds an anonymous
+// SpectrumSweep with no tag, matches nothing, and returns nil. Every scalar on
+// SweepDetail was null, and because sweep_id is non-null that nulled the whole
+// response. sweepField takes both shapes, so neither can drift.
 var sweepFields = graphql.Fields{
-	"sweep_id":         &graphql.Field{Type: graphql.NewNonNull(graphql.ID)},
-	"band":             &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-	"state":            &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
-	"started_at":       &graphql.Field{Type: graphql.NewNonNull(graphql.DateTime)},
-	"ended_at":         &graphql.Field{Type: graphql.DateTime},
-	"class":            &graphql.Field{Type: graphql.String},
-	"note":             &graphql.Field{Type: graphql.String},
-	"start_hz":         &graphql.Field{Type: hzScalar},
-	"stop_hz":          &graphql.Field{Type: hzScalar},
-	"steps":            &graphql.Field{Type: graphql.Int},
-	"noise_floor_dbfs": &graphql.Field{Type: graphql.Float},
-	"threshold_dbfs":   &graphql.Field{Type: graphql.Float},
-	"peak_dbfs":        &graphql.Field{Type: graphql.Float},
-	"peak_hz":          &graphql.Field{Type: graphql.Float},
-	"short_reads":      &graphql.Field{Type: graphql.Int},
-	"error":            &graphql.Field{Type: graphql.String},
+	"sweep_id": &graphql.Field{
+		Type:    graphql.NewNonNull(graphql.ID),
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.SweepID }),
+	},
+	"band": &graphql.Field{
+		Type:    graphql.NewNonNull(graphql.String),
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.Band }),
+	},
+	"state": &graphql.Field{
+		Type:    graphql.NewNonNull(graphql.String),
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.State }),
+	},
+	"started_at": &graphql.Field{
+		Type:    graphql.NewNonNull(graphql.DateTime),
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.StartedAt }),
+	},
+	"ended_at": &graphql.Field{
+		Type:    graphql.DateTime,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.EndedAt }),
+	},
+	"class": &graphql.Field{
+		Type:    graphql.String,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.Class }),
+	},
+	"note": &graphql.Field{
+		Type:    graphql.String,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.Note }),
+	},
+	"start_hz": &graphql.Field{
+		Type:    hzScalar,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.StartHz }),
+	},
+	"stop_hz": &graphql.Field{
+		Type:    hzScalar,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.StopHz }),
+	},
+	"steps": &graphql.Field{
+		Type:    graphql.Int,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.Steps }),
+	},
+	"noise_floor_dbfs": &graphql.Field{
+		Type:    graphql.Float,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.NoiseFloorDBFS }),
+	},
+	"threshold_dbfs": &graphql.Field{
+		Type:    graphql.Float,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.ThresholdDBFS }),
+	},
+	"peak_dbfs": &graphql.Field{
+		Type:    graphql.Float,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.PeakDBFS }),
+	},
+	"peak_hz": &graphql.Field{
+		Type:    graphql.Float,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.PeakHz }),
+	},
+	"short_reads": &graphql.Field{
+		Type:    graphql.Int,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.ShortReads }),
+	},
+	"error": &graphql.Field{
+		Type:    graphql.String,
+		Resolve: sweepField(func(s model.SpectrumSweep) any { return s.Error }),
+	},
+}
+
+// sweepField reads a field from either shape the sweep types are resolved
+// against: the record on its own, or the record with its measurement.
+func sweepField(pick func(model.SpectrumSweep) any) graphql.FieldResolveFn {
+	return func(p graphql.ResolveParams) (any, error) {
+		switch src := p.Source.(type) {
+		case model.SpectrumSweep:
+			return pick(src), nil
+		case *sweepSource:
+			if src == nil {
+				return nil, nil
+			}
+			return pick(src.SpectrumSweep), nil
+		}
+		return nil, nil
+	}
 }
 
 var sweepType = graphql.NewObject(graphql.ObjectConfig{
@@ -253,21 +376,52 @@ var telemetrySensorType = graphql.NewObject(graphql.ObjectConfig{
 	},
 })
 
+// Explicit resolvers for the same reason as SensorRecord: store.TelemetrySample
+// carries no json tags.
 var telemetrySampleType = graphql.NewObject(graphql.ObjectConfig{
 	Name:        "TelemetrySample",
 	Description: "One moment of host and sensor state. Unreadable figures are null, so a chart draws a gap rather than a cold Pi.",
 	Fields: graphql.Fields{
-		"ts":               &graphql.Field{Type: graphql.NewNonNull(graphql.DateTime)},
-		"cpu_temp_c":       &graphql.Field{Type: graphql.Float},
-		"load1":            &graphql.Field{Type: graphql.Float},
-		"mem_available_kb": &graphql.Field{Type: hzScalar},
-		"disk_free_bytes":  &graphql.Field{Type: hzScalar},
-		"uptime_s":         &graphql.Field{Type: hzScalar},
+		"ts": &graphql.Field{
+			Type:    graphql.NewNonNull(graphql.DateTime),
+			Resolve: telemetryField(func(s store.TelemetrySample) any { return s.TS }),
+		},
+		"cpu_temp_c": &graphql.Field{
+			Type:    graphql.Float,
+			Resolve: telemetryField(func(s store.TelemetrySample) any { return s.CPUTempC }),
+		},
+		"load1": &graphql.Field{
+			Type:    graphql.Float,
+			Resolve: telemetryField(func(s store.TelemetrySample) any { return s.Load1 }),
+		},
+		"mem_available_kb": &graphql.Field{
+			Type:    hzScalar,
+			Resolve: telemetryField(func(s store.TelemetrySample) any { return s.MemAvailableKB }),
+		},
+		"disk_free_bytes": &graphql.Field{
+			Type:    hzScalar,
+			Resolve: telemetryField(func(s store.TelemetrySample) any { return s.DiskFreeBytes }),
+		},
+		"uptime_s": &graphql.Field{
+			Type:    hzScalar,
+			Resolve: telemetryField(func(s store.TelemetrySample) any { return s.UptimeS }),
+		},
 		"sensors": &graphql.Field{
-			Type: graphql.NewList(graphql.NewNonNull(telemetrySensorType)),
+			Type:    graphql.NewList(graphql.NewNonNull(telemetrySensorType)),
+			Resolve: telemetryField(func(s store.TelemetrySample) any { return s.Sensors }),
 		},
 	},
 })
+
+func telemetryField(pick func(store.TelemetrySample) any) graphql.FieldResolveFn {
+	return func(p graphql.ResolveParams) (any, error) {
+		sample, ok := p.Source.(store.TelemetrySample)
+		if !ok {
+			return nil, nil
+		}
+		return pick(sample), nil
+	}
+}
 
 func init() {
 	sweepDetailType.AddFieldConfig("trace", &graphql.Field{
