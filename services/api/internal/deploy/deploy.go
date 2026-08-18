@@ -104,7 +104,13 @@ type State struct {
 // made of it.
 type Artefact struct {
 	Name string `json:"name"`
-	// State is one of: current, rebuilt, failed, absent.
+	// State is one of: current, behind, rebuilt, failed, absent.
+	//
+	// "behind" describes the PIN rather than the build, and only a submodule
+	// can be in it: the binary is current for the commit it is pinned to,
+	// while upstream has moved past that commit. Both readings are true, and
+	// collapsing them into "current" is how pi-dash reported itself up to date
+	// on a unit that had never seen days of upstream work.
 	State string `json:"state"`
 }
 

@@ -1,0 +1,125 @@
+# Follow pi-dash upstream, through the CI gate rather than around it.
+#
+# A submodule is a pin, not a subscription. `tools/pi-dash` points at one exact
+# commit and never moves on its own, so work pushed to the pi-dash repository
+# sat there while the unit kept happily rebuilding the pinned version and
+# reporting itself current -- which it was. The gap was between "current for
+# the pin" and "current with upstream", and nothing said which one was meant.
+#
+# This closes it by moving the pin here, on a schedule, as an ordinary commit.
+# That matters more than the convenience: the unit deploys a commit only when
+# CI concluded success for that exact SHA (docs/ops/10-continuous-deployment.md).
+# Letting the Pi track upstream directly would have been fewer moving parts and
+# would have thrown that away -- the unit would run code that never passed a
+# gate, and it would fight the agent's own `submodule update`, which exists to
+# force the checkout back to the pin.
+#
+# What CI does NOT do is build pi-dash. There is no job for it, so a bump whose
+# code does not compile still goes green here. That is survivable by design: on
+# the unit the build failure is non-fatal and logged, because rolling back a
+# working detector over a dashboard is the wrong trade. The bump is visible in
+# the log either way.
+name: Bump pi-dash
+
+on:
+  schedule:
+    # 07:00 UTC daily. Not on push: this only needs to notice that another
+    # repository moved, and doing that per-push would be a commit storm.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+# The only workflow here that writes. Everything else is contents: read.
+permissions:
+  contents: write
+
+concurrency:
+  group: bump-pi-dash
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Bump pi-dash
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          # The default token cannot push in a way that triggers other
+          # workflows. That is the point here -- CI must run on the resulting
+          # commit, or the unit will refuse to deploy it for want of a run.
+          # A PAT in BUMP_TOKEN gets that; without one the bump still lands and
+          # CI is picked up by the next push or a manual run.
+          token: ${{ secrets.BUMP_TOKEN || github.token }}
+
+      - name: Move the pin to upstream main
+        id: bump
+        run: |
+          set -euo pipefail
+          before=$(git rev-parse HEAD:tools/pi-dash)
+          git submodule update --remote tools/pi-dash
+          after=$(git -C tools/pi-dash rev-parse HEAD)
+
+          echo "before=$before" >> "$GITHUB_OUTPUT"
+          echo "after=$after"   >> "$GITHUB_OUTPUT"
+
+          if [ "$before" = "$after" ]; then
+            echo "moved=false" >> "$GITHUB_OUTPUT"
+            echo "pi-dash is already at ${before:0:8}; nothing to do"
+            exit 0
+          fi
+          echo "moved=true" >> "$GITHUB_OUTPUT"
+
+          # The subject of the commit being adopted, so the bump says what it
+          # is bringing in rather than only which hash.
+          # Stripped of anything that would break the key=value format of
+          # GITHUB_OUTPUT. %s is a single line already; this is belt.
+          subject=$(git -C tools/pi-dash log -1 --pretty=%s | tr -d '\r\n')
+          echo "subject=$subject" >> "$GITHUB_OUTPUT"
+          echo "count=$(git -C tools/pi-dash rev-list --count "$before..$after" 2>/dev/null || echo '?')" \
+            >> "$GITHUB_OUTPUT"
+
+      - name: Commit the new pin
+        if: steps.bump.outputs.moved == 'true'
+        # Through the environment, never interpolated into the script body.
+        # `${{ }}` is substituted before the shell ever sees the line, so a
+        # commit subject upstream containing a quote or $(...) would run as
+        # code here -- on the one workflow in this repo that can write to the
+        # default branch. It is our own repository today; it is a habit worth
+        # not breaking.
+        env:
+          BUMP_AFTER: ${{ steps.bump.outputs.after }}
+          BUMP_COUNT: ${{ steps.bump.outputs.count }}
+          BUMP_SUBJECT: ${{ steps.bump.outputs.subject }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Separate -m flags rather than a heredoc: this block is indented
+          # inside the YAML, so a heredoc terminator would carry that
+          # indentation and never close. git joins each -m as its own
+          # paragraph.
+          #
+          # An explicit pathspec, never `git add -A`: this workflow has write
+          # access to the default branch and must commit the pointer and
+          # nothing else. See docs/dev/concurrent-agents.md.
+          git commit --only tools/pi-dash \
+            -m "Bump pi-dash to $BUMP_AFTER" \
+            -m "$BUMP_COUNT commit(s), through: $BUMP_SUBJECT" \
+            -m "Moved by .github/workflows/bump-pi-dash.yml so the pin follows upstream without anyone remembering to. The unit deploys this the usual way -- once CI is green for this commit -- rather than tracking pi-dash's branch directly and skipping the gate."
+          git push origin HEAD:main
+
+      - name: Say what happened
+        env:
+          BUMP_MOVED: ${{ steps.bump.outputs.moved }}
+          BUMP_BEFORE: ${{ steps.bump.outputs.before }}
+          BUMP_AFTER: ${{ steps.bump.outputs.after }}
+        run: |
+          if [ "$BUMP_MOVED" = "true" ]; then
+            echo "### pi-dash bumped" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "\`$BUMP_BEFORE\` → \`$BUMP_AFTER\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "pi-dash already at the pinned commit; nothing to do." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi

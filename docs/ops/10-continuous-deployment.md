@@ -241,6 +241,41 @@ otherwise idle run it reports `last_result: "rebuilt"` rather than
 `"up-to-date"`, so the admin page distinguishes "nothing to do" from "the tree
 was fine and something else was not".
 
+### A submodule is a pin, not a subscription
+
+`tools/pi-dash` names one exact commit and never follows upstream on its own,
+which produced a question worth writing down: pi-dash "did not update on the
+latest deploy", and the agent was right that it had nothing to do. The pin had
+not moved since a commit several days older than the work in question, so the
+unit rebuilt the pinned version and reported `current` — truthfully, and
+uselessly, because "current for its pin" and "current with upstream" are
+different facts and only one of them was being asked about.
+
+Both are reported now:
+
+| State | Means |
+|---|---|
+| `current` | The binary matches the pinned commit, and the pin matches upstream `main`. |
+| `behind` | The binary is current **for its pin**, and upstream has moved past that pin. Nothing is broken; the unit is running an older pi-dash on purpose. |
+
+The check is a `git ls-remote` — git protocol, not the REST API, so it costs
+nothing against the 60-an-hour budget the CI gate is careful with. An
+unreachable upstream reports `current`, because "I could not ask" must not
+render as "you are behind".
+
+[`.github/workflows/bump-pi-dash.yml`](../../.github/workflows/bump-pi-dash.yml)
+moves the pin daily, so `behind` should be transient. **Seeing it stick is how
+you find out that workflow has stopped** — which is most of why it is shown.
+
+The bump goes through a commit on `main` rather than letting the unit track
+pi-dash's branch directly, and that is deliberate. This unit deploys a commit
+only once CI concluded success for that exact SHA; a Pi following an upstream
+branch would run code that never passed a gate, and would fight the agent's own
+`submodule update`, which exists to force the checkout back to the pin. CI does
+not build pi-dash — there is no job for it — so a bump whose code does not
+compile still goes green here and fails on the unit, where the failure is
+non-fatal and logged for the reason below.
+
 Two artefacts are covered: `classg-sensor-sdr`, which is restarted after a
 rebuild, and `pi-dash`, which is a submodule and has two ways to be out of
 date — a checkout that is not at the pinned commit (`git submodule status`

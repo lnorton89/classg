@@ -301,11 +301,16 @@ function formatAge(seconds: number | undefined): string {
 function ArtefactList({ artefacts }: { artefacts?: DeploymentArtefact[] }) {
   if (!artefacts || artefacts.length === 0) return null
 
+  // `behind` is warn rather than muted, and that distinction is the reason the
+  // state exists. "current" on a submodule means current FOR ITS PIN, which a
+  // unit can report truthfully while work pushed upstream days ago has never
+  // reached it. Drawn the same grey as current, it would answer the question
+  // nobody was asking.
   const tone = (state: DeploymentArtefact['state']) =>
     state === 'failed'
       ? 'down'
-      : state === 'absent'
-        ? 'muted'
+      : state === 'behind'
+        ? 'warn'
         : state === 'rebuilt'
           ? 'ok'
           : 'muted'

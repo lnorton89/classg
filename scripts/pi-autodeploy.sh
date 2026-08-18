@@ -427,6 +427,48 @@ rebuild_stale_artefacts() {
     return "$did"
 }
 
+# "current" or "behind", where behind means the PIN has fallen back, not the
+# build.
+#
+# A submodule is a pin, not a subscription: tools/pi-dash names one exact
+# commit and never follows upstream on its own. So a unit can rebuild happily
+# and report itself current -- correctly -- while work pushed to the pi-dash
+# repository days ago has never been anywhere near it. Both are "current", and
+# nothing said which one was meant, which is precisely the question somebody
+# asked after a deploy that changed nothing.
+#
+# A git protocol call, not the REST API, so this costs nothing against the
+# 60-an-hour budget the CI check is careful about. Bounded and best-effort:
+# an unreachable upstream reports "current", because "I could not ask" must not
+# render as "you are behind".
+#
+# .github/workflows/bump-pi-dash.yml moves the pin daily, so behind should be
+# transient. Seeing it stick is how you find out that workflow has stopped.
+# Sets PIDASH_PIN_STATE. Deliberately NOT a function whose output is captured
+# with $( ), which is what it was for about ten minutes: `log` prints to stdout
+# before it appends, so the capture swallowed the log line and the artefact
+# state became a timestamp, a sentence, and then the word. Same shape as the
+# subshell that ate every build log in this script -- a function that logs
+# cannot also return a value through stdout.
+PIDASH_PIN_STATE="current"
+
+check_pidash_pin() {
+    PIDASH_PIN_STATE="current"
+
+    local url pinned upstream
+    url=$(git -C "$REPO_DIR" config -f .gitmodules --get submodule.tools/pi-dash.url 2>/dev/null)
+    [ -n "$url" ] || return 0
+
+    pinned=$(git -C "$REPO_DIR" rev-parse HEAD:tools/pi-dash 2>/dev/null)
+    upstream=$(timeout 15 git ls-remote "$url" main 2>/dev/null | awk 'NR==1 { print $1 }')
+
+    if [ -n "$pinned" ] && [ -n "$upstream" ] && [ "$pinned" != "$upstream" ]; then
+        PIDASH_PIN_STATE="behind"
+        log "pi-dash is built and current for its pin ${pinned:0:8}, but upstream main is ${upstream:0:8}"
+        log "  the daily bump workflow moves the pin; a behind that persists means it has stopped"
+    fi
+}
+
 # pi-dash, which is a submodule and therefore has two ways to be out of date.
 #
 # The checkout can differ from the pin -- `git submodule status` marks that with
@@ -461,7 +503,8 @@ rebuild_pidash_if_stale() {
     fi
 
     if [ -z "$reason" ] && ! stale_bin "$bin" "$dir/src" "$dir/Cargo.toml"; then
-        note_artefact "pi-dash" "current"
+        check_pidash_pin
+        note_artefact "pi-dash" "$PIDASH_PIN_STATE"
         return 1
     fi
 
