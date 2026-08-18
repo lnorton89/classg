@@ -110,6 +110,22 @@ sudo systemctl disable --now classg-watchdog.timer
 `--reset` is what to run after fixing something by hand, so the ladder starts
 from the top again.
 
+### It will not race the deploy agent
+
+Both agents run `docker compose up` on the same project, on independent timers.
+Without coordination, a deploy that takes the API down to rebuild it looks like
+a fault to the watchdog, which "repairs" it by racing a second compose against
+the first.
+
+They take an exclusive `flock` on one file in the shared state directory, and
+whichever arrives second skips its pass. Skipping is right for both: neither is
+urgent, the watchdog looks again in two minutes and the deploy agent in ten, and
+whatever the other one is doing is more likely to fix things than a second
+concurrent attempt.
+
+`flock` rather than a PID file, so the lock dies with the process and a killed
+agent cannot leave the other blocked for ever.
+
 ### Privileges
 
 The same narrow sudoers drop-in as the deploy agent: exactly two `systemctl

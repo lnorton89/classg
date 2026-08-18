@@ -255,6 +255,16 @@ fi
 
 # --- what changed decides what gets rebuilt ---------------------------------
 CHANGED=$(git diff --name-only "$LOCAL" "$REMOTE")
+
+# --force with nothing to pull has an empty diff, so every changed_in() would be
+# false and the "forced deploy" would rebuild nothing at all -- which is not what
+# --force says it does ("deploys even when the SHAs match, for re-running a
+# build"). Treat everything as changed instead.
+if [ "$FORCE" -eq 1 ] && [ -z "$CHANGED" ]; then
+    log "forced with nothing to pull; rebuilding everything"
+    CHANGED="services/ services/api services/fusion services/ui services/sensor-sdr services/sensor-wifi docker/"
+fi
+
 changed_in() { printf '%s\n' "$CHANGED" | grep -q "^$1"; }
 
 # Submodule pointers, captured before the merge so a moved pointer is
