@@ -22,7 +22,7 @@
  * is why an empty stretch on the Timeline is not necessarily a quiet sky.
  */
 import { useQuery } from '@tanstack/react-query'
-import { HardDriveIcon, TrendingDownIcon } from 'lucide-react'
+import { HardDriveIcon, TrendingDownIcon, UserRoundIcon } from 'lucide-react'
 
 import { useFormat } from '@/app/use-format'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -31,6 +31,7 @@ import { capturesQuery, settingsQuery, systemQuery, telemetryQuery } from '@/lib
 import { cn } from '@/lib/cn'
 import { formatGoDuration } from '@/lib/format'
 
+import { SettingsGroup } from './setting-fields'
 import { forecastDiskFull, usedFraction } from './storage-forecast'
 import type { ForecastVerdict } from './storage-forecast'
 
@@ -145,6 +146,42 @@ export function StoragePanel() {
 
       <Card>
         <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserRoundIcon className="size-4" aria-hidden />
+            The pilot&rsquo;s position
+          </CardTitle>
+          <CardDescription>
+            The one field in this system that is personal data about a person rather than a
+            measurement of an aircraft. It is included by default for this deployment, and this
+            switch is the single place that decides — every read path honours it, and turning it
+            off strips it from tracks, detections, exports, the live stream and GraphQL alike.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <SettingsGroup
+            fields={[
+              {
+                key: 'api.expose_operator_location',
+                label: 'Include the operator position in responses',
+                kind: 'switch',
+                hint: 'Off means it is never sent. It is still RECORDED — it arrives inline on the track and ages out with it, under the retention below.',
+              },
+            ]}
+          />
+          {/* Said here rather than in a doc nobody opens: turning this off is
+              not the same as not collecting it, and somebody deciding whether
+              this deployment is lawful needs to know which one they have. */}
+          <p className="text-muted-foreground text-2xs leading-relaxed">
+            Storage is not affected. The position is written inline on the track and detection
+            documents and is deleted with them, so retention is the only thing that removes it
+            from this unit. ADR-0006 records the decision to keep them in one store, and names
+            the interface where the separation goes back in for a deployment that needs it.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Retention</CardTitle>
           <CardDescription>
             How far back each kind of record is kept. Anything older is deleted by the retention
@@ -188,6 +225,23 @@ export function StoragePanel() {
               })}
             </dl>
           )}
+
+          <SettingsGroup
+            fields={[
+              {
+                key: 'retention.interval',
+                label: 'Run the retention job every',
+                kind: 'text',
+                hint: 'How often the horizons above are enforced. Between passes, rows past their horizon are still on disk.',
+              },
+              {
+                key: 'telemetry.interval',
+                label: 'Record a telemetry sample every',
+                kind: 'text',
+                hint: 'The other half of the fill rate above: this decides how fast the telemetry table grows.',
+              },
+            ]}
+          />
         </CardContent>
       </Card>
     </>

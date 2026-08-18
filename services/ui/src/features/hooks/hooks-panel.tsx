@@ -21,6 +21,7 @@ import { useFormat } from '@/app/use-format'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { SettingsGroup } from '@/features/settings/setting-fields'
 import { FormField, Input } from '@/components/ui/field'
 import { Alert, EmptyState, Skeleton } from '@/components/ui/misc'
 import { Select } from '@/components/ui/select'
@@ -102,6 +103,27 @@ export function HooksPanel() {
               )}
             </>
           )}
+
+          {/* The SSRF gate, which was reachable only through the API.
+              
+              It is on this card rather than a settings page because it is a
+              property of hooks and of nothing else: the check refuses a target
+              that RESOLVES to a private address, which is why an admin who can
+              point a hook at 169.254.169.254 can read a cloud metadata service
+              through it. Somebody turning it on should be looking at the rules
+              it applies to. */}
+          <div className="border-border/60 border-t pt-3">
+            <SettingsGroup
+              fields={[
+                {
+                  key: 'hooks.allow_private_targets',
+                  label: 'Allow hooks to reach private addresses',
+                  kind: 'switch',
+                  hint: 'Needed for a webhook on your own LAN — Home Assistant, a local relay. Off by default because it is also what stops one reaching a cloud metadata service.',
+                },
+              ]}
+            />
+          </div>
         </CardContent>
       </Card>
 

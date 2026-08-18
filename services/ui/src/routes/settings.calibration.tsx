@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input, Label } from '@/components/ui/field'
+import { SettingsGroup } from '@/features/settings/setting-fields'
 import { Alert } from '@/components/ui/misc'
 import { Tooltip } from '@/components/ui/tooltip'
 import { ApiError, api } from '@/lib/api/client'
@@ -73,9 +74,58 @@ function CalibrationSettings() {
         physical constants — revise them against measured results rather than intuition.
       </Alert>
       <ReceiverPositionEditor />
+      <DetectionTimingCard />
       <ChannelPlanEditor />
       <FusionWeightsEditor />
     </>
+  )
+}
+
+/**
+ * The four durations that decide when this system stops believing things.
+ *
+ * All four were reachable only by editing a settings row through the API or
+ * setting an environment variable and restarting -- which meant the numbers
+ * that decide when a track closes and when a sensor is called dead were
+ * effectively fixed, while the page explaining that they are "calibrated
+ * hypotheses, not physical constants" sat directly above them.
+ *
+ * They belong here rather than under a browser preference because every one of
+ * them changes what the system CONCLUDES, not what it shows.
+ */
+function DetectionTimingCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Timing and limits</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-4">
+        <p className="text-muted-foreground text-sm">
+          When this receiver stops believing something. Shortening the sensor threshold makes it
+          quicker to call an adapter dead and quicker to be wrong about it; lengthening the
+          track lifetime keeps an aircraft on the screen after the evidence for it has stopped
+          arriving. Neither is free in the direction it sounds safe.
+        </p>
+        <SettingsGroup
+          fields={[
+            { key: 'sensors.stale_after', label: 'Sensor is unhealthy after', kind: 'text' },
+            { key: 'fusion.track_ttl', label: 'Close a track after', kind: 'text' },
+            {
+              key: 'fusion.max_history',
+              label: 'Position history per track',
+              kind: 'number',
+              hint: 'Points kept per track. The trail on the map and the history table both read this.',
+            },
+            {
+              key: 'spectrum.sweep_timeout',
+              label: 'Abandon a sweep after',
+              kind: 'text',
+              hint: 'A wedged USB device must not hold the radio away from ADS-B for ever.',
+            },
+          ]}
+        />
+      </CardContent>
+    </Card>
   )
 }
 
