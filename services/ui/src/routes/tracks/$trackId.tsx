@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link, notFound } from '@tanstack/react-router'
 import {
   ActivityIcon,
@@ -37,7 +37,7 @@ export const Route = createFileRoute('/tracks/$trackId')({
   component: TrackDetail,
   loader: async ({ context, params }) => {
     try {
-      await context.queryClient.ensureQueryData(trackQuery(params.trackId))
+      await context.queryClient.ensureQueryData(trackQuery(params.trackId, context.queryClient))
     } catch (error) {
       if (error instanceof ApiError && error.isNotFound) return notFound()
       throw error instanceof Error ? error : new Error(String(error))
@@ -55,7 +55,8 @@ export const Route = createFileRoute('/tracks/$trackId')({
 
 function TrackDetail() {
   const { trackId } = Route.useParams()
-  const { data: track } = useQuery(trackQuery(trackId))
+  const queryClient = useQueryClient()
+  const { data: track } = useQuery(trackQuery(trackId, queryClient))
   const { data: detectionsData } = useQuery(trackDetectionsQuery(trackId))
   const format = useFormat()
   useTicker(5000)

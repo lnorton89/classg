@@ -3,9 +3,10 @@
  * same cache keys the views read from. `queryOptions()` carries the data type on
  * the key, which is what makes `setQueryData` type-safe.
  */
-import { keepPreviousData, queryOptions } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions, type QueryClient } from '@tanstack/react-query'
 
 import { api } from './client'
+import { trackWithDetections } from './graphql'
 import type { DetectionsQuery, TracksQuery } from './types'
 
 export const queryKeys = {
@@ -113,13 +114,34 @@ export const tracksQuery = (query: TracksQuery = {}) =>
     staleTime: Infinity,
   })
 
-export const trackQuery = (trackId: string) =>
+/**
+ * The track, fetched together with its detections over the GraphQL endpoint
+ * in one round trip -- see lib/api/graphql.ts for why. The detections half of
+ * that response is seeded straight into `trackDetectionsQuery`'s cache entry
+ * as a side effect, so the detail route's second `useQuery` finds it already
+ * warm instead of firing its own REST call.
+ *
+ * `queryClient` is optional only so existing callers that do not need the
+ * seeding (there are none today) are not forced to pass one; every real call
+ * site has a client on hand and should pass it.
+ */
+export const trackQuery = (trackId: string, queryClient?: QueryClient) =>
   queryOptions({
     queryKey: queryKeys.track(trackId),
-    queryFn: () => api.track(trackId),
+    queryFn: async () => {
+      const { track, detections } = await trackWithDetections(trackId, 500)
+      queryClient?.setQueryData(queryKeys.trackDetections(trackId), detections)
+      return track
+    },
     staleTime: 5_000,
   })
 
+/**
+ * REST fallback for the same data `trackQuery` now seeds via GraphQL. Kept as
+ * its own query -- rather than folded away -- because it is the thing that
+ * still runs if this key is ever read without `trackQuery` having populated
+ * it first.
+ */
 export const trackDetectionsQuery = (trackId: string) =>
   queryOptions({
     queryKey: queryKeys.trackDetections(trackId),

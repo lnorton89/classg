@@ -101,7 +101,9 @@ function buildQuery(params: Record<string, string | number | undefined | string[
   return qs ? `?${qs}` : ''
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+/** Exported so `graphql.ts` can reuse the header/credentials/error-envelope plumbing
+ *  rather than duplicating it against a transport with almost the same rules. */
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
   if (!headers.has('Accept')) headers.set('Accept', 'application/json')
   if (init?.body && !headers.has('Content-Type')) {
