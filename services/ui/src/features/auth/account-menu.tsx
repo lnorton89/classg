@@ -6,10 +6,13 @@
  * controls in a row that did not fit a phone. Neither icon said what it did,
  * and "shield" and "door" are not a menu.
  *
- * It is a menu now, and it absorbed the two controls that had no business
- * spending header width of their own: Settings, which is somewhere you go once
- * to set the console up, and the command palette, which on a phone is a
- * keyboard accelerator with no keyboard.
+ * It is a menu now, and it absorbed the controls that had no business
+ * spending header width — or, on a phone, bottom-nav width — of their own:
+ * Settings, which is somewhere you go once to set the console up; the command
+ * palette, which on a phone is a keyboard accelerator with no keyboard; and
+ * Logs and Docs, which used to sit in the primary nav and made the bottom bar
+ * seven destinations deep. Neither is reached for mid-incident the way Live
+ * or Tracks is, so both live here instead, one tap away at every width.
  *
  * It still carries the auth-disabled warning, and that still does not go away.
  * A box whose authentication somebody switched off and forgot is worse than
@@ -18,7 +21,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
+  BookOpenIcon,
   LogOutIcon,
+  ScrollTextIcon,
   SearchIcon,
   SettingsIcon,
   ShieldAlertIcon,
@@ -139,6 +144,25 @@ export function AccountMenu({ onOpenPalette }: { onOpenPalette: () => void }) {
           >
             Search…
           </MenuButton>
+        </div>
+
+        <div className="p-1">
+          {/* Moved out of the primary nav: neither is a screen an operator
+              watches, so neither earns a permanent slot in the bottom bar. */}
+          <MenuLink
+            to="/logs"
+            icon={<ScrollTextIcon className="size-4" aria-hidden />}
+            onSelect={close}
+          >
+            Logs
+          </MenuLink>
+          <MenuLink
+            to="/docs"
+            icon={<BookOpenIcon className="size-4" aria-hidden />}
+            onSelect={close}
+          >
+            Docs
+          </MenuLink>
         </div>
 
         <div className="p-1">

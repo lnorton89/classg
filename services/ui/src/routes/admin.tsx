@@ -30,6 +30,13 @@ export const Route = createFileRoute('/admin')({
  * also uses PageContainer and PageHeader like every other route — it was
  * hand-rolling a different width and a different heading style, which is the
  * exact drift PageContainer exists to stop.
+ *
+ * "This unit" and "Outbound" sit side by side from lg up, the way Settings
+ * puts its categories beside their content instead of end to end. Access
+ * stays full width above them: an account table wants the room, and it is the
+ * one section people arrive at this page already meaning to use, so it is not
+ * competing with anything for the top of the screen. Below lg everything
+ * still stacks — a phone or a narrow window has no width to split.
  */
 function AdminRoute() {
   const isAdmin = useHasRole('admin')
@@ -53,7 +60,7 @@ function AdminRoute() {
   }
 
   return (
-    <PageContainer className="max-w-5xl">
+    <PageContainer>
       <PageHeader
         icon={ShieldCheckIcon}
         title="Administration"
@@ -70,27 +77,31 @@ function AdminRoute() {
         <AdminUsers />
       </section>
 
-      <section aria-labelledby="admin-unit" className="flex flex-col gap-2">
-        <SectionHeader
-          id="admin-unit"
-          icon={RocketIcon}
-          title="This unit"
-          description="What it is running, and what it does about its own failures. Neither is driven from here — the API cannot run anything on the host, so both are file exchanges with agents that act on their own schedule."
-        />
-        <DeploymentPanel />
-        <DeployHistory />
-        <WatchdogPanel />
-      </section>
+      {/* min-w-0 on both columns so a wide child never stretches the grid
+          past the viewport the way the hooks panel's rule table can. */}
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+        <section aria-labelledby="admin-unit" className="flex min-w-0 flex-col gap-2">
+          <SectionHeader
+            id="admin-unit"
+            icon={RocketIcon}
+            title="This unit"
+            description="What it is running, and what it does about its own failures. Neither is driven from here — the API cannot run anything on the host, so both are file exchanges with agents that act on their own schedule."
+          />
+          <DeploymentPanel />
+          <DeployHistory />
+          <WatchdogPanel />
+        </section>
 
-      <section aria-labelledby="admin-hooks" className="flex flex-col gap-2">
-        <SectionHeader
-          id="admin-hooks"
-          icon={WebhookIcon}
-          title="Outbound"
-          description="The only paths by which anything this receiver sees leaves it. Each one is an egress route to a URL or a mailbox somebody chose."
-        />
-        <HooksPanel />
-      </section>
+        <section aria-labelledby="admin-hooks" className="flex min-w-0 flex-col gap-2">
+          <SectionHeader
+            id="admin-hooks"
+            icon={WebhookIcon}
+            title="Outbound"
+            description="The only paths by which anything this receiver sees leaves it. Each one is an egress route to a URL or a mailbox somebody chose."
+          />
+          <HooksPanel />
+        </section>
+      </div>
     </PageContainer>
   )
 }

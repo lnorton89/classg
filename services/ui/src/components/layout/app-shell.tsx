@@ -1,11 +1,8 @@
 import { Link, useRouter, useRouterState } from '@tanstack/react-router'
 import {
-  AudioWaveformIcon,
-  BookOpenIcon,
   HistoryIcon,
   MapIcon,
   RadarIcon,
-  ScrollTextIcon,
   SearchIcon,
   SettingsIcon,
   SlidersHorizontalIcon,
@@ -41,19 +38,26 @@ interface NavItem {
 }
 
 /**
- * Everything you read while the system is running, plus the reference you read
- * when something on those pages needs explaining. Settings is deliberately not
+ * What you watch while the system is running. Settings is deliberately not
  * here: it is somewhere you go once to set the console up, so it sits in the
  * status cluster as a gear rather than spending width next to the live view.
+ *
+ * Logs and Docs used to live here too, which made this bar seven items — on a
+ * phone that meant a bottom bar with two destinations ("what happened" and
+ * "how does this work") competing for thumb space against the live tracking
+ * screens the bar exists to keep one tap away. Neither is something an
+ * operator reaches for mid-incident the way they reach for Live or Tracks, so
+ * both moved into the account menu, which is already on screen at every
+ * width. Spectrum is gone as a fifth destination for a different reason: it
+ * was never its own subject, it was per-sensor detail (the SDR sweep, Wi-Fi
+ * occupancy) that had been pulled out onto a page of its own. It lives inside
+ * Sensors now, next to the sensor it measures.
  */
 const PRIMARY_NAV: NavItem[] = [
   { to: '/', label: 'Live', icon: MapIcon, exact: true },
   { to: '/tracks', label: 'Tracks', icon: RadarIcon, exact: false },
   { to: '/timeline', label: 'Timeline', icon: HistoryIcon, exact: false },
   { to: '/sensors', label: 'Sensors', icon: SlidersHorizontalIcon, exact: false },
-  { to: '/spectrum', label: 'Spectrum', icon: AudioWaveformIcon, exact: false },
-  { to: '/logs', label: 'Logs', icon: ScrollTextIcon, exact: false },
-  { to: '/docs', label: 'Docs', icon: BookOpenIcon, exact: false },
 ]
 
 /**
@@ -154,12 +158,10 @@ function SignedInShell({ children }: { children: ReactNode }) {
             <ClassGLogo size="lg" showTagline className="hidden xl:inline-flex" />
           </Link>
 
-          {/* lg, not md. At md the seven items did not fit beside the brand
-              and the controls: the row clipped "Spectrum" mid-word and put
-              Logs and Docs in a horizontal scroll nobody would find. A tablet
-              is a touch device and keeps the bottom bar, which shows all seven
-              without eliding any. overflow-x-auto stays as the safety valve
-              for an eighth item nobody has added yet. */}
+          {/* lg, not md: a tablet is a touch device and keeps the bottom bar,
+              which shows every destination without eliding any. overflow-x-auto
+              stays as the safety valve for whenever the list grows past what a
+              phone's width divides evenly. */}
           <nav
             aria-label="Primary"
             className="ml-2 hidden min-w-0 justify-start gap-0.5 overflow-x-auto lg:flex"
@@ -175,8 +177,9 @@ function SignedInShell({ children }: { children: ReactNode }) {
             <NotificationsDrawer />
             <PaletteButton onOpen={() => setPaletteOpen(true)} />
             {/* The gear stays visible where it costs nothing. Below md it is
-                an item in the account menu instead: five destinations already
-                fill the bottom bar, and settings is not one of the five. */}
+                an item in the account menu instead: the bottom bar is already
+                full of destinations to watch the system with, and settings
+                is not one of them. */}
             <SettingsButton />
             <AccountMenu onOpenPalette={() => setPaletteOpen(true)} />
           </div>
@@ -241,11 +244,12 @@ function NavLink({ item }: { item: NavItem }) {
         className: 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
       }}
       className={cn(
-        // `min-w-16` here plus `justify-around` on the bar meant seven items
-        // needed 448px and a phone has 390: Docs was pushed off the right edge
-        // and there was no way to reach the documentation on a phone at all.
-        // Equal flexible columns instead, so the bar divides whatever width
-        // there is and every destination stays reachable down to 320px.
+        // `min-w-16` here plus `justify-around` on the bar used to mean the
+        // nav needed more width than a phone has, back when it carried seven
+        // destinations: Docs was pushed off the right edge with no way to
+        // reach it. Equal flexible columns instead, so the bar divides
+        // whatever width there is and every destination stays reachable down
+        // to 320px, whatever the item count.
         'flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-md px-0.5 py-1.5',
         'text-[10px] leading-tight font-medium tracking-tight transition-colors',
         // Stacked in the bottom bar, inline in the header. lg because that is
