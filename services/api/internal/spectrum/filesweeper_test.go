@@ -54,7 +54,18 @@ func fakeAgent(t *testing.T, f FileSweeper, answer func(req sweepRequest) sweepR
 			raw, err := os.ReadFile(reqPath)
 			if err == nil {
 				var req sweepRequest
-				_ = json.Unmarshal(raw, &req)
+				// Loudly, not with `_ =`. Ignoring this is what turned a real
+				// bug into a mystery: a torn read left req zero-valued, the
+				// stand-in answered `spectrum-result-.json` -- an id nobody
+				// was waiting for -- and returned, so the test sat out its
+				// whole 30s timeout with the actual fault invisible. The
+				// filename in the failure message was the only clue.
+				if err := json.Unmarshal(raw, &req); err != nil {
+					t.Errorf("the sweep request did not decode, which means it was "+
+						"read while it was still being written: %v (%d bytes: %q)",
+						err, len(raw), raw)
+					return
+				}
 				_ = os.Remove(reqPath)
 				res, _ := json.Marshal(answer(req))
 				_ = os.WriteFile(filepath.Join(f.Dir, resultPrefix+req.ID+".json"), res, 0o644)
@@ -226,4 +237,66 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+// The request must never be readable half-written.
+//
+// This is the bug that failed CI on 2026-08-18. os.WriteFile creates the file
+// and then writes it, so an agent polling that exact path can open it in
+// between and read nothing. The real agent parses no id out of such a read,
+// deletes the request -- it consumes one whatever happens, so a crash cannot
+// leave a stale sweep to re-run -- and goes back to sleep, leaving the operator
+// watching the spectrum page hang for the whole ten-minute timeout.
+//
+// A reader spinning as fast as it can while a request is written: every read
+// that returns bytes must decode and must carry an id and a band.
+func TestTheRequestIsNeverReadableHalfWritten(t *testing.T) {
+	f := newFileSweeper(t)
+	if err := os.WriteFile(filepath.Join(f.Dir, bandsFile), []byte(`{"bands":[]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reqPath := filepath.Join(f.Dir, requestFile)
+	stop := make(chan struct{})
+	bad := make(chan string, 1)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			raw, err := os.ReadFile(reqPath)
+			if err != nil {
+				continue // not written yet, or already consumed
+			}
+			var req sweepRequest
+			if err := json.Unmarshal(raw, &req); err != nil || req.ID == "" || req.Band == "" {
+				select {
+				case bad <- string(raw):
+				default:
+				}
+				return
+			}
+		}
+	}()
+
+	// Answered so Sweep returns promptly rather than waiting out its timeout;
+	// the assertion is about what the reader saw, not the round trip.
+	fakeAgent(t, f, func(req sweepRequest) sweepResult {
+		return sweepResult{ID: req.ID, Doc: json.RawMessage(`{"band":"ism_915"}`)}
+	})
+
+	_, _ = f.Sweep(context.Background(), "ism_915")
+	close(stop)
+	<-done
+
+	select {
+	case raw := <-bad:
+		t.Fatalf("a reader saw a partial sweep request: %q", raw)
+	default:
+	}
 }

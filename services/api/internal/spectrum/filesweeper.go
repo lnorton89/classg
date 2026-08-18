@@ -135,9 +135,46 @@ func (f FileSweeper) Sweep(ctx context.Context, band string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Written to a temp file and renamed, never straight to the path the agent
+	// polls. os.WriteFile creates-then-writes, so an agent that reads between
+	// those two steps gets an empty or half-written document -- and this is a
+	// file whose whole purpose is to be read by something spinning on it.
+	//
+	// That race is not theoretical. It failed CI on 2026-08-18, and the shape
+	// of the failure is what a real unit would do: the agent read a torn
+	// request, could not parse an id from it, deleted it (it consumes the
+	// request whatever happens, so a crash cannot leave one to re-run), and
+	// went back to sleep. Nothing answers, and the operator watches the
+	// spectrum page hang for the full CLASSG_SWEEP_TIMEOUT -- ten minutes by
+	// default -- before being told the agent never replied.
+	//
+	// rename(2) within a directory is atomic, so a reader sees either no file
+	// or the whole thing. Every other file in this exchange already does this;
+	// the request was the one that missed out.
+	//
 	// 0644: the agent runs as the host user, which is not necessarily this
-	// container's uid.
-	if err := os.WriteFile(reqPath, body, 0o644); err != nil {
+	// container's uid. Set explicitly on the temp file, because it is the one
+	// that becomes the request and CreateTemp makes it 0600.
+	tmp, err := os.CreateTemp(f.Dir, requestFile+".tmp*")
+	if err != nil {
+		return nil, fmt.Errorf("writing the sweep request: %w", err)
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(body); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpName)
+		return nil, fmt.Errorf("writing the sweep request: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return nil, fmt.Errorf("writing the sweep request: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0o644); err != nil {
+		_ = os.Remove(tmpName)
+		return nil, fmt.Errorf("writing the sweep request: %w", err)
+	}
+	if err := os.Rename(tmpName, reqPath); err != nil {
+		_ = os.Remove(tmpName)
 		return nil, fmt.Errorf("writing the sweep request: %w", err)
 	}
 
