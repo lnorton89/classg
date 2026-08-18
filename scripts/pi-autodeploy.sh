@@ -242,12 +242,38 @@ fi
 CHANGED=$(git diff --name-only "$LOCAL" "$REMOTE")
 changed_in() { printf '%s\n' "$CHANGED" | grep -q "^$1"; }
 
+# Submodule pointers, captured before the merge so a moved pointer is
+# detectable afterwards. `git diff --name-only` does list a submodule path when
+# its pointer moves, but not when the submodule is simply uninitialised -- and
+# a fresh clone is exactly that case.
+submodule_sha() {
+    git -C "$REPO_DIR/$1" rev-parse HEAD 2>/dev/null || echo "uninitialised"
+}
+PIDASH_BEFORE=$(submodule_sha tools/pi-dash)
+
 echo "$LOCAL" > "$STATE_DIR/previous-sha"
 log "deploying ${LOCAL:0:8} -> ${REMOTE:0:8}"
 
 git merge --ff-only "origin/$BRANCH" >/dev/null 2>&1 || die "fast-forward failed; this unit has diverged from $BRANCH"
 
 DEPLOY_OK=1
+
+# Submodules do NOT follow a merge. Without this the pointer in the superproject
+# moves and the checkout stays on the old commit, so a "successful" deploy
+# silently ships the previous version of anything vendored this way -- which is
+# the kind of thing nobody notices until they are debugging a fix that is
+# definitely in the repo and definitely not on the box.
+#
+# `sync` first, so a submodule whose URL changed upstream is repointed rather
+# than fetched from the old remote.
+if [ -f .gitmodules ]; then
+    log "updating submodules"
+    if ! git submodule sync --recursive >/dev/null 2>&1 ||
+        ! git submodule update --init --recursive 2>&1 | while read -r l; do log "  $l"; done; then
+        DEPLOY_OK=0
+        log "submodule update failed"
+    fi
+fi
 
 # The web tier. --build because the images are built on this box; there is no
 # registry, and for one Pi there does not need to be.
@@ -270,6 +296,35 @@ if changed_in "services/sensor-sdr"; then
     else
         DEPLOY_OK=0
         log "cargo build failed; leaving the running binary in place"
+    fi
+fi
+
+# pi-dash: a Rust submodule, rebuilt when its pinned commit moves.
+#
+# Following the PINNED pointer, never upstream's latest -- that is what a
+# submodule means, and silently advancing it would deploy a commit nobody chose.
+# The `pidash` wrapper on PATH execs this checkout's release build directly, so
+# a rebuild is the whole deploy; there is no service to restart. It runs
+# interactively, so an operator with it open keeps the old binary until they
+# quit and relaunch, which is the correct behaviour for a dashboard someone is
+# reading.
+PIDASH_AFTER=$(submodule_sha tools/pi-dash)
+PIDASH_BIN="$REPO_DIR/tools/pi-dash/target/release/pi-dash"
+if [ -d "$REPO_DIR/tools/pi-dash" ] &&
+    { [ "$PIDASH_BEFORE" != "$PIDASH_AFTER" ] || [ ! -x "$PIDASH_BIN" ]; }; then
+    if [ "$PIDASH_BEFORE" = "$PIDASH_AFTER" ]; then
+        log "rebuilding pi-dash (no binary present)"
+    else
+        log "rebuilding pi-dash (${PIDASH_BEFORE:0:8} -> ${PIDASH_AFTER:0:8})"
+    fi
+    if (cd "$REPO_DIR/tools/pi-dash" && cargo build --release 2>&1 | tail -3 |
+        while read -r l; do log "  $l"; done); then
+        log "pi-dash rebuilt; a running instance picks it up on next launch"
+    else
+        # Not fatal to the deploy. pi-dash is an operator convenience, and
+        # failing the whole deploy -- and rolling back a working detector --
+        # because a dashboard would not compile is the wrong trade.
+        log "pi-dash failed to build; the rest of the deploy stands"
     fi
 fi
 
