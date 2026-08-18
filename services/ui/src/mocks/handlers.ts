@@ -11,6 +11,10 @@ import { API_BASE } from '@/lib/api/client'
 import type {
   ApiErrorBody,
   AuthMe,
+  DeploymentStatus,
+  SessionsResponse,
+  UsersResponse,
+  WatchdogStatus,
   Capture,
   CapturesResponse,
   ChannelPlan,
@@ -158,6 +162,107 @@ export const handlers = [
   ),
   http.post(`${base}/auth/login`, () => new HttpResponse(null, { status: 204 })),
   http.post(`${base}/auth/logout`, () => new HttpResponse(null, { status: 204 })),
+
+  // --- Administration -----------------------------------------------------
+  //
+  // Without these the admin page rendered "No accounts", "No active sessions"
+  // and "no deploy agent on this unit" in dev -- so every layout decision on
+  // the busiest page in the app had to be made against four empty states, or
+  // against the real Pi. Populated the way a unit in use looks: two accounts,
+  // one of them this browser's, a deploy that landed, a watchdog with nothing
+  // to repair, and one hook that has fired.
+  http.get(`${base}/admin/users`, () =>
+    HttpResponse.json<UsersResponse>({
+      users: [
+        {
+          user_id: 'mock-admin',
+          username: 'operator',
+          display_name: 'Mock Operator',
+          role: 'admin',
+          disabled: false,
+          created_at: '2026-08-01T09:00:00Z',
+          updated_at: '2026-08-01T09:00:00Z',
+          last_login_at: '2026-08-11T12:00:00Z',
+        },
+        {
+          user_id: 'mock-viewer',
+          username: 'field',
+          display_name: 'Field Viewer',
+          role: 'viewer',
+          disabled: false,
+          created_at: '2026-08-05T14:20:00Z',
+          updated_at: '2026-08-05T14:20:00Z',
+        },
+      ],
+    }),
+  ),
+
+  http.get(`${base}/admin/sessions`, () =>
+    HttpResponse.json<SessionsResponse>({
+      sessions: [
+        {
+          session_id: 'mock-session-current',
+          user_id: 'mock-admin',
+          username: 'operator',
+          created_at: '2026-08-11T11:00:00Z',
+          expires_at: '2026-08-11T23:00:00Z',
+          last_seen: '2026-08-11T12:00:00Z',
+          user_agent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+          ip: '100.64.0.12',
+          current: true,
+        },
+        {
+          session_id: 'mock-session-phone',
+          user_id: 'mock-viewer',
+          username: 'field',
+          created_at: '2026-08-11T08:30:00Z',
+          expires_at: '2026-08-11T20:30:00Z',
+          last_seen: '2026-08-11T11:55:00Z',
+          user_agent: 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36',
+          ip: '100.64.0.31',
+          current: false,
+        },
+      ],
+    }),
+  ),
+  http.delete(`${base}/admin/sessions/:id`, () => new HttpResponse(null, { status: 204 })),
+
+  // A deploy that landed, on a unit whose agent is running. The interesting
+  // states -- "deploying", "blocked", a stale agent -- are reachable by editing
+  // this one; they are not the resting state and should not be the default.
+  http.get(`${base}/admin/deployment`, () =>
+    HttpResponse.json<DeploymentStatus>({
+      configured: true,
+      commit: '9a234ae9f1c4d7b2a3e5f6081b2c3d4e5f60718a',
+      commit_subject: 'Rebuild the header around the two questions it exists to answer',
+      commit_at: '2026-08-11T11:40:00Z',
+      last_check_at: '2026-08-11T11:58:00Z',
+      last_result: 'deployed',
+      last_deploy_at: '2026-08-11T11:45:00Z',
+      last_deploy_commit: '9a234ae9f1c4d7b2a3e5f6081b2c3d4e5f60718a',
+      last_deploy_ok: true,
+      remote_commit: '9a234ae9f1c4d7b2a3e5f6081b2c3d4e5f60718a',
+      remote_ci: 'success',
+      timer_enabled: true,
+      update_available: false,
+      deploy_requested: false,
+      state_age_s: 120,
+      log: ['up to date at 9a234ae9'],
+    }),
+  ),
+
+  http.get(`${base}/admin/watchdog`, () =>
+    HttpResponse.json<WatchdogStatus>({
+      configured: true,
+      last_check_at: '2026-08-11T11:59:00Z',
+      actions_taken: 0,
+      api_healthy: true,
+      wifi_adapter_present: true,
+      sdr_present: true,
+      state_age_s: 60,
+      log: ['nothing to repair'],
+    }),
+  ),
 
   // --- Health -------------------------------------------------------------
   http.get(`${base}/health`, () => HttpResponse.json<Health>(getScenario().health)),

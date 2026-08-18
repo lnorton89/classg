@@ -170,12 +170,22 @@ export function DataRow({
       // The first consumer of the compact-density preference on a detail page:
       // 0.5rem here, 0.375rem when the operator asks for compact.
       data-density-row
-      className={cn('flex items-baseline justify-between gap-4 py-2', className)}
+      className={cn(
+        // Stacked below sm, label-and-value across from sm up.
+        //
+        // Right-aligned prose that wraps looks broken, and on a phone almost
+        // everything wraps: a commit subject under "Running 9a234ae9" came out
+        // as two ragged right-aligned lines that read as a layout fault. A
+        // label above its value has room to be either short or long.
+        'flex flex-col items-start gap-0.5 py-2',
+        'sm:flex-row sm:items-baseline sm:justify-between sm:gap-4',
+        className,
+      )}
     >
       <dt className="text-muted-foreground shrink-0 text-xs">{label}</dt>
       <dd
         className={cn(
-          'min-w-0 text-right text-xs',
+          'min-w-0 text-left text-xs sm:text-right',
           // Identifiers may break anywhere; prose must not.
           mono ? 'font-mono break-all' : 'tnum break-words',
         )}

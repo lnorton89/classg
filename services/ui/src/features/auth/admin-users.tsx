@@ -24,10 +24,14 @@ import type { AuthSession, AuthUser, Role } from '@/lib/api/types'
 
 import { useAuth } from './use-auth'
 
+// One word each. The labels used to carry their own explanation -- "Admin —
+// can manage accounts" -- which wrapped to two lines inside the trigger and
+// made every account row two rows tall. The card's own description already
+// says what the three roles mean, so the select was explaining it twice.
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
-  { value: 'viewer', label: 'Viewer — read only' },
-  { value: 'operator', label: 'Operator — can act on hardware' },
-  { value: 'admin', label: 'Admin — can manage accounts' },
+  { value: 'viewer', label: 'Viewer' },
+  { value: 'operator', label: 'Operator' },
+  { value: 'admin', label: 'Admin' },
 ]
 
 export function AdminUsers() {
@@ -259,7 +263,7 @@ function UserRow({ user, isSelf }: { user: AuthUser; isSelf: boolean }) {
             onValueChange={(role) => update.mutate({ role })}
             options={ROLE_OPTIONS}
             disabled={update.isPending}
-            className="w-full min-w-0 sm:w-44"
+            className="w-full min-w-0 sm:w-32"
           />
           <Button
             size="sm"
