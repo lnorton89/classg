@@ -19,8 +19,13 @@ is a design constraint, not a disclaimer.
 
 ![ClassG operator console — live map with active drone tracks, manned traffic, and a per-track confidence/evidence list](docs/assets/screenshot.jpg)
 
+<img src="docs/assets/screenshot-mobile.jpg" alt="ClassG operator console on a phone — the same live map and track list collapsed into a single-column, bottom-nav layout" width="280" align="right">
+
 *The operator console, shown here against the "active sky" mock scenario — see
-[Getting started](#getting-started) to run it yourself without any hardware.*
+[Getting started](#getting-started) to run it yourself without any hardware. The mobile layout
+(right) collapses the same map and track list behind a bottom nav.*
+
+<br clear="right">
 
 ## Contents
 
