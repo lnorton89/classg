@@ -192,8 +192,16 @@ more often than they sound like they would:
 - `cargo build` was interrupted, or the checkout was restored from a backup.
 
 The agent therefore checks **artefacts against their own sources** on every
-run, including the runs where there is nothing to pull — comparing two commit
-SHAs cannot see any of the cases above. When it rebuilds something on an
+run that ends without deploying — the tree is current, or main has moved and CI
+has not finished — because comparing two commit SHAs cannot see any of the
+cases above. The blocked-on-CI case matters most: a unit that pulls from a busy
+`main` spends most of its life waiting for a run to go green, and a stale
+binary would otherwise be invisible for as long as that lasted.
+
+Two exits deliberately skip it. A rebuild restarts the sensor, so a unit with a
+capture or sweep in progress is left alone, and so is one with a dirty tree —
+somebody is mid-diagnosis and refusing to disturb them is why those exits
+exist. When it rebuilds something on an
 otherwise idle run it reports `last_result: "rebuilt"` rather than
 `"up-to-date"`, so the admin page distinguishes "nothing to do" from "the tree
 was fine and something else was not".

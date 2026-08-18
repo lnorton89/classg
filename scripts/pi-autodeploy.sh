@@ -364,6 +364,35 @@ fi
 
 log "main is at ${REMOTE:0:8}, this unit is at ${LOCAL:0:8}"
 
+# Exit without deploying, having first checked what is BUILT.
+#
+# This unit spends most of its life on one of these paths: main has moved, CI
+# has not finished, and nothing will be pulled for another ten minutes. That is
+# exactly when a stale artefact goes unnoticed -- the run reports "blocked",
+# says nothing about the binary, and the operator sees a deploy agent that
+# looks busy and is achieving nothing. pi-dash sat at an old build through days
+# of these.
+#
+# Not used for the busy or dirty-tree exits, deliberately. A rebuild restarts
+# the sensor, and refusing to disturb a capture in progress or somebody's
+# half-finished diagnosis is the whole reason those exits exist.
+blocked_exit() {
+    local reason="$1"
+    # A dry run says what it would do. The rebuild below is real work, and the
+    # general dry-run guard sits further down than the CI gate that calls this.
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log "dry run: $reason; not checking build artefacts"
+        exit 0
+    fi
+    if rebuild_stale_artefacts; then
+        log "rebuilt a stale build artefact while waiting"
+        write_state "rebuilt" "$reason, and a build artefact was older than its sources"
+    else
+        write_state "blocked" "$reason"
+    fi
+    exit 0
+}
+
 # --- did CI pass for that exact commit? -------------------------------------
 #
 # The check-runs conclusion for the SHA, not "is main newer". Deploying a red
@@ -380,8 +409,7 @@ else
         # Unreachable GitHub is not a reason to deploy blind. The unit keeps
         # running what it has, which is a commit that was green when it landed.
         log "could not reach the GitHub API; leaving this unit on ${LOCAL:0:8}"
-        write_state "blocked" "the GitHub API is unreachable, so CI could not be checked"
-        exit 0
+        blocked_exit "the GitHub API is unreachable, so CI could not be checked"
     fi
 
     TOTAL=$(printf '%s' "$STATUS_JSON" | grep -o '"total_count"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$')
@@ -389,24 +417,21 @@ else
     if [ "$TOTAL" -eq 0 ]; then
         REMOTE_CI="pending"
         log "no CI runs recorded for ${REMOTE:0:8} yet; will look again next time"
-        write_state "blocked" "no CI runs recorded for this commit yet"
-        exit 0
+        blocked_exit "no CI runs recorded for this commit yet"
     fi
 
     # Any run still going means "not yet", not "fine".
     if printf '%s' "$STATUS_JSON" | grep -q '"status"[[:space:]]*:[[:space:]]*"\(queued\|in_progress\)"'; then
         REMOTE_CI="pending"
         log "CI is still running for ${REMOTE:0:8}; will look again next time"
-        write_state "blocked" "CI is still running for this commit"
-        exit 0
+        blocked_exit "CI is still running for this commit"
     fi
     # Any conclusion that is not success blocks. Listing them explicitly rather
     # than negating "success" means a conclusion GitHub adds later fails closed.
     if printf '%s' "$STATUS_JSON" | grep -q '"conclusion"[[:space:]]*:[[:space:]]*"\(failure\|cancelled\|timed_out\|action_required\|stale\)"'; then
         REMOTE_CI="failure"
         log "CI is not green for ${REMOTE:0:8}; leaving this unit on ${LOCAL:0:8}"
-        write_state "blocked" "CI is not green for this commit"
-        exit 0
+        blocked_exit "CI is not green for this commit"
     fi
     REMOTE_CI="success"
     log "CI is green for ${REMOTE:0:8}"
