@@ -127,6 +127,21 @@ write_state() {
 
 mkdir -p "$STATE_DIR"
 
+# One agent at a time. The watchdog and the deploy agent both run `docker
+# compose up` on the same project, and they run on independent timers -- so
+# without this, a deploy that takes the API down for a rebuild looks like a
+# fault to the watchdog, which "repairs" it by racing a second compose against
+# the first. Observed while installing both on a live unit: the deploy was
+# mid-rebuild and the watchdog was two minutes from firing at it.
+#
+# flock rather than a PID file: the lock dies with the process, so a killed
+# agent cannot leave the other one blocked for ever.
+exec 9>"$STATE_DIR/agent.lock"
+if ! flock -n 9; then
+    log "another ClassG agent is already running; skipping this pass"
+    exit 0
+fi
+
 [ -d "$REPO_DIR/.git" ] || die "no git checkout at $REPO_DIR (set CLASSG_REPO_DIR)"
 cd "$REPO_DIR" || die "cannot enter $REPO_DIR"
 
