@@ -17,6 +17,7 @@ import { TooltipProvider } from '@/components/ui/tooltip-provider'
 import { log } from '@/features/logs/log-store'
 import { registerAppServiceWorker } from '@/features/offline/register-sw'
 import { ApiError } from '@/lib/api/client'
+import { queryKeys } from '@/lib/api/queries'
 import { USE_MSW } from '@/lib/env'
 import { routeTree } from '@/routeTree.gen'
 
@@ -55,17 +56,48 @@ function logApiFailure(error: unknown, context: string): void {
   log.error('api', `${context}: ${error instanceof Error ? error.message : String(error)}`)
 }
 
-const queryClient = new QueryClient({
+/**
+ * A session that expired mid-use must return you to the login screen.
+ *
+ * Without this, the gate only re-checks on window focus, so an expired cookie
+ * left the app on screen with every panel showing its own error — a page full
+ * of "Request failed" that says nothing about the actual cause, and no way back
+ * except a manual reload.
+ *
+ * Invalidating the auth query is enough: AuthGate re-reads it, sees
+ * authenticated:false, and renders the login screen. Deliberately not a
+ * redirect — the gate already owns that decision and two things deciding it
+ * would fight.
+ */
+function onUnauthenticated(error: unknown) {
+  if (!(error instanceof ApiError) || error.status !== 401) return
+  void queryClient.invalidateQueries({ queryKey: queryKeys.authMe })
+}
+
+const queryClient: QueryClient = new QueryClient({
   queryCache: new QueryCache({
-    onError: (error, query) =>
-      logApiFailure(error, `Request failed (${String(query.queryKey[0])})`),
+    onError: (error, query) => {
+      logApiFailure(error, `Request failed (${String(query.queryKey[0])})`)
+      onUnauthenticated(error)
+    },
   }),
   mutationCache: new MutationCache({
-    onError: (error) => logApiFailure(error, 'Action failed'),
+    onError: (error) => {
+      logApiFailure(error, 'Action failed')
+      onUnauthenticated(error)
+    },
   }),
   defaultOptions: {
     queries: {
-      retry: 1,
+      // Never retry a refusal. 401, 403 and 404 are definite answers, and
+      // retrying them three times only delays the login screen — which is the
+      // jankiest possible way to tell someone their session ended.
+      retry: (failureCount, error) => {
+        if (error instanceof ApiError && [400, 401, 403, 404, 409].includes(error.status)) {
+          return false
+        }
+        return failureCount < 1
+      },
       refetchOnWindowFocus: false,
     },
   },
