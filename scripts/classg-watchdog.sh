@@ -103,9 +103,18 @@ fi
 #
 # flock rather than a PID file: the lock dies with the process, so a killed
 # agent cannot leave the other one blocked for ever.
+#
+# Waits rather than skipping outright, for the reason written up in
+# pi-autodeploy.sh: `flock -n` turned an overlap of a few seconds into a lost
+# cycle, invisibly. The asymmetry here is deliberate -- a deploy legitimately
+# holds this lock for minutes, and a watchdog that queued behind one would be
+# checking the health of a stack that is mid-rebuild. So it waits a short time
+# for an overlap and otherwise stands down, which is also the correct
+# behaviour: a deploy in progress is not a fault to repair.
+LOCK_WAIT="${CLASSG_LOCK_WAIT:-20}"
 exec 9>"$STATE_DIR/agent.lock"
-if ! flock -n 9; then
-    log "another ClassG agent is already running; skipping this pass"
+if ! flock -w "$LOCK_WAIT" 9; then
+    log "another ClassG agent still holds the lock after ${LOCK_WAIT}s; standing down this pass"
     exit 0
 fi
 

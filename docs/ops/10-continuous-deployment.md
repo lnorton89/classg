@@ -289,6 +289,36 @@ binary then stays older than its sources and the next run rebuilds again — and
 restarts the sensor again. The agent stamps the binary once in that case and
 says so, which turns a ten-minute ADS-B outage loop into one log line.
 
+### One agent at a time, but a collision must not cost a cycle
+
+The deploy agent and the watchdog share `agent.lock`, because both run
+`docker compose up` on the same project and a deploy that takes the API down
+looks like a fault to a watchdog that does not know one is running.
+
+That lock was taken with `flock -n` — refuse instantly if anyone holds it —
+and the losing pass exited **without writing state**. Both halves of that were
+wrong, and it cost a real deploy: at 12:49:33 the watchdog held the lock, the
+deploy agent gave up inside the same second, and the commit it was there to
+deploy waited another eleven minutes for the next tick. Because nothing was
+written, `last_check_at` stayed frozen on the previous run and the admin page
+showed an agent that appeared to have stopped — which is how it was read, and
+the next twenty minutes went into looking for a broken timer that was running
+perfectly.
+
+Measured, with another agent holding the lock for three seconds:
+
+```
+flock -n     -> REFUSED after 3ms      (the whole ten-minute cycle lost)
+flock -w 60  -> ACQUIRED after 2501ms
+```
+
+So the deploy agent waits up to 60 seconds, which covers a watchdog pass many
+times over, and if it still cannot get in it **says so in the state file**
+rather than leaving a frozen timestamp. The watchdog waits only 20 seconds and
+otherwise stands down, deliberately: a deploy legitimately holds the lock for
+minutes, and a watchdog queued behind one would be judging the health of a
+stack that is mid-rebuild. A deploy in progress is not a fault to repair.
+
 ### It rewrites its own script mid-run, and that is fine
 
 A deploy that touches `scripts/pi-autodeploy.sh` rewrites the very file bash is

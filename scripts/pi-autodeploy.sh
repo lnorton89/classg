@@ -312,9 +312,24 @@ fi
 #
 # flock rather than a PID file: the lock dies with the process, so a killed
 # agent cannot leave the other one blocked for ever.
+#
+# WAITS rather than skipping, and says so when it gives up. `flock -n` returned
+# immediately and this exited without writing state, which cost a real deploy:
+# the watchdog happened to hold the lock at 12:49:33, this agent gave up inside
+# the same second, and the commit it was there to deploy waited another eleven
+# minutes. Worse, the pass left no trace -- last_check_at stayed frozen at the
+# previous run, so the admin page showed an agent that appeared to have died.
+# I read it that way myself and went looking for a broken timer.
+#
+# Sixty seconds covers a watchdog pass many times over. A deploy holding the
+# lock takes minutes, and waiting that out is pointless -- the next tick is ten
+# minutes away and the deploy will be finished. So: wait a minute, then say
+# clearly that the pass was skipped and why.
+LOCK_WAIT="${CLASSG_LOCK_WAIT:-60}"
 exec 9>"$STATE_DIR/agent.lock"
-if ! flock -n 9; then
-    log "another ClassG agent is already running; skipping this pass"
+if ! flock -w "$LOCK_WAIT" 9; then
+    log "another ClassG agent still holds the lock after ${LOCK_WAIT}s; skipping this pass"
+    write_state "blocked" "another ClassG agent was running; this pass was skipped"
     exit 0
 fi
 
