@@ -178,19 +178,33 @@ func run() error {
 	// needs an SDR and a sensor binary built with the `rtlsdr` feature, which
 	// is a Pi and not a laptop, and everything else must keep working without
 	// it (ADR-0003).
+	// Two ways to reach a radio, and which one applies is a property of the
+	// deployment rather than a preference.
+	//
+	// CLASSG_SDR_BIN means the API runs on the host and can exec the sensor
+	// binary itself. That is the dev layout.
+	//
+	// Otherwise, and this is the deployed layout, the API is in a container
+	// with no sensor binary, no /dev/bus/usb and no librtlsdr -- so it hands
+	// the sweep to the host agent through the shared state directory, exactly
+	// as it does for deploys and repairs.
 	var sweeps *spectrum.Service
-	if cfg.SDRBin != "" {
+	var sweeper spectrum.Sweeper
+	switch {
+	case cfg.SDRBin != "":
+		sweeper = spectrum.CommandSweeper{Bin: cfg.SDRBin, Timeout: cfg.SweepTimeout}
+	case cfg.DeployStateDir != "":
+		sweeper = spectrum.FileSweeper{Dir: cfg.DeployStateDir, Timeout: cfg.SweepTimeout}
+	}
+	if sweeper != nil {
 		sweeps = &spectrum.Service{
-			Store: st,
-			Sweeper: spectrum.CommandSweeper{
-				Bin:     cfg.SDRBin,
-				Timeout: cfg.SweepTimeout,
-			},
-			NewID: func() string { return ulid.New(time.Now().UTC()) },
-			Now:   func() time.Time { return time.Now().UTC() },
+			Store:   st,
+			Sweeper: sweeper,
+			NewID:   func() string { return ulid.New(time.Now().UTC()) },
+			Now:     func() time.Time { return time.Now().UTC() },
 		}
 		if ok, why := sweeps.Available(); !ok {
-			slog.Warn("band sweeping is configured but unavailable", "reason", why)
+			slog.Info("band sweeping is not available yet", "reason", why)
 		}
 	}
 

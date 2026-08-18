@@ -1,0 +1,32 @@
+[Unit]
+Description=ClassG: run band sweeps on behalf of the API
+Documentation=https://github.com/lnorton89/classg/blob/main/docs/architecture/adr/0008-adsb-via-dump1090.md
+After=network-online.target
+Wants=network-online.target
+
+# Not Requires=dump1090. This agent STOPS dump1090 for the duration of a sweep
+# and starts it again, so a hard dependency would make systemd fight it.
+After=dump1090-mutability.service
+
+[Service]
+Type=simple
+User=admin
+WorkingDirectory=/home/admin/classg
+ExecStart=/home/admin/classg/scripts/classg-sweep-agent.sh
+
+# A long-lived poller rather than a timer, unlike the other two agents. Sweep
+# latency is felt by a person who just pressed a button: a timer interval would
+# put minutes between the click and the radio moving, for a measurement that
+# takes seconds.
+Restart=always
+RestartSec=5
+
+# If it dies mid-sweep, dump1090 is restarted by the agent's own trap. This is
+# the backstop for the case where even that did not run.
+ExecStopPost=-/usr/bin/systemctl start dump1090-mutability.service
+
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
