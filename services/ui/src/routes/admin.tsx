@@ -1,45 +1,63 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { RocketIcon, ShieldCheckIcon, UsersIcon, WebhookIcon } from 'lucide-react'
+import {
+  HeartPulseIcon,
+  HistoryIcon,
+  RocketIcon,
+  ShieldCheckIcon,
+  UsersIcon,
+  WebhookIcon,
+  type LucideIcon,
+} from 'lucide-react'
+import { useState } from 'react'
 
 import { PageContainer } from '@/components/layout/page-container'
-import { PageHeader, SectionHeader } from '@/components/layout/page-header'
+import { PageHeader } from '@/components/layout/page-header'
 import { Alert } from '@/components/ui/misc'
+import { SortableCardGrid } from '@/components/ui/sortable-card-grid'
 import { AdminUsers } from '@/features/auth/admin-users'
+import { useHasRole } from '@/features/auth/use-auth'
 import { DeployHistory } from '@/features/deploy/deploy-history'
 import { DeploymentPanel } from '@/features/deploy/deployment-panel'
+import { unitPanelOrderStore } from '@/features/deploy/unit-panel-order'
 import { WatchdogPanel } from '@/features/deploy/watchdog-panel'
 import { HooksPanel } from '@/features/hooks/hooks-panel'
-import { useHasRole } from '@/features/auth/use-auth'
+import { cn } from '@/lib/cn'
 
 export const Route = createFileRoute('/admin')({
   component: AdminRoute,
 })
 
+type Category = 'access' | 'unit' | 'outbound'
+
+interface CategoryEntry {
+  key: Category
+  label: string
+  icon: LucideIcon
+  hint: string
+}
+
+const CATEGORIES: CategoryEntry[] = [
+  { key: 'access', label: 'Access', icon: UsersIcon, hint: 'Accounts and sessions' },
+  { key: 'unit', label: 'This unit', icon: RocketIcon, hint: 'Deploy and self-repair' },
+  { key: 'outbound', label: 'Outbound', icon: WebhookIcon, hint: 'Webhooks and email' },
+]
+
 /**
- * Three things an administrator does, in the order they do them.
+ * Three things an administrator does, one at a time.
  *
- * This was four unrelated cards stacked in one column under a heading that
- * promised "who can use this receiver, and who is using it right now" — and
- * then opened with the watchdog, followed by deployment and hooks, with the
- * accounts the sentence described last of the four. Somebody arriving to add
- * a user scrolled past three panels about infrastructure to reach the one
- * thing the page said it was for.
- *
- * Grouped now, and ordered by what brings people here: who can get in, then
- * what this unit does to itself, then what it says to the outside world. It
- * also uses PageContainer and PageHeader like every other route — it was
- * hand-rolling a different width and a different heading style, which is the
- * exact drift PageContainer exists to stop.
- *
- * "This unit" and "Outbound" sit side by side from lg up, the way Settings
- * puts its categories beside their content instead of end to end. Access
- * stays full width above them: an account table wants the room, and it is the
- * one section people arrive at this page already meaning to use, so it is not
- * competing with anything for the top of the screen. Below lg everything
- * still stacks — a phone or a narrow window has no width to split.
+ * This was a stacked column, then a page where "This unit" and "Outbound"
+ * sat side by side below a full-width "Access" — better than the original
+ * four unordered cards, but still a page you scrolled through rather than a
+ * page you moved around in. The left nav here is the same shape Settings and
+ * Sensors already use: a short list of categories, the selected one's full
+ * detail beside it, one destination showing at a time on a phone. Three
+ * categories is not many, but the pattern is the same one an administrator
+ * has already used twice by the time they reach this page, so it costs
+ * nothing to learn a third time.
  */
 function AdminRoute() {
   const isAdmin = useHasRole('admin')
+  const [selected, setSelected] = useState<Category | null>(null)
 
   // A courtesy, not the gate. Every endpoint this page calls refuses a
   // non-admin on its own; this just avoids rendering a screen full of 403s.
@@ -59,6 +77,8 @@ function AdminRoute() {
     )
   }
 
+  const effective = selected ?? 'access'
+
   return (
     <PageContainer>
       <PageHeader
@@ -67,41 +87,120 @@ function AdminRoute() {
         description="Who can get in, what this unit does to itself, and what it tells the outside world."
       />
 
-      <section aria-labelledby="admin-access" className="flex flex-col gap-2">
-        <SectionHeader
-          id="admin-access"
-          icon={UsersIcon}
-          title="Access"
-          description="Accounts and the browsers currently signed in with them. Revoking a session takes effect on its next request."
-        />
-        <AdminUsers />
-      </section>
+      <div className="grid items-start gap-4 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <nav
+          aria-label="Administration categories"
+          className={cn(
+            'border-border bg-card/70 min-w-0 flex-col gap-0.5 rounded-lg border p-2 lg:sticky lg:top-20 lg:flex',
+            selected ? 'hidden lg:flex' : 'flex',
+          )}
+        >
+          {CATEGORIES.map((category) => (
+            <CategoryRow
+              key={category.key}
+              category={category}
+              active={effective === category.key}
+              onSelect={() => setSelected(category.key)}
+            />
+          ))}
+        </nav>
 
-      {/* min-w-0 on both columns so a wide child never stretches the grid
-          past the viewport the way the hooks panel's rule table can. */}
-      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-        <section aria-labelledby="admin-unit" className="flex min-w-0 flex-col gap-2">
-          <SectionHeader
-            id="admin-unit"
-            icon={RocketIcon}
-            title="This unit"
-            description="What it is running, and what it does about its own failures. Neither is driven from here — the API cannot run anything on the host, so both are file exchanges with agents that act on their own schedule."
-          />
-          <DeploymentPanel />
-          <DeployHistory />
-          <WatchdogPanel />
-        </section>
-
-        <section aria-labelledby="admin-hooks" className="flex min-w-0 flex-col gap-2">
-          <SectionHeader
-            id="admin-hooks"
-            icon={WebhookIcon}
-            title="Outbound"
-            description="The only paths by which anything this receiver sees leaves it. Each one is an egress route to a URL or a mailbox somebody chose."
-          />
-          <HooksPanel />
-        </section>
+        <div className={cn('min-w-0 flex-col gap-3', selected ? 'flex' : 'hidden lg:flex')}>
+          <BackToCategories onBack={() => setSelected(null)} />
+          <div
+            key={effective}
+            className="animate-in fade-in slide-in-from-bottom-1 duration-200"
+          >
+            {effective === 'access' ? <AdminUsers /> : null}
+            {effective === 'unit' ? <UnitPanels /> : null}
+            {effective === 'outbound' ? <HooksPanel /> : null}
+          </div>
+        </div>
       </div>
     </PageContainer>
+  )
+}
+
+function CategoryRow({
+  category,
+  active,
+  onSelect,
+}: {
+  category: CategoryEntry
+  active: boolean
+  onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={active ? 'true' : undefined}
+      className={cn(
+        'flex min-h-11 w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
+        active
+          ? 'bg-accent text-foreground'
+          : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+      )}
+    >
+      <category.icon className="size-4 shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{category.label}</span>
+        <span className="text-muted-foreground block truncate text-2xs">{category.hint}</span>
+      </span>
+    </button>
+  )
+}
+
+function BackToCategories({ onBack }: { onBack: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onBack}
+      className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 self-start rounded text-xs lg:hidden"
+    >
+      ← Administration
+    </button>
+  )
+}
+
+/**
+ * Deployment, its history, and self-repair — three panels an administrator
+ * compares against each other more than they read any one in isolation, so
+ * they get the same drag-to-reorder treatment as a track's detail cards.
+ *
+ * `variant: 'plain'` on all three: each already draws its own Card and a
+ * header carrying live state (a pulsing "deploying" badge, a CI result) that
+ * a generic title cannot express, so the grid contributes only the drag
+ * handle, floated over the panel's own header rather than adding a second one.
+ */
+function UnitPanels() {
+  return (
+    <SortableCardGrid
+      store={unitPanelOrderStore}
+      gridClassName="md:grid-cols-1 xl:grid-cols-2"
+      cards={[
+        {
+          id: 'deployment',
+          label: 'Deployment',
+          icon: RocketIcon,
+          variant: 'plain',
+          content: <DeploymentPanel />,
+        },
+        {
+          id: 'history',
+          label: 'Deploy history',
+          icon: HistoryIcon,
+          variant: 'plain',
+          content: <DeployHistory />,
+        },
+        {
+          id: 'watchdog',
+          label: 'Self-repair',
+          icon: HeartPulseIcon,
+          variant: 'plain',
+          content: <WatchdogPanel />,
+        },
+      ]}
+    />
   )
 }
