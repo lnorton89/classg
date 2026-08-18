@@ -21,7 +21,7 @@
  * track's detail view, just without leaving the page.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
   ArchiveIcon,
   ArrowLeftIcon,
@@ -30,6 +30,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useState } from 'react'
+import { z } from 'zod'
 
 import { usePreferences } from '@/app/preferences-context'
 import { useFormat, useTicker } from '@/app/use-format'
@@ -49,8 +50,17 @@ import { capturesQuery, healthQuery, queryKeys, sensorsQuery } from '@/lib/api/q
 import type { RestartSensorResponse, SensorHealth } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
+// In the URL, not component state, so a reload or a shared link lands back
+// on the sensor (or Captures) someone was reading instead of resetting to
+// the first sensor every time.
+export const sensorsSearchSchema = z.object({
+  sensor: z.string().optional().catch(undefined),
+  view: z.literal('captures').optional().catch(undefined),
+})
+
 export const Route = createFileRoute('/sensors')({
   component: SensorsView,
+  validateSearch: sensorsSearchSchema,
   loader: async ({ context }) => {
     await Promise.all([
       context.queryClient.ensureQueryData(healthQuery()),
@@ -72,11 +82,30 @@ export function SensorsView() {
   // Which sensor is awaiting a second click. A restart drops coverage for
   // several seconds, and on a phone the button sits directly under a thumb.
   const [confirmingId, setConfirmingId] = useState<string | null>(null)
-  // Null until something is explicitly picked. Desktop falls back to the
-  // first entry below so its detail pane is never empty; a phone stays on
-  // the list until the operator taps something, per the pattern this reads
-  // from — see the file header.
-  const [selected, setSelected] = useState<Selection | null>(null)
+  const navigate = useNavigate({ from: Route.fullPath })
+  const search = Route.useSearch()
+  // Undefined until something is explicitly picked. Desktop falls back to
+  // the first entry below so its detail pane is never empty; a phone stays
+  // on the list until the operator taps something, per the pattern this
+  // reads from — see the file header.
+  const selected: Selection | undefined =
+    search.view === 'captures'
+      ? { kind: 'captures' }
+      : search.sensor
+        ? { kind: 'sensor', id: search.sensor }
+        : undefined
+
+  // replace: true -- switching the selected sensor is not a new page to walk
+  // back through with the browser's back button, the way opening this page was.
+  function selectSensor(id: string) {
+    void navigate({ search: () => ({ sensor: id, view: undefined }), replace: true })
+  }
+  function selectCaptures() {
+    void navigate({ search: () => ({ sensor: undefined, view: 'captures' }), replace: true })
+  }
+  function goBack() {
+    void navigate({ search: () => ({ sensor: undefined, view: undefined }), replace: true })
+  }
 
   const restart = useMutation({
     mutationFn: (sensorId: string) => api.restartSensor(sensorId),
@@ -131,7 +160,7 @@ export function SensorsView() {
                 <SensorRow
                   sensor={sensor}
                   active={effective?.kind === 'sensor' && effective.id === sensor.sensor_id}
-                  onSelect={() => setSelected({ kind: 'sensor', id: sensor.sensor_id })}
+                  onSelect={() => selectSensor(sensor.sensor_id)}
                 />
               </li>
             ))}
@@ -148,7 +177,7 @@ export function SensorsView() {
               label="Captures"
               caption={captures.length === 1 ? '1 recording' : `${captures.length} recordings`}
               active={effective?.kind === 'captures'}
-              onSelect={() => setSelected({ kind: 'captures' })}
+              onSelect={selectCaptures}
             />
           </div>
 
@@ -164,7 +193,7 @@ export function SensorsView() {
         <div className={cn('min-w-0 flex-col gap-3', selected ? 'flex' : 'hidden lg:flex')}>
           <button
             type="button"
-            onClick={() => setSelected(null)}
+            onClick={goBack}
             className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 self-start rounded text-xs lg:hidden"
           >
             <ArrowLeftIcon className="size-3.5" aria-hidden /> All sensors

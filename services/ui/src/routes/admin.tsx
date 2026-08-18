@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
   HeartPulseIcon,
   HistoryIcon,
@@ -8,7 +8,7 @@ import {
   WebhookIcon,
   type LucideIcon,
 } from 'lucide-react'
-import { useState } from 'react'
+import { z } from 'zod'
 
 import { PageContainer } from '@/components/layout/page-container'
 import { PageHeader } from '@/components/layout/page-header'
@@ -23,11 +23,20 @@ import { WatchdogPanel } from '@/features/deploy/watchdog-panel'
 import { HooksPanel } from '@/features/hooks/hooks-panel'
 import { cn } from '@/lib/cn'
 
-export const Route = createFileRoute('/admin')({
-  component: AdminRoute,
+const CATEGORY_VALUES = ['access', 'unit', 'outbound'] as const
+type Category = (typeof CATEGORY_VALUES)[number]
+
+// In the URL as `?section=`, not component state, so a reload or a shared
+// link lands back on the category someone was reading instead of resetting
+// to Access every time.
+export const adminSearchSchema = z.object({
+  section: z.enum(CATEGORY_VALUES).optional().catch(undefined),
 })
 
-type Category = 'access' | 'unit' | 'outbound'
+export const Route = createFileRoute('/admin')({
+  component: AdminRoute,
+  validateSearch: adminSearchSchema,
+})
 
 interface CategoryEntry {
   key: Category
@@ -55,9 +64,20 @@ const CATEGORIES: CategoryEntry[] = [
  * has already used twice by the time they reach this page, so it costs
  * nothing to learn a third time.
  */
-function AdminRoute() {
+export function AdminRoute() {
   const isAdmin = useHasRole('admin')
-  const [selected, setSelected] = useState<Category | null>(null)
+  const { section: selected } = Route.useSearch()
+  const navigate = useNavigate({ from: Route.fullPath })
+
+  // replace: true -- switching categories is not a new page to walk back
+  // through with the browser's back button, the way opening this page was.
+  function select(section: Category) {
+    void navigate({ search: (prev) => ({ ...prev, section }), replace: true })
+  }
+
+  function goBack() {
+    void navigate({ search: (prev) => ({ ...prev, section: undefined }), replace: true })
+  }
 
   // A courtesy, not the gate. Every endpoint this page calls refuses a
   // non-admin on its own; this just avoids rendering a screen full of 403s.
@@ -100,13 +120,13 @@ function AdminRoute() {
               key={category.key}
               category={category}
               active={effective === category.key}
-              onSelect={() => setSelected(category.key)}
+              onSelect={() => select(category.key)}
             />
           ))}
         </nav>
 
         <div className={cn('min-w-0 flex-col gap-3', selected ? 'flex' : 'hidden lg:flex')}>
-          <BackToCategories onBack={() => setSelected(null)} />
+          <BackToCategories onBack={goBack} />
           <div
             key={effective}
             className="animate-in fade-in slide-in-from-bottom-1 duration-200"

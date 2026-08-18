@@ -3,20 +3,42 @@
  * worker the live app needs to mount, so the list-detail redesign here was
  * checked with a component-level render against the MSW node server instead
  * of eyeballing it. This pins the part that matters most: picking a sensor
- * or "Captures" from the list swaps the detail pane to the right content, and
- * a sensor's own spectrum measurement (Wi-Fi occupancy vs. the SDR sweep)
- * follows its kind rather than being a page of its own.
+ * or "Captures" from the list swaps the detail pane to the right content, a
+ * sensor's own spectrum measurement (Wi-Fi occupancy vs. the SDR sweep)
+ * follows its kind rather than being a page of its own, and the selection
+ * lives in the URL rather than resetting on every render.
+ *
+ * A real router, not a mocked one: the selection is now `Route.useSearch()`
+ * state, which only exists inside an actual route match. A minimal root
+ * carries just the `{ queryClient }` context the loader needs, not the real
+ * app shell (auth gate, header chrome) `routes/__root.tsx` renders.
+ *
+ * The route tree here is built with `createRoute`, not the `SensorsView`
+ * module's own file-based `Route` export directly: `createFileRoute` leaves
+ * `getParentRoute` unset at runtime -- the vite plugin injects it during the
+ * real build, and vitest.config.ts deliberately skips that plugin (see its
+ * own comment) -- so attaching the file route as-is under a fresh root
+ * collides on the root id. `Route.useSearch()` inside `SensorsView` resolves
+ * by matching route id against the router's current state, not by object
+ * identity, so a `createRoute` standing in with the same path and search
+ * schema (exported from sensors.tsx to avoid a second copy of it) works.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import {
+  createMemoryHistory,
+  createRoute,
+  createRootRouteWithContext,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from '@tanstack/react-router'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import type { ReactNode } from 'react'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { ToastProvider } from '@/components/ui/toast-primitives'
-import type * as ReactRouter from '@tanstack/react-router'
 import type {
   Capture,
   CapturesResponse,
@@ -25,19 +47,7 @@ import type {
   TracksResponse,
 } from '@/lib/api/types'
 
-import { SensorsView } from './sensors'
-
-// Only the capture history's "Report" link needs a router, and this suite is
-// about the list-detail navigation, not routing -- a real RouterProvider
-// would need every other route mocked along with it. Everything else
-// (createFileRoute at module scope, notably) comes from the real package.
-vi.mock('@tanstack/react-router', async (importOriginal) => {
-  const actual = await importOriginal<typeof ReactRouter>()
-  return {
-    ...actual,
-    Link: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
-  }
-})
+import { sensorsSearchSchema, SensorsView } from './sensors'
 
 const API = '*/api/v1'
 
@@ -81,15 +91,34 @@ function sensor(id: string, kind: SensorHealth['sensor_kind']): SensorHealth {
   }
 }
 
-function renderPage() {
+function renderPage(initialPath = '/sensors') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+    component: () => <Outlet />,
+  })
+  const sensorsRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/sensors',
+    validateSearch: sensorsSearchSchema,
+    component: SensorsView,
+  })
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([sensorsRoute]),
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
+    context: { queryClient: client },
+  })
+  const result = render(
     <QueryClientProvider client={client}>
       <ToastProvider>
-        <SensorsView />
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment -- the router built here is a test-only subset of the real route tree, not the app's registered one. */}
+        <RouterProvider router={router as any} />
       </ToastProvider>
     </QueryClientProvider>,
   )
+  // Memory history never touches window.location -- the URL a test can
+  // actually observe is the router's own, which is the whole point of
+  // asserting it reflects the selection.
+  return { ...result, router }
 }
 
 describe('SensorsView', () => {
@@ -120,6 +149,26 @@ describe('SensorsView', () => {
     expect(screen.queryByText('Channel occupancy')).not.toBeInTheDocument()
   })
 
+  it('reflects the selected sensor in the URL', async () => {
+    const user = userEvent.setup()
+    sensors = [sensor('wifi-0', 'wifi'), sensor('sdr-0', 'sdr')]
+    const { router } = renderPage()
+
+    await screen.findByText('Channel occupancy')
+    await user.click(screen.getByRole('button', { name: /sdr-0/ }))
+    await screen.findByText('Band sweep')
+
+    expect(router.state.location.search).toEqual({ sensor: 'sdr-0' })
+  })
+
+  it('opening a URL with a sensor already selected shows that sensor, not the default', async () => {
+    sensors = [sensor('wifi-0', 'wifi'), sensor('sdr-0', 'sdr')]
+    renderPage('/sensors?sensor=sdr-0')
+
+    expect(await screen.findByText('Band sweep')).toBeVisible()
+    expect(screen.queryByText('Channel occupancy')).not.toBeInTheDocument()
+  })
+
   it('shows capture history instead of a sensor when Captures is selected', async () => {
     const user = userEvent.setup()
     sensors = [sensor('wifi-0', 'wifi')]
@@ -137,13 +186,14 @@ describe('SensorsView', () => {
       },
     ]
 
-    renderPage()
+    const { router } = renderPage()
 
     await screen.findByText('Channel occupancy')
     await user.click(screen.getByRole('button', { name: /Captures/ }))
 
     expect(await screen.findByText('wifi-0-capture.pcap')).toBeVisible()
     expect(screen.queryByText('Channel occupancy')).not.toBeInTheDocument()
+    expect(router.state.location.search).toEqual({ view: 'captures' })
   })
 
   it('can return to the list and select a different sensor', async () => {

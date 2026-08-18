@@ -83,7 +83,11 @@ export function DeployHistory() {
             appears here.
           </EmptyState>
         ) : (
-          <ul className="divide-border/60 divide-y">
+          // Capped to about five rows and then scrollable, not left to grow
+          // with the list: this card sits in a grid next to two much shorter
+          // ones, and an unbounded history stretched the whole row to match
+          // it, leaving the grid lopsided and mostly empty beside it.
+          <ul className="divide-border/60 max-h-96 divide-y overflow-y-auto pr-1 [scrollbar-gutter:stable]">
             {(history.data?.runs ?? []).map((run) => (
               <RunRow key={run.id} run={run} />
             ))}
