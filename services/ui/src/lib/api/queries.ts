@@ -22,6 +22,9 @@ export const queryKeys = {
   authMe: ['auth', 'me'] as const,
   users: ['admin', 'users'] as const,
   sessions: ['admin', 'sessions'] as const,
+  hookRules: ['admin', 'hooks'] as const,
+  hookDeliveries: ['admin', 'hook-deliveries'] as const,
+  deployment: ['admin', 'deployment'] as const,
   spectrumBands: ['spectrum', 'bands'] as const,
   spectrumSweeps: ['spectrum', 'sweeps'] as const,
   spectrumSweep: (id: string, bins: number) => ['spectrum', 'sweep', id, bins] as const,
@@ -152,6 +155,36 @@ export const authMeQuery = () =>
     // Never retried. A 401 is a definite answer, and retrying it three times
     // just delays the login screen.
     retry: false,
+  })
+
+export const hookRulesQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.hookRules,
+    queryFn: () => api.hookRules(),
+    staleTime: 10_000,
+  })
+
+export const hookDeliveriesQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.hookDeliveries,
+    queryFn: () => api.hookDeliveries(),
+    staleTime: 5_000,
+    refetchInterval: 15_000,
+  })
+
+/**
+ * Deployment state.
+ *
+ * Polled faster while a deploy is pending, because that is the only time the
+ * answer changes on its own — the agent picks the request up on its own
+ * schedule and the page should notice without a reload.
+ */
+export const deploymentQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.deployment,
+    queryFn: () => api.deployment(),
+    staleTime: 5_000,
+    refetchInterval: (query) => (query.state.data?.deploy_requested ? 10_000 : 60_000),
   })
 
 export const usersQuery = () =>
