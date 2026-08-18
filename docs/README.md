@@ -19,6 +19,7 @@ If you read three documents, read these:
 | [04 — DJI protocol](research/04-protocol-dji.md) | Wi-Fi DroneID vs OcuSync DroneID |
 | [05 — Prior art](research/05-prior-art.md) | What exists, what to borrow, what's genuinely open |
 | [06 — Legal and ethics](research/06-legal-and-ethics.md) | Why receive-only, and what that constrains |
+| [07 — Phones as sensors](research/07-phones-as-sensors.md) | Why a PWA cannot be a drone sensor, and what a phone can usefully contribute |
 
 ## Architecture
 
