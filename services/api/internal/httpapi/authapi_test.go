@@ -129,6 +129,11 @@ func TestRoleEnforcementAcrossTheAPI(t *testing.T) {
 		{"GET", "/api/v1/captures", "", auth.RoleViewer},
 		{"GET", "/api/v1/spectrum/bands", "", auth.RoleViewer},
 		{"GET", "/api/v1/config/settings", "", auth.RoleViewer},
+		// GraphQL reads the same rows as the endpoints above, so it sits at
+		// the same level. It carries no admin surface at all -- see
+		// internal/graphqlapi -- which is what keeps one role correct for the
+		// whole endpoint.
+		{"POST", "/api/v1/graphql", `{"query":"{ health { status } }"}`, auth.RoleViewer},
 
 		{"POST", "/api/v1/captures", `{"iface":"wlan1"}`, auth.RoleOperator},
 		{"POST", "/api/v1/spectrum/sweeps", `{"band":"ism_915"}`, auth.RoleOperator},

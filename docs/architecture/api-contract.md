@@ -800,3 +800,80 @@ unit that never installed the agent — not an error.
 `POST .../deploy` returns `202` and says plainly that it means *queued*, not
 *deploying*: the agent acts within ten minutes and still refuses if CI is not
 green or a measurement is in progress.
+
+---
+
+## GraphQL
+
+`POST /graphql` — viewer. Read-only.
+
+One query, one round trip, only the fields asked for. It exists for a request
+REST answers badly:
+
+```graphql
+{ tracks(states: ["CONFIRMED"], limit: 20) {
+    tracks {
+      track_id last_seen confidence
+      detections(limit: 50) { detections { detection_id sensor_kind rf { freq_hz } } }
+    }
+} }
+```
+
+Over REST that is one list call plus one call per track, on a link that is often
+a phone tethered to the unit's own access point.
+
+**Field names are the JSON names from this document**, not camelCase —
+`track_id`, not `trackId`. Four services already speak the contract's spelling
+and `schemas/*.schema.json` is the authority for all of them; a second name for
+every field would be a translation layer with nothing on the other side of it.
+
+### What it deliberately does not do
+
+- **No mutations.** Starting a capture, taking the radio for a sweep, creating a
+  user and arming a hook each carry their own authorisation level and their own
+  failure semantics — `409` when the radio is busy, `503` when a sensor is gone.
+  Restating those in resolvers would mean two implementations of every rule, and
+  the audited one would be the REST one. REST writes; GraphQL reads.
+- **No admin surface.** Users, sessions, hook rules and their secrets, and
+  deployment state have no resolver at all. They are admin-only in REST, and a
+  viewer-level query language that could reach them would be a privilege
+  escalation with extra steps. This is what makes a single role correct for the
+  whole endpoint.
+- **No `raw` on a detection.** The vendor IE bytes stay on
+  `GET /detections`, where asking for them is deliberate.
+- **POST only, no GraphiQL.** A GET carrying a query is cacheable and loggable
+  by everything in the path, and detections carry positions. Introspection stays
+  enabled so a client author can generate types against the live schema.
+
+### Limits
+
+A query is costed **before** any resolver runs, so a rejected one costs a parse
+rather than a walk:
+
+| Limit | Value | Why |
+|---|---|---|
+| Document size | 64 KiB | A query longer than this was not written by hand. |
+| Depth | 8 | The schema's own deepest path is 6 and it has no cycle. This is headroom for the day `Detection` gains a back-reference to its track. |
+| Top-level fields | 24 | Depth alone does not stop `{a: tracks{…} b: tracks{…} …}`, which is flat and runs the expensive resolver once per alias. |
+| `limit` / `cursor` | Same bounds as REST | `store.NormaliseLimit`, so paging cannot be widened by changing protocol. |
+
+Frequencies and byte counts use a **`Hz` scalar serialised as a decimal
+string**, because GraphQL's `Int` is 32-bit and 2.4 GHz does not fit in one.
+
+### Errors
+
+GraphQL responses are `200` with an `errors` array — that is the GraphQL
+contract, and a client library expects to find failures there. This API's
+`{"error":{…}}` envelope is used only for failures *before* execution: a wrong
+method, a body that is not JSON, an oversized document, a query over the cost
+limits. Those are transport failures, not query failures.
+
+Authentication is the exception and behaves like every other endpoint: no
+session is `401` with the envelope, and an insufficient role is `403`.
+
+### Operator location
+
+Redacted at the same switch, in the same place as every other read path —
+`CLASSG_EXPOSE_OPERATOR_LOCATION`. Redaction happens where rows leave the store,
+not in a resolver for the `operator` field, so a type added to the schema later
+cannot route around it.

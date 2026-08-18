@@ -39,6 +39,31 @@ downloads 1.26.6 and runs the tests perfectly.
 requirement.** Both Go jobs and the security job now do this. Do not replace it
 with a literal.
 
+## Chosen deliberately
+
+Dependencies where the obvious alternative was rejected for a reason worth
+recording.
+
+### `graphql-go/graphql` rather than `gqlgen`
+
+`POST /api/v1/graphql` is served by
+[graphql-go/graphql](https://github.com/graphql-go/graphql) v0.8.1, which has
+**zero external dependencies** — `go list -deps` reaches nothing outside the
+standard library and its own subpackages. `gqlgen` is the more active project
+and the more idiomatic choice for a large schema, but it brings roughly a dozen
+modules and a code-generation step that would need its own drift gate in CI,
+the way `sqlc diff` does. For one Pi serving one operator, a schema built
+programmatically in `internal/graphqlapi` and read by the executor at runtime is
+the smaller thing to own.
+
+Upstream is low-activity, and that is the accepted risk. The exit is cheap
+because nothing outside `internal/graphqlapi` imports it: the schema is Go
+structs with the domain types' own `json` tags, and swapping executors means
+rewriting the type definitions, not the resolvers or anything that calls them.
+
+Re-check this if the schema grows mutations — codegen earns its keep once
+inputs, unions and subscriptions arrive, and none of those exist here.
+
 ## Held back
 
 Upgrades that were attempted and reverted. Each one is blocked by something

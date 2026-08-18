@@ -6,6 +6,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/classg/api/internal/capture"
 	"github.com/classg/api/internal/config"
 	"github.com/classg/api/internal/deploy"
+	"github.com/classg/api/internal/graphqlapi"
 	"github.com/classg/api/internal/health"
 	"github.com/classg/api/internal/hooks"
 	"github.com/classg/api/internal/hub"
@@ -26,6 +28,7 @@ import (
 	"github.com/classg/api/internal/settings"
 	"github.com/classg/api/internal/spectrum"
 	"github.com/classg/api/internal/store"
+	"github.com/classg/api/internal/system"
 )
 
 // BasePath is the contract's base URL path.
@@ -170,6 +173,22 @@ func (s *Server) routes() http.Handler {
 	// way.
 	open("GET /metrics", s.handleMetrics)
 
+	// GraphQL: one endpoint, viewer-level, read-only. It answers "these tracks
+	// and, for each, the detections that fed it" in one round trip -- over
+	// REST that is a call per track on a link that is often a phone tethered
+	// to this unit's own access point. Writes and the whole admin surface stay
+	// on REST; see internal/graphqlapi for why that is a decision rather than
+	// an unfinished half.
+	//
+	// A schema that fails to build is a programming error, not a runtime
+	// condition, so it is reported and the endpoint is left absent rather than
+	// serving a broken one. Everything else on this unit still works.
+	if h, err := s.graphqlHandler(); err != nil {
+		slog.Error("the GraphQL schema did not build; that endpoint is not served", "err", err)
+	} else {
+		view("POST "+BasePath+"/graphql", h)
+	}
+
 	view("GET "+BasePath+"/tracks", s.handleListTracks)
 	view("GET "+BasePath+"/tracks/{track_id}", s.handleGetTrack)
 	view("GET "+BasePath+"/tracks/{track_id}/detections", s.handleTrackDetections)
@@ -249,6 +268,34 @@ func (s *Server) routes() http.Handler {
 	mux.Handle("/", s.staticHandler())
 
 	return mux
+}
+
+// graphqlHandler wires the query layer to the same subsystems the REST
+// handlers use. Health and System are passed as closures because both need
+// request-time inputs this server holds -- uptime with its monotonic reading,
+// and the filesystem detections actually land on.
+func (s *Server) graphqlHandler() (http.HandlerFunc, error) {
+	return graphqlapi.Handler(graphqlapi.Deps{
+		Store: s.store,
+		// The same switch every REST read path honours. A second read path
+		// that ignored it would be a privacy regression no REST test catches.
+		ExposeOperatorLocation: s.cfg.ExposeOperatorLocation,
+		Health: func(ctx context.Context) (health.Report, error) {
+			return s.Health(ctx), nil
+		},
+		System: func(context.Context) (system.Info, error) {
+			return system.Collect(system.Options{
+				Version:    s.cfg.Version,
+				Listen:     s.cfg.Listen,
+				Store:      s.cfg.Store,
+				UIDir:      s.cfg.UIDir,
+				CaptureDir: s.cfg.CaptureDir,
+				TursoURL:   s.cfg.TursoURL,
+				DiskPath:   diskPath(s.cfg.DBPath, s.cfg.CaptureDir),
+			}), nil
+		},
+		Spectrum: s.spectrum,
+	})
 }
 
 // --- response helpers ------------------------------------------------------
