@@ -46,6 +46,34 @@ services:
       CLASSG_TURSO_AUTH_TOKEN: ${CLASSG_TURSO_AUTH_TOKEN:-}
       CLASSG_TURSO_SYNC_INTERVAL: ${CLASSG_TURSO_SYNC_INTERVAL:-1m}
 
+      # --- Authentication (Tier 1: the OIDC secret is a secret, and a unit
+      # whose auth mode is editable through its own web UI can be switched off
+      # by whoever already got in).
+      #
+      # Defaults to `required`. A unit with no accounts serves only the setup
+      # screen until someone creates the first administrator -- there is no
+      # default password.
+      CLASSG_AUTH_MODE: ${CLASSG_AUTH_MODE:-required}
+      CLASSG_SESSION_TTL: ${CLASSG_SESSION_TTL:-12h}
+      CLASSG_OIDC_ISSUER: ${CLASSG_OIDC_ISSUER:-}
+      CLASSG_OIDC_CLIENT_ID: ${CLASSG_OIDC_CLIENT_ID:-}
+      CLASSG_OIDC_CLIENT_SECRET: ${CLASSG_OIDC_CLIENT_SECRET:-}
+      CLASSG_OIDC_REDIRECT_URL: ${CLASSG_OIDC_REDIRECT_URL:-}
+      CLASSG_OIDC_AUTO_PROVISION: ${CLASSG_OIDC_AUTO_PROVISION:-false}
+      CLASSG_OIDC_ROLE: ${CLASSG_OIDC_ROLE:-viewer}
+
+      # --- Email hooks. Credentials are Tier 1 for the same reason.
+      CLASSG_SMTP_HOST: ${CLASSG_SMTP_HOST:-}
+      CLASSG_SMTP_PORT: ${CLASSG_SMTP_PORT:-}
+      CLASSG_SMTP_USERNAME: ${CLASSG_SMTP_USERNAME:-}
+      CLASSG_SMTP_PASSWORD: ${CLASSG_SMTP_PASSWORD:-}
+      CLASSG_SMTP_FROM: ${CLASSG_SMTP_FROM:-}
+
+      # Where the host-side agents publish their state. The API only ever reads
+      # those files and writes a deploy-request marker -- it has no way to run
+      # anything on the host, deliberately (internal/deploy).
+      CLASSG_DEPLOY_STATE_DIR: /var/lib/classg/agent-state
+
       # --- Deliberate Tier 2 overrides: container topology the seed cannot know.
       # The seed says 127.0.0.1, which is correct on a Pi and wrong here --
       # container loopback is not the host's.
@@ -57,6 +85,14 @@ services:
     volumes:
       - classg-data:/data
       - ../captures:/captures:ro
+      # The host agents' state directory. Read-write because the API writes the
+      # deploy-request marker the agent picks up; everything else here it only
+      # reads. Nothing in this mount grants host control -- that is the whole
+      # point of exchanging files rather than giving the container a socket.
+      #
+      # ${CLASSG_AGENT_STATE_DIR} must match CLASSG_DEPLOY_STATE on the host
+      # side (the agents' own default is ~/.local/state/classg).
+      - ${CLASSG_AGENT_STATE_DIR:-../.agent-state}:/var/lib/classg/agent-state
       # Read-only: the seed is consulted on first run and whenever a setting has
       # never been stored. Editing it later is deliberately inert -- the
       # database is authoritative and the API is how settings change.
