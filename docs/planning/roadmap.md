@@ -190,6 +190,11 @@ both transports produces exactly **one** track, not two.
 - [x] Prometheus metrics, including hopper efficiency — `GET /metrics`, hand-written exposition off the same report `/health` returns; sensor `detail` exported through an allowlist so ADR-0006 data cannot leak into a scrape
 - [x] Offline tile server for field deployment — achieved with **no tile server**: [`fetch-basemap.sh`](../../scripts/fetch-basemap.sh) cuts two `.pmtiles` archives that whatever already serves the app serves directly, so there is no proxy and no upstream to be offline from
 - [x] Docker Compose for the web tier — fusion, api and ui, `restart: unless-stopped`
+- [x] Authentication, roles, and optional OIDC single sign-on — `internal/auth`, `internal/oidcauth`; argon2id tuned for a Pi 4, opaque session tokens stored as hashes, and an admin page for users, sessions and hooks
+- [x] Outbound event hooks — `internal/hooks`: webhook and SMTP actions, per-subject cooldowns, non-blocking dispatch with a drop count rather than back-pressure on the detector
+- [x] CI-gated pull deploy and a self-healing watchdog on the unit — [10-continuous-deployment.md](../ops/10-continuous-deployment.md), [11-self-healing.md](../ops/11-self-healing.md)
+- [x] Read-only GraphQL beside REST — `internal/graphqlapi`, for "these tracks and the detections that fed each" in one round trip; no mutations and no admin surface, [api-contract.md](../architecture/api-contract.md#graphql)
+- [x] Recorder-style review: a Timeline of tracks as events on a band of time, and a Storage page carrying disk, fill rate and the retention horizons together
 - [x] Config validation on startup with clear errors — all four services: `api` accumulates every fault before exiting (`config.go`), `sensor-sdr` returns `Result<_, Vec<String>>` the same way, `fusion` names the key and the value it rejected and range-checks the receiver position, `sensor-wifi` gets it from argparse type conversion, which applies to environment-supplied defaults too
 
 Bookworm ships systemd 252, which has no `RestartSteps`, so the backoff is
