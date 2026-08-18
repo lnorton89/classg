@@ -82,6 +82,20 @@ services:
       # nginx serves the UI in this layout, so the API serves no static files.
       CLASSG_UI_DIR: "off"
       CLASSG_CAPTURE_DIR: /captures
+
+    # The agent-state bind mount is shared with host processes running as the
+    # operator, and this container runs as its own unprivileged user. Without a
+    # group in common the container can read that directory and not write to
+    # it, which is the worst of the three outcomes: every read path works, the
+    # Spectrum page reports the sweep agent available, and the first sweep
+    # fails with "permission denied" on the request file. Exactly that shipped.
+    #
+    # scripts/agent-state-setup.sh sets the directory to 2775 and records its
+    # gid here. 1000 is the fallback because that is the operator account on a
+    # stock Pi OS image; the container keeps its own uid either way.
+    group_add:
+      - "${CLASSG_AGENT_STATE_GID:-1000}"
+
     volumes:
       - classg-data:/data
       - ../captures:/captures:ro

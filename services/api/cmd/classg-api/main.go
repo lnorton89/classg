@@ -44,6 +44,17 @@ import (
 )
 
 func main() {
+	// One subcommand, and it is a recovery tool rather than a general CLI --
+	// see usercmd.go. Everything else is the server, so an unrecognised
+	// argument is not swallowed as a command name.
+	if len(os.Args) > 1 && os.Args[1] == "user" {
+		if err := runUser(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "classg-api: "+err.Error())
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(); err != nil {
 		// A configuration or startup failure is an operator's problem to fix,
 		// so it prints as a message, never as a panic or a stack trace.

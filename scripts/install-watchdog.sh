@@ -22,14 +22,12 @@ echo "Installing the watchdog from $REPO_DIR"
 # the agents then cannot write to the directory the container made for them --
 # which is exactly what happened on first install here. Creating it first means
 # Compose finds it and leaves the ownership alone.
-STATE_DIR="${CLASSG_DEPLOY_STATE:-$REPO_DIR/.agent-state}"
-mkdir -p "$STATE_DIR"
-if [ ! -w "$STATE_DIR" ]; then
-    echo "$STATE_DIR exists but is not writable by $USER." >&2
-    echo "If docker created it first:  sudo chown -R $USER $STATE_DIR" >&2
-    exit 1
-fi
-echo "Agent state directory: $STATE_DIR"
+#
+# One directory, two users that share nothing, so ownership, permissions, the
+# gid compose needs and a real write test from inside the container all live in
+# one script: getting it half-right leaves every read path working and every
+# write failing, which is how a broken deploy button went unnoticed.
+"$REPO_DIR/scripts/agent-state-setup.sh"
 
 sudo install -m 0644 "$REPO_DIR/deploy/systemd/classg-watchdog.service" "$UNIT_DIR/"
 sudo install -m 0644 "$REPO_DIR/deploy/systemd/classg-watchdog.timer" "$UNIT_DIR/"

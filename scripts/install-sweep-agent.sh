@@ -16,13 +16,12 @@ SDR_BIN="$REPO_DIR/services/sensor-sdr/target/release/classg-sensor-sdr"
 
 echo "Installing the sweep agent from $REPO_DIR"
 
-STATE_DIR="${CLASSG_DEPLOY_STATE:-$REPO_DIR/.agent-state}"
-mkdir -p "$STATE_DIR"
-if [ ! -w "$STATE_DIR" ]; then
-    echo "$STATE_DIR is not writable by $USER." >&2
-    echo "If docker created it first:  sudo chown -R $USER $STATE_DIR" >&2
-    exit 1
-fi
+# One directory, two users that share nothing: the host agents run as the
+# operator and the API runs in a container as its own user. Ownership,
+# permissions, the gid compose needs, and a real write test from inside the
+# container all live in one place, because getting it half-right leaves every
+# read path working and every write failing.
+"$REPO_DIR/scripts/agent-state-setup.sh"
 
 # The sweep engine only exists in a build with the rtlsdr feature. Without it
 # the binary refuses every sweep with a clear message, which is a worse thing to
