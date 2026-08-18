@@ -28,7 +28,6 @@ from .help_docs import render_cli_help, render_cli_topic, topic_ids
 from .hopper import ChannelHopper, load_channels
 from .oui import OUIRegistry
 from .pipeline import Pipeline
-from .survey import SurveySampler
 
 log = logging.getLogger("classg.sensor-wifi")
 
@@ -217,10 +216,6 @@ def cmd_run(args: argparse.Namespace) -> int:
             # stays "alive" and blind. 4.5x leaves room for a slow dwell.
             watchdog_s=args.heartbeat_s * 4.5,
             should_run=lambda: _running,
-            # One sample per heartbeat at most. The sampler differences its own
-            # counters, so the first heartbeat after start reports no survey --
-            # there is no window to measure yet.
-            surveyor=SurveySampler(iface=args.iface),
         )
     except CaptureError as exc:
         # The radio is unusable. Say so on the bus before exiting so /health
