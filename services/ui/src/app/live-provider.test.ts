@@ -129,9 +129,49 @@ describe('applyFrame', () => {
       },
     })
 
+    const merged = client.getQueryData<SensorHealth[]>(queryKeys.sensors)?.[0]
+    expect(merged?.config?.capture).toMatchObject({ interface: 'wlan0', duration_s: 120 })
+    // And the half that DOES come from the heartbeat moved. Keeping the cache
+    // untouched preserved the config too, but left every sensor reading on
+    // screen waiting for a poll while the header had already updated from this
+    // same frame.
+    expect(merged?.healthy).toBe(true)
+  })
+
+  it('takes sensor membership from health, since that is what knows', () => {
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.sensors, [
+      {
+        sensor_id: 'wifi-0',
+        sensor_kind: 'wifi',
+        healthy: true,
+        last_heartbeat: '',
+        seconds_since_heartbeat: 0,
+      },
+    ])
+
+    applyFrame(client, {
+      type: 'health',
+      ts: FRAME_TS,
+      health: {
+        status: 'ok',
+        uptime_s: 10,
+        version: 'test',
+        sensors: [
+          {
+            sensor_id: 'sdr-0',
+            sensor_kind: 'sdr',
+            healthy: true,
+            last_heartbeat: '',
+            seconds_since_heartbeat: 0,
+          },
+        ],
+      },
+    })
+
     expect(
-      client.getQueryData<SensorHealth[]>(queryKeys.sensors)?.[0]?.config?.capture,
-    ).toMatchObject({ interface: 'wlan0', duration_s: 120 })
+      client.getQueryData<SensorHealth[]>(queryKeys.sensors)?.map((s) => s.sensor_id),
+    ).toEqual(['sdr-0'])
   })
 
   /**

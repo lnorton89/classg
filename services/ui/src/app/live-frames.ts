@@ -12,6 +12,7 @@ import { normalizeTrack } from '@/lib/api/client'
 import { queryKeys } from '@/lib/api/queries'
 import type {
   DetectionsResponse,
+  SensorHealth,
   ServerFrame,
   SpectrumSweepsResponse,
   Track,
@@ -73,9 +74,25 @@ export function applyFrame(queryClient: QueryClientLike, frame: ServerFrame): vo
 
     case 'health': {
       queryClient.setQueryData(queryKeys.health, frame.health)
-      // /sensors includes resolved runtime config that /health deliberately
-      // omits. Do not overwrite that richer cache entry with heartbeat-only
-      // data, or capture and restart controls silently lose their settings.
+
+      // /sensors is the same sensors with resolved runtime config attached, and
+      // that config is exactly what /health omits -- so it is MERGED here
+      // rather than overwritten. Overwriting silently drops the capture and
+      // restart settings the sensor cards are built from; not updating at all
+      // leaves every reading a sensor publishes waiting on a 15 s poll while
+      // the header, fed by this same frame, has already moved on.
+      //
+      // Membership follows health, which is the authority on which sensors
+      // exist. Config follows the cache, keyed by sensor_id, so a sensor that
+      // appears mid-session simply has none until the next fetch.
+      queryClient.setQueryData<SensorHealth[]>(queryKeys.sensors, (old) => {
+        if (!old) return old
+        const config = new Map(old.map((sensor) => [sensor.sensor_id, sensor.config]))
+        return frame.health.sensors.map((sensor) => {
+          const known = config.get(sensor.sensor_id)
+          return known ? { ...sensor, config: known } : sensor
+        })
+      })
       break
     }
 

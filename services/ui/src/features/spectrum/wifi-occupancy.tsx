@@ -7,10 +7,14 @@
  * 5 GHz, which the SDR is physically deaf to (ADR-0004) and which is where
  * every DJI drone talks.
  *
- * It updates itself: the sensors query is on the live stream, so an operator
- * watching this page sees each window land without touching anything. There is
- * no button here because there is nothing to start — the measurement is a
- * by-product of listening, which is the whole reason it costs no ADS-B.
+ * It updates itself. Not from the socket, though: `health` frames carry the
+ * heartbeat-only view, and applyFrame deliberately refuses to overwrite the
+ * richer /sensors cache with it. So this rides that query's own 15 s poll,
+ * which is a shade slower than the ~10 s heartbeat and entirely fast enough for
+ * a measurement whose window is the heartbeat interval.
+ *
+ * There is no button because there is nothing to start — the measurement is a
+ * by-product of listening, which is also why it costs no ADS-B.
  */
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangleIcon, WifiIcon } from 'lucide-react'
