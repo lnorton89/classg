@@ -62,6 +62,67 @@ func TestFingerprintAloneStaysLowConfidence(t *testing.T) {
 	if tr.Confidence > 0.10 {
 		t.Fatalf("OUI-only confidence should stay at 0.10, got %v", tr.Confidence)
 	}
+	// This assertion is the point of the test and was missing while the state
+	// machine promoted on count and elapsed time alone. 50 detections over 49 s
+	// clear both thresholds many times over.
+	if tr.State != StateTentative {
+		t.Fatalf("OUI-only track reached %s; must stay TENTATIVE", tr.State)
+	}
+}
+
+// A corroborating-only track is still a track: it holds its MAC index so the
+// Basic ID that arrives once the aircraft starts broadcasting Remote ID adopts
+// it in place. Losing that would trade one false positive for a split track.
+func TestFingerprintTrackConfirmsOnceIdentified(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+	mac := "60:60:1f:11:22:33"
+
+	first := s.Ingest(det("C", "", mac, now), now)
+	s.Ingest(det("C", "", mac, now.Add(3*time.Second)), now.Add(3*time.Second))
+	if first.State != StateTentative {
+		t.Fatalf("fingerprint-only track reached %s before any identification", first.State)
+	}
+
+	at := now.Add(4 * time.Second)
+	tr := s.Ingest(det("A", "SER7", mac, at), at)
+
+	if tr.TrackID != first.TrackID {
+		t.Fatalf("Remote ID minted a second track: %s vs %s", tr.TrackID, first.TrackID)
+	}
+	if tr.State != StateConfirmed {
+		t.Fatalf("identified track should confirm, got %s", tr.State)
+	}
+}
+
+// The 2026-08-17 flight: a DJI-OUI access point on ch149 and the aircraft's
+// Remote ID beacon on ch6 are separate MACs that never share a frame, so they
+// are necessarily separate tracks. What must not happen is both presenting as
+// confirmed aircraft.
+func TestUnidentifiedSidecarDoesNotRankAsAircraft(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+
+	var ap *Track
+	for i := 0; i < 8; i++ {
+		at := now.Add(time.Duration(i) * 2 * time.Second)
+		ap = s.Ingest(det("C", "", "0c:9a:e6:47:3c:89", at), at)
+	}
+
+	at := now.Add(20 * time.Second)
+	drone := s.Ingest(det("A", "1581F9DEC259E0296040", "8c:1e:d9:fc:bb:cc", at), at)
+	at = at.Add(3 * time.Second)
+	drone = s.Ingest(det("A", "1581F9DEC259E0296040", "8c:1e:d9:fc:bb:cc", at), at)
+
+	if drone.TrackID == ap.TrackID {
+		t.Fatal("distinct MACs must not share a track")
+	}
+	if drone.State != StateConfirmed {
+		t.Fatalf("Remote ID track should be CONFIRMED, got %s", drone.State)
+	}
+	if ap.State != StateTentative {
+		t.Fatalf("unidentified access point reached %s; must stay TENTATIVE", ap.State)
+	}
 }
 
 // Sensors often see a Location message before a Basic ID. Promoting a MAC-keyed

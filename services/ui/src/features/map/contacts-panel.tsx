@@ -6,7 +6,7 @@
  * to read the situation on a phone, so it is visible rather than sr-only.
  */
 import { Link } from '@tanstack/react-router'
-import { ArchiveIcon, PlaneIcon, SatelliteDishIcon, UserIcon } from 'lucide-react'
+import { ArchiveIcon, PlaneIcon, RadioIcon, SatelliteDishIcon, UserIcon } from 'lucide-react'
 
 import { useFormat, useTicker, type Formatters } from '@/app/use-format'
 import { Badge } from '@/components/ui/badge'
@@ -19,6 +19,13 @@ import { bearingDegrees, distanceMetres } from './geo'
 
 export interface ContactsPanelProps {
   tracks: Track[]
+  /**
+   * RF that looked drone-like but that nothing has identified as an aircraft —
+   * an OUI or SSID match and no more. Kept in its own section because a DJI-made
+   * access point listed among drone tracks reads as a second aircraft, which is
+   * exactly how one flight appeared to be two on 2026-08-17.
+   */
+  unidentifiedTracks?: Track[]
   closedTracks?: Track[]
   /**
    * Settings › Live map. Hides the whole closed section rather than passing an
@@ -42,6 +49,7 @@ export interface ContactsPanelProps {
 
 export function ContactsPanel({
   tracks,
+  unidentifiedTracks = [],
   closedTracks = [],
   showClosed = true,
   adsb,
@@ -90,6 +98,36 @@ export function ContactsPanel({
           </ul>
         )}
       </section>
+
+      {unidentifiedTracks.length > 0 ? (
+        <section
+          aria-labelledby="contacts-unidentified"
+          className="border-border flex max-h-64 min-h-0 flex-col border-t"
+        >
+          <h2
+            id="contacts-unidentified"
+            className="text-muted-foreground shrink-0 px-3 py-2 text-xs font-semibold tracking-wide uppercase"
+          >
+            Unidentified RF ({unidentifiedTracks.length})
+          </h2>
+          {/*
+            Says what the evidence is rather than what it might be. An OUI match
+            means a radio was built by a drone maker -- a controller, a camera,
+            or the aircraft's own access point all qualify, and so does anything
+            else using the same chipset. None of that is a sighting.
+          */}
+          <p className="text-muted-foreground px-3 pb-2 text-xs">
+            Vendor match only, never plotted. Not counted as aircraft.
+          </p>
+          <ul className="divide-border min-h-0 flex-1 divide-y overflow-y-auto">
+            {unidentifiedTracks.map((track) => (
+              <li key={track.track_id}>
+                <UnidentifiedTrackRow track={track} format={format} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {showClosed ? (
         <section
@@ -302,6 +340,36 @@ function ClosedTrackRow({ track, format }: { track: Track; format: Formatters })
         className="text-primary shrink-0 rounded text-2xs underline-offset-2 hover:underline"
       >
         Review
+      </Link>
+    </div>
+  )
+}
+
+/**
+ * Deliberately not ClosedTrackRow: that row says "closed <time> ago", which is
+ * false for a contact still being heard, and its archive icon reads as history.
+ * This one names the vendor because the vendor guess IS the whole finding.
+ */
+function UnidentifiedTrackRow({ track, format }: { track: Track; format: Formatters }) {
+  const name = track.identity?.macs?.[0] ?? track.track_id
+  const vendor = track.identity?.vendor
+
+  return (
+    <div className="hover:bg-accent/30 flex items-start gap-2 px-3 py-2.5 transition-colors">
+      <RadioIcon className="text-muted-foreground mt-0.5 size-3.5 shrink-0" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <span className="block truncate font-mono text-xs font-medium">{name}</span>
+        <span className="text-muted-foreground mt-0.5 block text-2xs">
+          {vendor ? `${vendor} hardware` : 'vendor match'} · seen{' '}
+          {format.relative(track.last_seen)} · {track.detection_count} detections
+        </span>
+      </div>
+      <Link
+        to="/tracks/$trackId"
+        params={{ trackId: track.track_id }}
+        className="text-primary shrink-0 rounded text-2xs underline-offset-2 hover:underline"
+      >
+        Detail
       </Link>
     </div>
   )

@@ -183,7 +183,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     import yaml
 
     channels = load_channels(yaml.safe_load(Path(args.channels).read_text()))
-    hopper = ChannelHopper(channels, base_dwell_ms=args.dwell_ms)
+    hopper = ChannelHopper(
+        channels,
+        base_dwell_ms=args.dwell_ms,
+        escalation_scan_every=args.escalation_scan_every,
+    )
     matcher = FingerprintMatcher.from_yaml(
         args.fingerprints, OUIRegistry.load_if_present(args.oui_registry)
     )
@@ -347,6 +351,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_run.add_argument(
         "--dwell-ms", type=int, default=os.getenv("CLASSG_WIFI_DWELL_MS", "400")
+    )
+    p_run.add_argument(
+        "--escalation-scan-every",
+        type=int,
+        default=os.getenv("CLASSG_WIFI_ESCALATION_SCAN_EVERY", "4"),
+        help="while locked to a channel, hand every Nth dwell back to the "
+             "weighted sweep. Below 2 disables the reservation and the lock "
+             "becomes absolute, which is how a tracked drone can hide a second "
+             "one. Watch scan_dwells in the efficiency report.",
     )
     p_run.add_argument(
         "--heartbeat-s",

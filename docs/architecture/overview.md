@@ -102,6 +102,15 @@ Configured in `services/sensor-wifi/config/channels.yaml`, not hardcoded.
 channel** for a configurable hold (default 30 s) to maximise track continuity, then resume the
 weighted plan. Tracking a detected aircraft matters more than discovering a second one.
 
+The lock is not absolute. Every Nth dwell (`--escalation-scan-every`, default 4) goes back to
+the weighted sweep, drawn from every channel *except* the locked one. Without that reservation
+the trade above stops being a trade: a drone transmitting continuously refreshes the hold
+forever, and on 2026-08-17 one held ch6 for a 2 m 45 s flight during which the radio visited no
+other channel at all — a second aircraft anywhere else would have been invisible for the
+duration. The reservation costs ~9% of listening time at the default 3× escalated dwell. Watch
+`scan_dwells` against `escalations` in the efficiency report; flat while escalations climb
+means the lock is absolute again.
+
 **Measure it.** The hopper must emit `hop_dwell_ms`, `beacons_seen_per_channel`, and
 `estimated_miss_rate` as metrics. This is a tuning problem with a measurable objective, and it
 is the one area where the survey found no published prior work
@@ -123,10 +132,21 @@ this is a config change, not a rewrite.
   mac=aa:bb:.., odid    ──►  else match by MAC ──►  new track: state=TENTATIVE
                              else new track
                                   │
-                                  ├─ 2+ detections, ≥2 s apart ──► CONFIRMED
+                                  ├─ 2+ detections, ≥2 s apart,  ──► CONFIRMED
+                                  │  AND identified (below)
                                   ├─ no detection for 30 s      ──► COASTING
                                   └─ no detection for 300 s     ──► CLOSED
 ```
+
+**Corroborating evidence never confirms on its own.** Classes C (Wi-Fi OUI/SSID), D (ADS-B)
+and H (GNSS interference) can raise confidence but cannot move a track past TENTATIVE, however
+many detections arrive or how long they span. An OUI names whoever built the radio, not what is
+flying it, and a beacon repeating at 10 Hz clears "2+ detections, ≥2 s apart" in a second.
+
+Such a track is still a track: it keeps its MAC index, so a Basic ID arriving later promotes it
+in place with its history intact. `corroboratingOnlyClasses` in `services/fusion/track.go` is
+the list; the UI mirrors it to shelve those contacts under **Unidentified RF** rather than
+counting them as aircraft.
 
 **Identity precedence** — most to least trustworthy:
 
@@ -137,6 +157,20 @@ this is a config change, not a rewrite.
 
 A track promoted from MAC-keyed to serial-keyed **retains its history**. This matters:
 sensors often see a Location message before a Basic ID.
+
+**Only 1 and 2 are implemented, and only when they co-occur.** Fusion joins two identities when
+a *single detection* carries both — that is the whole association mechanism. There is no
+MAC-to-MAC linking and no position/time gating, so one airframe presenting two radios that
+never share a frame is necessarily two tracks. That is not a tuning failure and no threshold
+fixes it.
+
+This is routine for a DJI: on 2026-08-17 the aircraft's Remote ID beacon (ch6, `8c:1e:d9`, a
+Unigroup chipset) and its 5.8 GHz access point (ch149, `0c:9a:e6`, DJI's own OUI) were recorded
+as separate tracks 4 s apart, with no overlapping frame to link them. Level 3 would be the fix,
+but it needs co-observation the escalation lock was preventing — which is why the scan
+reservation above is a prerequisite for it rather than an unrelated tweak. Until then, keep
+unidentified contacts visibly separate from aircraft rather than merging on vendor alone: two
+DJI drones flying near each other must not collapse into one track.
 
 ---
 

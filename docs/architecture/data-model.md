@@ -149,6 +149,11 @@ Deliberate properties:
 
 - **OUI alone tops out at 0.10.** A DJI-OUI MAC with no Remote ID is a hint, not a detection.
   This is where naive detectors generate most of their false positives.
+- **Confidence is not the only gate.** Classes C, D and H also cannot move a track past
+  TENTATIVE at all — see the lifecycle in
+  [overview.md](overview.md#detection--track-lifecycle). That rule keys on the class, not on
+  the weight, precisely because weights are configuration: retuning C upward must not quietly
+  turn every access point built by a drone manufacturer into a confirmed aircraft.
 - **A + B together ≈ 0.80**, and adding C reaches 0.82. Correlated evidence from the same
   sensor cannot manufacture certainty.
 - **Weights are configuration**, in `services/fusion/config/weights.yaml`. They are calibrated

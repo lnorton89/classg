@@ -30,7 +30,11 @@ var Allowed = map[string]Metric{
 	"listening_fraction": {"classg_wifi_listening_fraction", "Share of wall clock spent receiving rather than retuning.", false},
 	"hops":               {"classg_wifi_hops_total", "Channel hops performed.", true},
 	"escalations":        {"classg_wifi_escalations_total", "Times the hopper locked to a channel on a drone hit.", true},
-	"beacons":            {"classg_wifi_beacons_total", "Beacon frames seen.", true},
+	// The counterpart to escalations: dwells a lock handed back to the sweep.
+	// Flat while escalations climb means the lock is absolute again, which is
+	// the state in which a tracked drone hides every other channel.
+	"scan_dwells": {"classg_wifi_scan_dwells_total", "Dwells reserved for the sweep while locked to a channel.", true},
+	"beacons":     {"classg_wifi_beacons_total", "Beacon frames seen.", true},
 
 	// ADS-B via dump1090.
 	"messages_read": {"classg_sdr_messages_read_total", "SBS-1 messages read from dump1090.", true},
