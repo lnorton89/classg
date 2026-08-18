@@ -81,8 +81,28 @@ describe('WifiOccupancyPanel', () => {
     sensors = [wifi({ survey_available: false })]
     renderPanel()
 
-    expect(await screen.findByText('This adapter reports no survey')).toBeVisible()
+    expect(await screen.findByText('This adapter reports no channel occupancy')).toBeVisible()
     expect(screen.queryByText('2.4 GHz')).not.toBeInTheDocument()
+  })
+
+  // What the unit's own mt7921u does: iw answers, with one 6 GHz entry whose
+  // active time advances and whose busy time and noise are absent. The sensor
+  // says so in words, and those words are what belongs on screen -- not a bar
+  // at 0%, which is what shipped before the hardware was asked.
+  it('repeats the sensor reason when the driver answers with nothing usable', async () => {
+    sensors = [
+      wifi({
+        survey_available: true,
+        survey_reason:
+          'the driver returned 1 survey entry carrying no busy time and no noise floor, ' +
+          'so there is no occupancy to report',
+        survey_seen: 1,
+      }),
+    ]
+    renderPanel()
+
+    expect(await screen.findByText(/carrying no busy time and no noise floor/)).toBeVisible()
+    expect(screen.queryByText('Measuring the first window')).not.toBeInTheDocument()
   })
 
   it('explains the first window instead of showing nothing', async () => {

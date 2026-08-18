@@ -60,10 +60,9 @@ export function WifiOccupancyPanel() {
             does.
           </EmptyState>
         ) : state.kind === 'unsupported' ? (
-          <Alert tone="info" title="This adapter reports no survey">
-            The driver keeps no per-channel counters, or <code className="font-mono">iw</code>{' '}
-            is not installed on the host. Detection is unaffected — this is one view fewer, not
-            a fault.
+          <Alert tone="info" title="This adapter reports no channel occupancy">
+            {state.reason}. Detection is unaffected — this is one view fewer, not a fault, and
+            the Wi-Fi sensor is still the only thing on this unit that can see a DJI.
           </Alert>
         ) : state.kind === 'warming' ? (
           <EmptyState icon={WifiIcon} title="Measuring the first window">

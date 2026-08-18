@@ -174,15 +174,32 @@ class SurveySampler:
     runner: Any = None
     _previous: dict[int, ChannelSurvey] = field(default_factory=dict)
     _available: bool | None = None
+    _reason: str = ""
+    _seen: int = 0
 
     @property
     def available(self) -> bool | None:
-        """True once a survey has been read, False once one has failed.
+        """True once a usable survey has been read, False once one has not.
 
         None before the first attempt. Callers use this to say "no survey on
         this adapter" without implying the sensor is unwell.
         """
         return self._available
+
+    @property
+    def reason(self) -> str:
+        """Why there is no survey, when there is none. Empty when there is."""
+        return self._reason
+
+    @property
+    def seen(self) -> int:
+        """Raw entries the last `iw survey dump` returned, before filtering.
+
+        Published because it is the difference between "the driver told us
+        nothing" and "the driver told us things that mean nothing", and those
+        need different answers.
+        """
+        return self._seen
 
     def sample(self) -> list[dict[str, Any]]:
         """Read the counters and return one entry per channel, newest window.
@@ -196,10 +213,19 @@ class SurveySampler:
         every restart.
         """
         readings = read_survey(self.iface, self.runner)
-        self._available = bool(readings)
+        self._seen = len(readings)
         if not readings:
+            self._available = False
+            self._reason = "iw reported no survey for this interface"
             self._previous = {}
             return []
+
+        # Whether this call had anything to difference against, captured before
+        # the loop updates it. The first sample after a start legitimately
+        # produces nothing, and that is not the adapter's fault -- conflating
+        # the two would report every restart as broken hardware for one
+        # heartbeat.
+        had_previous = bool(self._previous)
 
         out: list[dict[str, Any]] = []
         for reading in readings:
@@ -220,6 +246,22 @@ class SurveySampler:
             if active <= 0:
                 continue
 
+            # Active time on its own is not occupancy, and on this hardware it
+            # is not even dwell. Measured on the unit's mt7921u in monitor
+            # mode: `iw survey dump` returns exactly one entry, for 5955 MHz --
+            # a 6 GHz channel the hopper never tunes and the regdomain forbids
+            # -- whose "channel active time" advances at wall-clock rate with
+            # busy, receive and noise all absent. The channels actually being
+            # swept report nothing at all.
+            #
+            # So an entry with no noise figure and no busy or receive time
+            # carries no measurement, whatever its active time claims. Drawing
+            # that as "0% busy" would assert a clear channel on a band the
+            # radio is not listening to, which is the one thing this interface
+            # must never do.
+            if busy <= 0 and rx <= 0 and reading.noise_dbm is None:
+                continue
+
             entry: dict[str, Any] = {
                 "freq_mhz": reading.freq_mhz,
                 "band": band_for(reading.freq_mhz),
@@ -238,4 +280,18 @@ class SurveySampler:
             out.append(entry)
 
         out.sort(key=lambda e: e["freq_mhz"])
+
+        # `available` answers "did iw give us anything", which it did. Whether
+        # any of it MEANS anything is a separate question, and `reason` is
+        # where that is answered -- because the two need different responses:
+        # one is a missing tool, the other is hardware that cannot do this.
+        self._available = True
+        if out:
+            self._reason = ""
+        elif had_previous:
+            self._reason = (
+                f"the driver returned {self._seen} survey "
+                f"{'entry' if self._seen == 1 else 'entries'} carrying no busy time "
+                "and no noise floor, so there is no occupancy to report"
+            )
         return out

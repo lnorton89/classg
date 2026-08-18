@@ -127,6 +127,37 @@ consequences worth knowing before reading the bars:
   the hopper actually visited in that window have any active time, and dwell is
   weighted heavily towards channel 6.
 
+### What this adapter actually reports
+
+**Measured on the unit's ALFA AWUS036AXML (mt7921u) in monitor mode,
+2026-08-18: nothing usable.** `iw dev wlan1 survey dump` returns exactly one
+entry —
+
+```
+frequency: 5955 MHz
+channel active time: 10254 ms
+```
+
+— for a 6 GHz channel the hopper never tunes and the US regdomain forbids
+listening on anyway, with **no busy time, no receive time and no noise floor**.
+The active time advances at wall-clock rate rather than measuring dwell, and the
+2.4 GHz channels being swept do not appear at all. Sampled repeatedly while the
+hopper moved across channels 11, 8 and 6; the single 5955 MHz entry never
+changed shape.
+
+So on this hardware the occupancy panel reports that the adapter has no
+occupancy to give, and says why. The code is kept because the reasoning holds
+for any driver that does maintain these counters — mac80211 defines them, and a
+managed-mode interface or a different chipset may well populate them — but
+nobody should expect a reading from this adapter.
+
+The trap it walked into first, and the rule that came out of it: **active time
+alone is not a measurement.** The first version drew that entry as "6 GHz
+channel 1, 0% busy", which asserts a clear channel on a band the radio is not
+listening to. An entry with no noise figure and no busy or receive time is now
+dropped, and a survey that is entirely such entries is reported as unavailable
+with the reason attached, rather than as a quiet spectrum.
+
 It costs nothing to run. Unlike a sweep it takes no radio away from anything:
 the numbers are a by-product of listening, which is why this half of the page
 updates itself and has no button. If `iw` is absent or the driver reports no

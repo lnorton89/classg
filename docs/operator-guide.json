@@ -52,7 +52,7 @@
             { "title": "Capture", "body": "Listens to management beacons through a monitor-mode interface and never associates with, transmits to, or disrupts nearby networks." },
             { "title": "Decode", "body": "Parses ASTM F3411 OpenDroneID messages and DJI vendor information elements into normalized Detection records." },
             { "title": "Publish", "body": "Emits detections and regular health heartbeats over ZeroMQ so quiet sky remains distinguishable from sensor failure." },
-            { "title": "Channel occupancy", "body": "Reads the driver's own per-channel busy time and noise floor between dwells and publishes them on the heartbeat. It is the only source of spectrum information for 2.4 and 5 GHz, which the SDR cannot tune, and it costs no radio time because it is a by-product of listening." }
+            { "title": "Channel occupancy", "body": "Reads the driver's own per-channel busy time and noise floor between dwells and publishes them on the heartbeat, for the 2.4 and 5 GHz bands the SDR cannot tune. Measured on this unit's mt7921u the driver reports nothing usable in monitor mode, so the panel says so rather than drawing an empty band; the path remains for adapters whose drivers do maintain these counters." }
           ]
         },
         {

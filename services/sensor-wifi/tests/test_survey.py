@@ -169,3 +169,76 @@ def test_channel_and_band_mapping() -> None:
     assert band_for(2437) == "2.4"
     assert band_for(5180) == "5"
     assert band_for(5955) == "6"
+
+
+# Measured on the unit's mt7921u in monitor mode, 2026-08-18. `iw survey dump`
+# returns exactly ONE entry, for 5955 MHz -- a 6 GHz channel the hopper never
+# tunes and the US regdomain forbids -- whose active time advances at wall-clock
+# rate with busy, receive and noise all absent. The channels actually being
+# swept do not appear at all.
+MT7921U_MONITOR_MODE = """Survey data from wlan1
+\tfrequency:\t\t\t5955 MHz
+\tchannel active time:\t\t{active} ms
+"""
+
+
+def test_an_entry_with_no_busy_and_no_noise_is_not_a_measurement() -> None:
+    # Active time alone says the radio existed for a while. Rendering that as
+    # "0% busy" would assert a clear channel on a band the adapter is not even
+    # listening to, which is exactly what reached the screen before this.
+    sampler = SurveySampler(
+        iface="wlan1",
+        runner=FakeRunner(
+            MT7921U_MONITOR_MODE.format(active=10_000),
+            MT7921U_MONITOR_MODE.format(active=20_254),
+        ),
+    )
+
+    sampler.sample()
+    assert sampler.sample() == []
+    assert sampler.available is True  # iw answered
+    assert "no busy time" in sampler.reason  # but said nothing worth drawing
+    assert sampler.seen == 1
+
+
+def test_the_first_window_is_not_reported_as_broken_hardware() -> None:
+    # The first sample after a start has nothing to difference against. That is
+    # not the adapter failing, and one heartbeat of "this adapter cannot do
+    # occupancy" on every sensor restart would be a lie with a short life.
+    sampler = SurveySampler(
+        iface="wlan1", runner=FakeRunner(MT7921U_MONITOR_MODE.format(active=10_000))
+    )
+
+    assert sampler.sample() == []
+    assert sampler.reason == ""
+
+
+def test_a_noise_reading_alone_is_enough_to_be_worth_reporting() -> None:
+    # A driver that gives a noise floor but no busy counter still measured
+    # something real about the channel.
+    quiet = (
+        "Survey data from wlan1\n"
+        "\tfrequency:\t2437 MHz [in use]\n"
+        "\tnoise:\t-95 dBm\n"
+        "\tchannel active time:\t{active} ms\n"
+        "\tchannel busy time:\t0 ms\n"
+    )
+    sampler = SurveySampler(
+        iface="wlan1",
+        runner=FakeRunner(quiet.format(active=1_000), quiet.format(active=2_000)),
+    )
+
+    sampler.sample()
+    [entry] = sampler.sample()
+    assert entry["noise_dbm"] == -95
+    assert entry["busy_fraction"] == 0
+    assert sampler.reason == ""
+
+
+def test_no_iw_at_all_is_reported_differently_from_a_useless_survey() -> None:
+    # One needs a package installed; the other needs different hardware. An
+    # operator should not have to guess which.
+    sampler = SurveySampler(iface="wlan1", runner=lambda _iface: "")
+    sampler.sample()
+    assert sampler.available is False
+    assert "no survey" in sampler.reason

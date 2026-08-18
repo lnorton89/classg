@@ -543,4 +543,9 @@ def _heartbeat(
         # the spectrum view has to tell an operator which one it is.
         if surveyor.available is not None:
             detail["survey_available"] = surveyor.available
+        # And the reason, which is the difference between a missing package and
+        # hardware that cannot do this at all -- one is worth fixing.
+        if surveyor.reason:
+            detail["survey_reason"] = surveyor.reason
+            detail["survey_seen"] = surveyor.seen
     publisher.heartbeat(healthy=healthy, detail=detail)

@@ -44,8 +44,8 @@ export type SurveyState =
   | { kind: 'no-sensor' }
   /** The sensor is there but has not said whether it can survey. */
   | { kind: 'unknown'; sensorId: string }
-  /** The adapter or its driver has no survey to give. */
-  | { kind: 'unsupported'; sensorId: string }
+  /** The adapter or its driver has no survey worth drawing, and why. */
+  | { kind: 'unsupported'; sensorId: string; reason: string }
   /** Surveying, but the first window has not closed yet. */
   | { kind: 'warming'; sensorId: string }
   | { kind: 'ready'; sensorId: string; channels: ChannelOccupancy[] }
@@ -93,8 +93,21 @@ export function surveyState(sensors: SensorHealth[] | undefined): SurveyState {
   const sensorId = sensor.sensor_id
   const detail = sensor.detail ?? {}
   const available = detail.survey_available
+  const reason = typeof detail.survey_reason === 'string' ? detail.survey_reason : ''
 
-  if (available === false) return { kind: 'unsupported', sensorId }
+  // Two different ways to have nothing, and only one of them is worth an
+  // operator's time. `available: false` is "iw said nothing at all" -- a
+  // missing package. A reason alongside `available: true` is "the driver
+  // answered with counters that mean nothing", which needs different hardware
+  // rather than different config. Measured on this unit's mt7921u; see
+  // classg_wifi/survey.py.
+  if (available === false || reason !== '') {
+    return {
+      kind: 'unsupported',
+      sensorId,
+      reason: reason !== '' ? reason : 'the driver reported no survey for this interface',
+    }
+  }
 
   const raw = detail.survey
   if (!Array.isArray(raw)) {
