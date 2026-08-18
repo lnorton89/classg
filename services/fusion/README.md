@@ -5,6 +5,16 @@ It accepts immutable `Detection` payloads, associates them with a track by
 identity, records evidence and position history, and advances each track
 through `TENTATIVE`, `CONFIRMED`, `COASTING`, and `CLOSED`.
 
+Two limits on that are deliberate and easy to mistake for bugs:
+
+- **Association is by identity only, and only within one detection.** A serial
+  and a MAC are joined when a single `Detection` carries both. There is no
+  MAC-to-MAC or position/time correlation, so one aircraft transmitting from two
+  radios that never share a frame becomes two tracks.
+- **Corroborating classes never confirm.** Evidence of class C, D or H raises
+  confidence but cannot move a track out of `TENTATIVE`
+  (`corroboratingOnlyClasses`), no matter how many detections arrive.
+
 The library owns the deterministic correlation rules; the runtime wrapper is
 `cmd/classg-fusion`, which subscribes to the detection bus, republishes tracks
 and relays heartbeats, configured entirely from the environment

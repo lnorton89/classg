@@ -48,6 +48,22 @@ const airliner: Detection = {
   adsb: { icao: 'A1B2C3', callsign: ' UAL1234 ', alt_ft: 7000, ground_speed_kt: 350 },
 }
 
+/**
+ * The 5.8 GHz access point from the 2026-08-17 flight: DJI-built silicon, an
+ * OUI match and nothing else. No serial, no position, and not the aircraft.
+ */
+const vendorMatchOnly: Track = {
+  schema_version: '1.0',
+  track_id: 'track-ap',
+  state: 'TENTATIVE',
+  first_seen: '2026-08-10T21:59:00Z',
+  last_seen: '2026-08-10T21:59:14Z',
+  detection_count: 8,
+  confidence: 0.1,
+  identity: { macs: ['0c:9a:e6:47:3c:89'], vendor: 'dji' },
+  evidence: [{ class: 'C', sensor_kind: 'wifi', weight: 0.1, count: 8 }],
+}
+
 const helicopter: Detection = {
   ...airliner,
   detection_id: 'det-2',
@@ -62,15 +78,18 @@ const helicopter: Detection = {
 function Panel({
   adsb = [airliner],
   tracks = [track],
+  unidentifiedTracks = [],
 }: {
   adsb?: Detection[]
   tracks?: Track[]
+  unidentifiedTracks?: Track[]
 }) {
   const { selectedTrackId, selectedMannedIcao, selectTrack, selectManned } =
     useContactSelection()
   return (
     <ContactsPanel
       tracks={tracks}
+      unidentifiedTracks={unidentifiedTracks}
       adsb={adsb}
       showClosed={false}
       selectedTrackId={selectedTrackId}
@@ -247,5 +266,41 @@ describe('drone and manned selection are mutually exclusive', () => {
       'true',
     )
     expect(mannedButton(/UAL1234/)).toHaveAttribute('aria-pressed', 'false')
+  })
+})
+
+/**
+ * A vendor match is a statement about who built a radio, not about what is
+ * flying. Listing one among drone tracks is how a single flight read as two
+ * aircraft on 2026-08-17.
+ */
+describe('unidentified RF', () => {
+  it('is kept out of the drone track count', async () => {
+    await renderInRouter(<Panel unidentifiedTracks={[vendorMatchOnly]} />)
+
+    expect(screen.getByText('Active drone tracks (1)')).toBeInTheDocument()
+    expect(screen.getByText('Unidentified RF (1)')).toBeInTheDocument()
+  })
+
+  it('names the vendor and says it is never plotted', async () => {
+    await renderInRouter(<Panel unidentifiedTracks={[vendorMatchOnly]} />)
+
+    const section = screen.getByRole('region', { name: /Unidentified RF/ })
+    expect(within(section).getByText('0c:9a:e6:47:3c:89')).toBeInTheDocument()
+    expect(within(section).getByText(/dji hardware/)).toBeInTheDocument()
+    expect(within(section).getByText(/never plotted/i)).toBeInTheDocument()
+  })
+
+  it('does not describe a contact still being heard as closed', async () => {
+    await renderInRouter(<Panel unidentifiedTracks={[vendorMatchOnly]} />)
+
+    const section = screen.getByRole('region', { name: /Unidentified RF/ })
+    expect(within(section).queryByText(/closed/i)).not.toBeInTheDocument()
+  })
+
+  it('shows no section at all when there is nothing unidentified', async () => {
+    await renderInRouter(<Panel />)
+
+    expect(screen.queryByText(/Unidentified RF/)).not.toBeInTheDocument()
   })
 })

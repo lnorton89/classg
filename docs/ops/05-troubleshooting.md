@@ -38,6 +38,38 @@ works there before re-enabling hopping.
 
 ---
 
+## "One drone showed up as two tracks"
+
+Usually correct, and usually not a fusion bug. A DJI presents more than one radio: the Remote
+ID beacon on 2.4 GHz and a 5.8 GHz access point are different MACs, and fusion links two
+identities only when a *single detection* carries both. Two MACs that never share a frame are
+two tracks by construction.
+
+Check what the sensor actually saw before assuming a correlation failure:
+
+```bash
+sudo sqlite3 /var/lib/docker/volumes/classg-data/_data/classg.db "SELECT mac, detection_class, COUNT(*), MIN(ts), MAX(ts) FROM detections WHERE mac != '' GROUP BY mac, detection_class ORDER BY MIN(ts);"
+```
+
+| What you see | Reading |
+|---|---|
+| Two MACs, different channels, **non-overlapping** time ranges | Two radios on one airframe. Expected. |
+| One track class A/B, the other class C only | The class C one is a vendor guess — it belongs under **Unidentified RF**, not in the aircraft count |
+| Same MAC, two track IDs | A real bug. The first track closed and a new one was minted; check `CloseAfter` against the gap |
+| Two MACs seen **simultaneously**, both class A, different serials | Two aircraft |
+
+Look up an OUI before trusting the vendor label — `data/ieee-oui.csv` is in the sensor tree.
+`8c:1e:d9` is Beijing Unigroup Tsingteng, a chipset vendor, and the DJI rule in
+`oui_fingerprints.yaml` claims it anyway, so *every* device on that silicon reads as DJI.
+
+**A gap in the 5 GHz record during a flight is expected on older builds.** Escalation used to
+lock the radio to the tracked channel absolutely, so nothing else was sampled for as long as
+the drone kept transmitting. `--escalation-scan-every` (default 4) now reserves a share of
+dwells for the sweep; `scan_dwells` in the hopper's efficiency report should climb alongside
+`escalations`.
+
+---
+
 ## "Detections appear, then stop"
 
 | Symptom | Cause | Fix |

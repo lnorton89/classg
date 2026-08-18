@@ -47,7 +47,11 @@ function LiveView() {
   const [mobilePane, setMobilePane] = useState<'map' | 'list'>('map')
 
   const tracks = tracksData?.tracks ?? []
-  const { active: activeTracks, closed: closedTracks } = partitionTracks(tracks)
+  const {
+    active: activeTracks,
+    unidentified: unidentifiedTracks,
+    closed: closedTracks,
+  } = partitionTracks(tracks)
   // One entry per aircraft, not per report. The feed is a stream of SBS
   // messages, so an airliner overhead arrives dozens of times and the panel
   // counted every one of them as a separate contact.
@@ -56,7 +60,10 @@ function LiveView() {
   // Hiding the closed section has to remove it from the count as well. A
   // "Contacts (12)" tab that opens onto nine rows reads as a rendering fault.
   const contactCount =
-    activeTracks.length + (showClosed ? closedTracks.length : 0) + adsb.length
+    activeTracks.length +
+    unidentifiedTracks.length +
+    (showClosed ? closedTracks.length : 0) +
+    adsb.length
   const skyState = computeSkyState(health, activeTracks.length)
 
   const confirmed = activeTracks.filter((track) => track.state === 'CONFIRMED').length
@@ -162,6 +169,7 @@ function LiveView() {
 
         <ContactsPanel
           tracks={activeTracks}
+          unidentifiedTracks={unidentifiedTracks}
           closedTracks={closedTracks}
           showClosed={showClosed}
           adsb={adsb}

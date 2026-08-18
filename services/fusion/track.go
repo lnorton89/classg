@@ -49,6 +49,37 @@ const (
 	HistoryDepth         = 512
 )
 
+// Evidence classes that corroborate an identification but must never make one
+// on their own, however many times they repeat.
+//
+// An OUI names whoever built the radio, not what is flying it: the DJI rule in
+// sensor-wifi's oui_fingerprints.yaml matches an OUI the IEEE registers to a
+// chipset vendor, so class C attributes every device using that silicon to DJI.
+// Classes D and H carry weight 0.00 because they are indicators, not detections.
+//
+// sensor-wifi has stated this invariant since class C existed -- see
+// from_fingerprint in classg_wifi/detection.py -- but nothing enforced it. On
+// 2026-08-17 a lone DJI-OUI access point on ch149, seen for 14 s and never
+// again, confirmed itself as an aircraft and sat beside a real Remote ID track
+// for the full CloseAfter window. Count and elapsed time cannot substitute for
+// corroboration, because a beacon repeating at 10 Hz clears both in a second.
+var corroboratingOnlyClasses = map[string]bool{
+	"C": true, // Wi-Fi OUI/SSID fingerprint -- MAC randomisation, OUI reuse
+	"D": true, // ADS-B -- suppression only; never reaches a track at all
+	"H": true, // GNSS interference -- an indicator, not a drone detection
+}
+
+// identified reports whether anything has actually identified this track as an
+// aircraft, as opposed to merely being consistent with one.
+func (t *Track) identified() bool {
+	for class := range t.Evidence {
+		if !corroboratingOnlyClasses[class] {
+			return true
+		}
+	}
+	return false
+}
+
 type Position struct {
 	Lat          float64  `json:"lat"`
 	Lon          float64  `json:"lon"`
@@ -135,7 +166,11 @@ func (t *Track) updateState(now time.Time, lifecycle Lifecycle) {
 		// Reacquired after occlusion. Same track ID by design -- see test T5.
 		t.State = StateConfirmed
 	case t.State == StateTentative:
-		if t.DetectionCount >= lifecycle.ConfirmMinDetections &&
+		// A track with only corroborating evidence stays TENTATIVE however long
+		// it persists. It is still a track -- it keeps its MAC index so a Basic
+		// ID arriving later promotes it in place, history intact.
+		if t.identified() &&
+			t.DetectionCount >= lifecycle.ConfirmMinDetections &&
 			t.LastSeen.Sub(t.FirstSeen) >= lifecycle.ConfirmMinSpan {
 			t.State = StateConfirmed
 		}
