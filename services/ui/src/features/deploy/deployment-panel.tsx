@@ -116,13 +116,17 @@ export function DeploymentPanel() {
                 <span className="font-mono">
                   {(d.remote_commit ?? '').slice(0, 8) || 'unknown'}
                 </span>
-                <CiBadge ci={d.remote_ci} />
+                {/* Only when there is something to deploy. CI gates a deploy;
+                    on a unit already running that commit the badge answers a
+                    question nobody asked, and "not checked" beside a commit
+                    that is demonstrably running reads as a warning. */}
+                {d.update_available ? <CiBadge ci={d.remote_ci} /> : null}
               </span>
             }
           />
           <DataRow
             label="Last check"
-            value={d.last_check_at ? format.timestamp(d.last_check_at) : 'never'}
+            value={hasRealDate(d.last_check_at) ? format.timestamp(d.last_check_at) : 'never'}
             hint={d.state_age_s !== undefined ? `${formatAge(d.state_age_s)} ago` : undefined}
           />
           <DataRow
@@ -133,7 +137,14 @@ export function DeploymentPanel() {
           <DataRow
             label="Last deploy"
             value={
-              d.last_deploy_at ? (
+              // hasRealDate, not a truthiness check. The API used to send
+              // "0001-01-01T00:00:00Z" for a unit that had never deployed --
+              // Go's omitempty does nothing on a time.Time -- and a bare
+              // `d.last_deploy_at ?` read that as real, rendering "Dec 31, 1"
+              // beside a "rolled back" badge for a deploy that never ran.
+              // The API sends null now; this is the second line, because a
+              // date formatter should never be handed a value on trust.
+              hasRealDate(d.last_deploy_at) ? (
                 <span className="flex flex-wrap items-center gap-2">
                   {format.timestamp(d.last_deploy_at)}
                   {d.last_deploy_ok ? (
@@ -231,6 +242,21 @@ function CiBadge({ ci }: { ci: DeploymentStatus['remote_ci'] }) {
   // "unknown" is the honest answer when the agent had no reason to check --
   // the unit was already up to date, so it never asked GitHub.
   return <Badge variant="muted">CI not checked</Badge>
+}
+
+/**
+ * Whether a timestamp is a real one.
+ *
+ * Guards against the year-1 zero time and anything unparseable. A date
+ * formatter handed "0001-01-01T00:00:00Z" renders it happily, which is how a
+ * unit that had never deployed came to report one on 31 December, year 1.
+ */
+function hasRealDate(iso: string | undefined): iso is string {
+  if (!iso) return false
+  const at = Date.parse(iso)
+  // 1971 rather than 1970: anything at or below the epoch is a sentinel, not a
+  // deploy someone did.
+  return Number.isFinite(at) && at > Date.parse('1971-01-01T00:00:00Z')
 }
 
 function formatAge(seconds: number | undefined): string {

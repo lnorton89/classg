@@ -11,10 +11,17 @@
  * login form leaves the operator typing credentials that cannot exist; a
  * 403 that shows a login form makes a working session look broken.
  *
- * **This is not the security.** Hiding a button a viewer cannot use is a
- * courtesy; the API refusing the request is what actually protects anything.
- * Nothing here should ever be the only thing standing between a role and an
+ * **This is not the security** for ROLES. Hiding a button a viewer cannot use
+ * is a courtesy; the API refusing the request is what actually protects
+ * anything, and nothing here should be the only thing between a role and an
  * action.
+ *
+ * It IS the boundary for what an unauthenticated visitor can see in the client.
+ * The gate wraps the whole shell, so on the login and setup screens no header,
+ * no navigation, no status pills, no command palette and no track alerts mount
+ * at all -- none of those components exist to render, so none of them fetch and
+ * none of them leak. Previously it sat inside <main> and every one of them was
+ * on screen before sign-in, including toasts announcing live detections.
  */
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
@@ -28,10 +35,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const me = useQuery(authMeQuery())
 
   if (me.isPending) {
+    // Deliberately blank rather than a skeleton of the app. A skeleton of the
+    // signed-in layout is itself a hint about what is behind the login.
     return (
-      <div className="mx-auto w-full max-w-md p-8">
+      <AuthChrome>
         <Skeleton className="h-40 w-full" />
-      </div>
+      </AuthChrome>
     )
   }
 
@@ -51,9 +60,35 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   const data = me.data
 
-  if (data.auth_enabled && data.setup_required) return <SetupScreen />
-  if (data.auth_enabled && !data.authenticated)
-    return <LoginScreen providers={data.providers} />
+  if (data.auth_enabled && data.setup_required) {
+    return (
+      <AuthChrome>
+        <SetupScreen />
+      </AuthChrome>
+    )
+  }
+  if (data.auth_enabled && !data.authenticated) {
+    return (
+      <AuthChrome>
+        <LoginScreen providers={data.providers} />
+      </AuthChrome>
+    )
+  }
 
   return <>{children}</>
+}
+
+/**
+ * The only chrome an unauthenticated visitor gets: a page, centred, on the
+ * app's background. No header, no navigation, no status.
+ *
+ * It carries the safe-area insets itself because the header -- which normally
+ * owns them -- is not rendered here.
+ */
+function AuthChrome({ children }: { children: ReactNode }) {
+  return (
+    <div className="bg-background safe-top safe-x safe-bottom flex min-h-dvh flex-col justify-center">
+      <div className="mx-auto w-full max-w-sm px-4 py-8">{children}</div>
+    </div>
+  )
 }

@@ -113,11 +113,45 @@ describe('DeploymentPanel', () => {
       ['unknown', /CI not checked/],
     ]
     for (const [ci, pattern] of cases) {
-      deployment.mockResolvedValue(status({ remote_ci: ci }))
+      deployment.mockResolvedValue(status({ remote_ci: ci, update_available: true }))
       const { unmount } = renderPanel()
       await waitFor(() => expect(screen.getByText(pattern)).toBeInTheDocument())
       unmount()
     }
+  })
+
+  // The bug the screenshot caught: Go's omitempty does nothing on a time.Time,
+  // so a unit that had never deployed sent "0001-01-01T00:00:00Z" and the panel
+  // rendered "Dec 31, 1" beside a "rolled back" badge — a deploy that never
+  // happened, reported as a failure.
+  it('reports a unit that has never deployed as never, not as year 1', async () => {
+    deployment.mockResolvedValue(
+      status({ last_deploy_at: '0001-01-01T00:00:00Z', last_deploy_ok: false }),
+    )
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByText('never')).toBeInTheDocument())
+    expect(screen.queryByText(/rolled back/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/\b1\b.*Dec|Dec.*\b1\b/)).not.toBeInTheDocument()
+  })
+
+  it('treats an absent deploy timestamp as never', async () => {
+    deployment.mockResolvedValue(status({ last_deploy_at: undefined, last_deploy_ok: false }))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByText('never')).toBeInTheDocument())
+    expect(screen.queryByText(/rolled back/)).not.toBeInTheDocument()
+  })
+
+  // CI gates a deploy. On a unit already running that commit the badge answers
+  // a question nobody asked, and "not checked" beside a demonstrably running
+  // commit reads as a warning.
+  it('hides the CI badge when there is nothing to deploy', async () => {
+    deployment.mockResolvedValue(status({ update_available: false, remote_ci: 'unknown' }))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByText(/Latest on main/)).toBeInTheDocument())
+    expect(screen.queryByText(/CI not checked/)).not.toBeInTheDocument()
   })
 
   it('shows a rolled-back deploy as such rather than as a success', async () => {

@@ -38,23 +38,32 @@ import (
 //
 // Every field is written by the script; nothing here is computed by the API.
 // One writer is what makes a plain file safe.
+// Every optional timestamp is a POINTER, and that is not stylistic.
+// `omitempty` does nothing on a time.Time -- it is a struct, and encoding/json
+// only omits empty scalars, maps and slices. A unit that had never deployed was
+// therefore sending last_deploy_at: "0001-01-01T00:00:00Z", which the web app
+// read as a real date and rendered as "Dec 31, 1" next to a "rolled back"
+// badge: a deploy that never happened, reported as a failure.
 type State struct {
-	Commit        string    `json:"commit"`
-	CommitSubject string    `json:"commit_subject,omitempty"`
-	CommitAt      time.Time `json:"commit_at,omitempty"`
+	Commit        string     `json:"commit"`
+	CommitSubject string     `json:"commit_subject,omitempty"`
+	CommitAt      *time.Time `json:"commit_at,omitempty"`
 
 	// LastCheckAt is when the script last looked. A stale value means the timer
 	// is not running, which is the most common "why is nothing deploying".
-	LastCheckAt time.Time `json:"last_check_at,omitempty"`
+	LastCheckAt *time.Time `json:"last_check_at,omitempty"`
 	// LastResult is one of: up-to-date, deployed, blocked, failed.
 	LastResult string `json:"last_result,omitempty"`
 	// LastReason explains a block -- "CI is still running", "a capture is
 	// running", "the working tree is dirty".
 	LastReason string `json:"last_reason,omitempty"`
 
-	LastDeployAt     time.Time `json:"last_deploy_at,omitempty"`
-	LastDeployCommit string    `json:"last_deploy_commit,omitempty"`
-	LastDeployOK     bool      `json:"last_deploy_ok"`
+	LastDeployAt     *time.Time `json:"last_deploy_at,omitempty"`
+	LastDeployCommit string     `json:"last_deploy_commit,omitempty"`
+	// LastDeployOK is only meaningful when LastDeployAt is set. A unit that has
+	// never deployed sends false here, and a client that reads it without
+	// checking the timestamp renders "rolled back" for a deploy that never ran.
+	LastDeployOK bool `json:"last_deploy_ok"`
 
 	RemoteCommit string `json:"remote_commit,omitempty"`
 	// RemoteCI is the CI conclusion for RemoteCommit: success, failure,
@@ -132,8 +141,8 @@ func (r Reader) Status() Status {
 	out.UpdateAvailable = st.RemoteCommit != "" && st.RemoteCommit != st.Commit
 	out.DeployRequested = r.requested()
 
-	if !st.LastCheckAt.IsZero() {
-		age := int64(r.now().Sub(st.LastCheckAt).Seconds())
+	if st.LastCheckAt != nil && !st.LastCheckAt.IsZero() {
+		age := int64(r.now().Sub(*st.LastCheckAt).Seconds())
 		out.StateAgeS = &age
 	}
 	return out
@@ -185,7 +194,8 @@ func (r Reader) requested() bool {
 // the API is containerised and has no business being able to restart host
 // units. It reads what the watchdog wrote and nothing more.
 type WatchdogState struct {
-	LastCheckAt time.Time `json:"last_check_at,omitempty"`
+	// Pointer for the same reason as State's -- see the comment there.
+	LastCheckAt *time.Time `json:"last_check_at,omitempty"`
 	// ActionsTaken in the last pass. Zero is the healthy case.
 	ActionsTaken int `json:"actions_taken"`
 	// NeedsHands names anything the watchdog has stopped trying to repair.
@@ -240,8 +250,8 @@ func (r Reader) Watchdog() WatchdogStatus {
 	}
 
 	out := WatchdogStatus{Configured: true, WatchdogState: st}
-	if !st.LastCheckAt.IsZero() {
-		age := int64(r.now().Sub(st.LastCheckAt).Seconds())
+	if st.LastCheckAt != nil && !st.LastCheckAt.IsZero() {
+		age := int64(r.now().Sub(*st.LastCheckAt).Seconds())
 		out.StateAgeS = &age
 	}
 	return out

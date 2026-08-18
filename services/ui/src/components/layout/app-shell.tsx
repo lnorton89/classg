@@ -53,7 +53,29 @@ const PRIMARY_NAV: NavItem[] = [
   { to: '/docs', label: 'Docs', icon: BookOpenIcon, exact: false },
 ]
 
+/**
+ * The shell, gated.
+ *
+ * AuthGate wraps EVERYTHING, not just <main>. It used to sit inside <main> so
+ * the login screen kept the header and logo, on the reasoning that a bare form
+ * on a blank page looks like a different application. That reasoning was wrong,
+ * and the header is exactly what makes it wrong: to someone who is not signed
+ * in it was rendering system health, sensor state, stream status, whether the
+ * unit was recording, the whole navigation, a command palette over everything
+ * the app knows -- and TrackAlerts, which pops live drone detections as toasts.
+ *
+ * A login page must leak nothing. Nothing below this line mounts, fetches, or
+ * renders until someone is signed in.
+ */
 export function AppShell({ children }: { children: ReactNode }) {
+  return (
+    <AuthGate>
+      <SignedInShell>{children}</SignedInShell>
+    </AuthGate>
+  )
+}
+
+function SignedInShell({ children }: { children: ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
 
   useEffect(() => {
@@ -186,12 +208,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* safe-pb-nav clears the fixed mobile nav and the home indicator under
           it; it collapses to 0 at md, where the nav moves into the header. */}
-      {/* AuthGate is inside <main> rather than around the whole shell, so the
-          login and setup screens keep the header, the offline banner and the
-          logo. A bare form on a blank page looks like a different application,
-          and on a field unit that reads as "something is broken". */}
       <main id="main" className="safe-pb-nav flex min-h-0 flex-1 flex-col overflow-y-auto">
-        <AuthGate>{children}</AuthGate>
+        {children}
       </main>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
