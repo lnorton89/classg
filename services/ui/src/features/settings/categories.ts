@@ -18,6 +18,7 @@ import {
   CloudDownloadIcon,
   EyeIcon,
   GaugeIcon,
+  HardDriveIcon,
   InfoIcon,
   MapIcon,
   RadarIcon,
@@ -105,8 +106,15 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     hint: 'ADS-B, terrain, registries',
     scope: 'receiver',
   },
-  // Reads the Pi rather than this browser, so it belongs with the receiver
-  // group even though it changes nothing.
+  // Reads the Pi rather than this browser, so both of these belong with the
+  // receiver group even though neither changes anything.
+  {
+    to: '/settings/storage',
+    label: 'Storage',
+    icon: HardDriveIcon,
+    hint: 'Disk, fill rate, retention',
+    scope: 'receiver',
+  },
   {
     to: '/settings/about',
     label: 'About',

@@ -32,6 +32,7 @@ import { Route as SettingsLogsRouteImport } from './routes/settings.logs'
 import { Route as SettingsMapRouteImport } from './routes/settings.map'
 import { Route as SettingsNotificationsRouteImport } from './routes/settings.notifications'
 import { Route as SettingsSensorsRouteImport } from './routes/settings.sensors'
+import { Route as SettingsStorageRouteImport } from './routes/settings.storage'
 import { Route as SettingsTracksRouteImport } from './routes/settings.tracks'
 import { Route as TracksIndexRouteImport } from './routes/tracks.index'
 import { Route as TracksTrackIdRouteImport } from './routes/tracks.$trackId'
@@ -151,6 +152,11 @@ const SettingsSensorsRoute = SettingsSensorsRouteImport.update({
   path: '/sensors',
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsStorageRoute = SettingsStorageRouteImport.update({
+  id: '/storage',
+  path: '/storage',
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsTracksRoute = SettingsTracksRouteImport.update({
   id: '/tracks',
   path: '/tracks',
@@ -188,6 +194,7 @@ export interface FileRoutesByFullPath {
   '/settings/map': typeof SettingsMapRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/sensors': typeof SettingsSensorsRoute
+  '/settings/storage': typeof SettingsStorageRoute
   '/settings/tracks': typeof SettingsTracksRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
   '/captures/': typeof CapturesIndexRoute
@@ -214,6 +221,7 @@ export interface FileRoutesByTo {
   '/settings/map': typeof SettingsMapRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/sensors': typeof SettingsSensorsRoute
+  '/settings/storage': typeof SettingsStorageRoute
   '/settings/tracks': typeof SettingsTracksRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
   '/captures': typeof CapturesIndexRoute
@@ -243,6 +251,7 @@ export interface FileRoutesById {
   '/settings/map': typeof SettingsMapRoute
   '/settings/notifications': typeof SettingsNotificationsRoute
   '/settings/sensors': typeof SettingsSensorsRoute
+  '/settings/storage': typeof SettingsStorageRoute
   '/settings/tracks': typeof SettingsTracksRoute
   '/tracks/$trackId': typeof TracksTrackIdRoute
   '/captures/': typeof CapturesIndexRoute
@@ -273,6 +282,7 @@ export interface FileRouteTypes {
     | '/settings/map'
     | '/settings/notifications'
     | '/settings/sensors'
+    | '/settings/storage'
     | '/settings/tracks'
     | '/tracks/$trackId'
     | '/captures/'
@@ -299,6 +309,7 @@ export interface FileRouteTypes {
     | '/settings/map'
     | '/settings/notifications'
     | '/settings/sensors'
+    | '/settings/storage'
     | '/settings/tracks'
     | '/tracks/$trackId'
     | '/captures'
@@ -327,6 +338,7 @@ export interface FileRouteTypes {
     | '/settings/map'
     | '/settings/notifications'
     | '/settings/sensors'
+    | '/settings/storage'
     | '/settings/tracks'
     | '/tracks/$trackId'
     | '/captures/'
@@ -514,6 +526,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsSensorsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    '/settings/storage': {
+      id: '/settings/storage'
+      path: '/storage'
+      fullPath: '/settings/storage'
+      preLoaderRoute: typeof SettingsStorageRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     '/settings/tracks': {
       id: '/settings/tracks'
       path: '/tracks'
@@ -560,6 +579,7 @@ interface SettingsRouteChildren {
   SettingsMapRoute: typeof SettingsMapRoute
   SettingsNotificationsRoute: typeof SettingsNotificationsRoute
   SettingsSensorsRoute: typeof SettingsSensorsRoute
+  SettingsStorageRoute: typeof SettingsStorageRoute
   SettingsTracksRoute: typeof SettingsTracksRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
@@ -574,6 +594,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsMapRoute: SettingsMapRoute,
   SettingsNotificationsRoute: SettingsNotificationsRoute,
   SettingsSensorsRoute: SettingsSensorsRoute,
+  SettingsStorageRoute: SettingsStorageRoute,
   SettingsTracksRoute: SettingsTracksRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }

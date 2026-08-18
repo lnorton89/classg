@@ -73,7 +73,10 @@ system's log — the sensors and API keep their own on the Pi and those are the 
 **Settings** — display preferences, stored in this browser: unit system (metric / aviation /
 imperial), coordinate format, time zone and clock, text size, density, audible new-track
 alert, screen wake lock. Distinct from **Config**, which changes the instrument itself
-(channel dwell, fusion weights) on the server for every client. Settings → **About** renders
+(channel dwell, fusion weights) on the server for every client. Settings → **Storage** puts
+the disk, its fill rate and the retention horizons on one screen, because they are one
+question; the time-to-full projection returns "cannot say" as a real outcome rather than
+fitting a confident date to a flat series. Settings → **About** renders
 `GET /api/v1/system` — build, runtime configuration, host readings — and charts the recorded
 history from `GET /api/v1/telemetry`; a reading the API could not take renders as
 "unavailable" with its reason, never as a zero.
