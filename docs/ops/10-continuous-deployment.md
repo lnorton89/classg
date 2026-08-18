@@ -230,6 +230,26 @@ binary then stays older than its sources and the next run rebuilds again — and
 restarts the sensor again. The agent stamps the binary once in that case and
 says so, which turns a ten-minute ADS-B outage loop into one log line.
 
+### It rewrites its own script mid-run, and that is fine
+
+A deploy that touches `scripts/pi-autodeploy.sh` rewrites the very file bash is
+executing, and `git checkout` **truncates in place** rather than replacing the
+inode — so the running shell keeps reading the same inode at a byte offset that
+the new content has shifted. That is the classic recipe for a script resuming
+mid-token and executing garbage.
+
+Measured rather than assumed, because the fix (re-exec from a private copy) has
+its own failure mode: a bug in it freezes deployment on a box with no shell
+access. A script was run while `git checkout` swapped it for a version with
+7 000 lines inserted *above* the execution point, growing it from 364 KB to
+870 KB. Every command after the swap ran, in order, with no syntax errors and a
+clean exit. Repeated at 37 KB → 76 KB with the same result. This agent is 30 KB,
+an order of magnitude below the tested scale, so no re-exec is used.
+
+If that ever stops holding — a bash version that streams rather than buffers —
+the symptom is a run that dies partway with a syntax error at a line that is not
+in the file, and the fix is to `exec` a `mktemp` copy of `$0` at the top.
+
 The agent's own log is the tail of each run, and until this was fixed it was a
 tail of nothing: every build step piped its output into `while read -r l; do
 log "  $l"; done`, and the right-hand side of a pipe is a subshell, so each
