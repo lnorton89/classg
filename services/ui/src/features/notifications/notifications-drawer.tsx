@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   ActivityIcon,
+  AudioWaveformIcon,
   BellIcon,
   CircleAlertIcon,
   HardDriveIcon,
@@ -9,6 +10,7 @@ import {
   PlaneIcon,
   RadioIcon,
   SettingsIcon,
+  WrenchIcon,
   XIcon,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -48,6 +50,8 @@ const CATEGORY_ICON: Record<NotifyCategory, LucideIcon> = {
   sensor: RadioIcon,
   stream: ActivityIcon,
   capture: HardDriveIcon,
+  spectrum: AudioWaveformIcon,
+  unit: WrenchIcon,
   api: CircleAlertIcon,
   action: MousePointerClickIcon,
 }

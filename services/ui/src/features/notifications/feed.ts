@@ -22,13 +22,16 @@ import type { LogEntry, LogLevel, LogSource } from '@/features/logs/log-store'
 import { LEVEL_RANK } from '@/features/logs/log-store'
 import type { Track } from '@/lib/api/types'
 
-export type NotifyCategory = 'drone' | 'sensor' | 'stream' | 'capture' | 'api' | 'action'
+export type NotifyCategory =
+  'drone' | 'sensor' | 'stream' | 'capture' | 'spectrum' | 'unit' | 'api' | 'action'
 
 export const NOTIFY_CATEGORIES: NotifyCategory[] = [
   'drone',
   'sensor',
   'stream',
   'capture',
+  'spectrum',
+  'unit',
   'api',
   'action',
 ]
@@ -38,6 +41,8 @@ export const NOTIFY_CATEGORY_LABEL: Record<NotifyCategory, string> = {
   sensor: 'Sensor health',
   stream: 'Connection',
   capture: 'Captures',
+  spectrum: 'Band sweeps',
+  unit: 'Unit maintenance',
   api: 'API errors',
   action: 'Operator actions',
 }
@@ -47,6 +52,8 @@ export const NOTIFY_CATEGORY_HINT: Record<NotifyCategory, string> = {
   sensor: 'An adapter going unhealthy, recovering, or vanishing from USB.',
   stream: 'The live stream connecting, dropping, or falling back to polling.',
   capture: 'PCAP and IQ capture activity.',
+  spectrum: 'A sweep starting or landing. One takes the radio from ADS-B while it runs.',
+  unit: 'What the unit did to itself: deploys it pulled, repairs the watchdog made.',
   api: 'Requests this console made that the API refused or never answered.',
   action: 'What was clicked in this browser. Useful when two people share a console.',
 }
@@ -59,6 +66,8 @@ const SOURCE_CATEGORY: Partial<Record<LogSource, NotifyCategory>> = {
   sensor: 'sensor',
   stream: 'stream',
   capture: 'capture',
+  spectrum: 'spectrum',
+  deploy: 'unit',
   api: 'api',
   ui: 'action',
 }

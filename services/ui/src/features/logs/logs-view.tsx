@@ -65,6 +65,8 @@ const SOURCE_LABEL: Record<LogSource, string> = {
   detection: 'detection',
   sensor: 'sensor',
   capture: 'capture',
+  spectrum: 'spectrum',
+  deploy: 'deploy',
   api: 'api',
   ui: 'operator',
 }

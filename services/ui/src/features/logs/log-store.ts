@@ -38,7 +38,8 @@ export const LEVEL_RANK: Record<LogLevel, number> = {
   error: 3,
 }
 
-export type LogSource = 'stream' | 'track' | 'detection' | 'sensor' | 'capture' | 'api' | 'ui'
+export type LogSource =
+  'stream' | 'track' | 'detection' | 'sensor' | 'capture' | 'spectrum' | 'deploy' | 'api' | 'ui'
 
 export const LOG_SOURCES: LogSource[] = [
   'stream',
@@ -46,6 +47,8 @@ export const LOG_SOURCES: LogSource[] = [
   'detection',
   'sensor',
   'capture',
+  'spectrum',
+  'deploy',
   'api',
   'ui',
 ]

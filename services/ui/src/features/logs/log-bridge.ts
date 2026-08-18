@@ -218,6 +218,32 @@ export function createFrameLogger(): FrameLogger {
         break
       }
 
+      case 'sweep.status': {
+        const sweep = frame.sweep
+        // A sweep is the one operator action that costs something visible --
+        // dump1090 loses the radio for its duration -- so all three of its
+        // states are worth a line, including the start.
+        log.entry({
+          level: sweep.state === 'failed' ? 'error' : 'info',
+          source: 'spectrum',
+          message:
+            sweep.state === 'running'
+              ? `Sweep of ${sweep.band} started — ADS-B is blind until it finishes`
+              : `Sweep of ${sweep.band} ${sweep.state}`,
+          detail: {
+            sweep_id: sweep.sweep_id,
+            ...(sweep.noise_floor_dbfs !== undefined && sweep.noise_floor_dbfs !== null
+              ? { noise_floor_dbfs: sweep.noise_floor_dbfs }
+              : {}),
+            ...(sweep.peak_dbfs !== undefined && sweep.peak_dbfs !== null
+              ? { peak_dbfs: sweep.peak_dbfs }
+              : {}),
+            ...(sweep.error ? { error: sweep.error } : {}),
+          },
+        })
+        break
+      }
+
       case 'ping':
         break
     }

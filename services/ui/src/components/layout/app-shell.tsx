@@ -28,6 +28,8 @@ import { AuthGate } from '@/features/auth/auth-gate'
 import { AppUpdateBanner, OfflineBanner } from '@/features/offline/offline-banner'
 import { cn } from '@/lib/cn'
 
+import { useUnitEvents } from '@/features/deploy/use-unit-events'
+
 import { CommandPalette } from './command-palette'
 import { MockScenarioSwitcher } from './mock-scenario-switcher'
 
@@ -218,6 +220,7 @@ function SignedInShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
+      <UnitEvents />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <TrackAlerts />
       <Toaster />
@@ -370,4 +373,14 @@ function SettingsButton() {
       </Link>
     </Tooltip>
   )
+}
+
+/**
+ * A hook needs a component to live in, and this one belongs to the whole shell
+ * rather than to any page: a deploy landing or the watchdog giving up is news
+ * wherever the operator happens to be looking.
+ */
+function UnitEvents() {
+  useUnitEvents()
+  return null
 }
