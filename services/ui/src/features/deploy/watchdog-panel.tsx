@@ -19,6 +19,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, DataList, DataRow, Skeleton } from '@/components/ui/misc'
 import { watchdogQuery } from '@/lib/api/queries'
 
+import { LogDisclosure } from './log-disclosure'
+
 /** The timer runs every two minutes; three misses is unambiguous. */
 const STALE_AFTER_S = 6 * 60
 
@@ -135,16 +137,10 @@ export function WatchdogPanel() {
           />
         </DataList>
 
-        {w.log && w.log.length > 0 ? (
-          <details>
-            <summary className="text-muted-foreground cursor-pointer text-2xs">
-              Last watchdog pass ({w.log.length} line{w.log.length === 1 ? '' : 's'})
-            </summary>
-            <pre className="bg-muted/40 mt-2 max-h-64 overflow-auto rounded-md p-2 font-mono text-2xs whitespace-pre-wrap">
-              {w.log.join('\n')}
-            </pre>
-          </details>
-        ) : null}
+        <LogDisclosure
+          log={w.log}
+          summary={`Last watchdog pass (${w.log?.length ?? 0} line${w.log?.length === 1 ? '' : 's'})`}
+        />
       </CardContent>
     </Card>
   )

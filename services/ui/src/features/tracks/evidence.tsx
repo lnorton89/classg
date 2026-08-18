@@ -8,6 +8,7 @@
  * Nothing here uses a red/amber/green ramp. `confidence` answers "is this really
  * a drone"; colouring it like a threat scale would restate it as one.
  */
+import { BarMeter } from '@/components/ui/bar-meter'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip } from '@/components/ui/tooltip'
 import type { Evidence } from '@/lib/api/types'
@@ -98,19 +99,11 @@ export function ConfidenceBar({
 }) {
   const format = useFormat()
   return (
-    <span
-      role="meter"
-      aria-valuenow={Math.round(confidence * 100)}
-      aria-valuemin={0}
-      aria-valuemax={100}
+    <BarMeter
+      fraction={confidence}
       aria-label={`Confidence that this is a drone: ${format.confidence(confidence)}`}
-      className={cn('bg-muted relative block h-1.5 overflow-hidden rounded-full', className)}
-    >
-      <span
-        className="bg-track absolute inset-y-0 left-0 rounded-full"
-        style={{ width: `${Math.round(confidence * 100)}%` }}
-      />
-    </span>
+      className={cn('h-1.5', className)}
+    />
   )
 }
 

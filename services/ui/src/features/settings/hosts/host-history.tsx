@@ -18,6 +18,7 @@ import { AlertTriangleIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { useFormat, type Formatters } from '@/app/use-format'
+import { AccessibleChartTable } from '@/components/ui/accessible-chart-table'
 import { Segmented } from '@/components/ui/segmented'
 import { Skeleton } from '@/components/ui/misc'
 import { cn } from '@/lib/cn'
@@ -102,7 +103,6 @@ export function HostHistory({
 }) {
   const format = useFormat()
   const [hoverIndex, setHoverIndex] = useState<number | null>(null)
-  const [tableOpen, setTableOpen] = useState(false)
 
   const metrics = useMemo(() => hostMetrics(format), [format])
   const samples = useMemo(() => data?.samples ?? [], [data])
@@ -223,53 +223,35 @@ export function HostHistory({
             </p>
           ) : null}
 
-          {/* The accessible twin of the plots: same rows, as a table. */}
-          <details className="mt-2" onToggle={(e) => setTableOpen(e.currentTarget.open)}>
-            <summary className="text-muted-foreground cursor-pointer text-2xs">
-              Show history as a table
-            </summary>
-            {tableOpen ? (
-              <div className="mt-1 max-h-64 overflow-auto">
-                <table className="w-full text-left text-2xs">
-                  <thead className="text-muted-foreground">
-                    <tr>
-                      <th scope="col" className="py-1 pr-3 font-medium">
-                        Time ({format.zoneLabel})
-                      </th>
-                      {metrics.map((metric) => (
-                        <th key={metric.key} scope="col" className="py-1 pr-3 font-medium">
-                          {metric.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="font-mono">
-                    {samples.map((sample) => (
-                      <tr key={sample.ts}>
-                        <td className="py-0.5 pr-3">
-                          {spansDays ? format.timestamp(sample.ts) : format.clock(sample.ts)}
-                        </td>
-                        {metrics.map((metric) => {
-                          const value = metric.pick(sample)
-                          return (
-                            <td key={metric.key} className="py-0.5 pr-3">
-                              {value === null ? (
-                                <span className="text-muted-foreground font-sans">
-                                  Unavailable
-                                </span>
-                              ) : (
-                                metric.fmt(value)
-                              )}
-                            </td>
-                          )
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-          </details>
+          {/* The accessible twin of the plots: same rows, as a table. Lazy: a
+              5,000-sample window should not render its body until asked. */}
+          <AccessibleChartTable
+            className="mt-2"
+            summary="Show history as a table"
+            lazy
+            rows={samples}
+            rowKey={(sample) => sample.ts}
+            columns={[
+              {
+                key: 'time',
+                label: `Time (${format.zoneLabel})`,
+                render: (sample) =>
+                  spansDays ? format.timestamp(sample.ts) : format.clock(sample.ts),
+              },
+              ...metrics.map((metric) => ({
+                key: metric.key,
+                label: metric.label,
+                render: (sample: TelemetrySample) => {
+                  const value = metric.pick(sample)
+                  return value === null ? (
+                    <span className="text-muted-foreground font-sans">Unavailable</span>
+                  ) : (
+                    metric.fmt(value)
+                  )
+                },
+              })),
+            ]}
+          />
         </div>
       ) : null}
     </div>

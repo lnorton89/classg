@@ -11,6 +11,7 @@
  */
 import { useId } from 'react'
 
+import { AccessibleChartTable } from '@/components/ui/accessible-chart-table'
 import { cn } from '@/lib/cn'
 import { useFormat } from '@/app/use-format'
 
@@ -139,33 +140,25 @@ export function RssiChart({
       </figcaption>
 
       {/* The accessible equivalent of the plot: same data, as a table. */}
-      <details className="mt-1">
-        <summary className="text-muted-foreground cursor-pointer text-2xs">
-          Show RSSI samples as a table
-        </summary>
-        <div className="mt-1 max-h-48 overflow-auto [scrollbar-gutter:stable_both-edges]">
-          <table className="mb-2 w-full pr-3 text-left text-2xs">
-            <thead className="text-muted-foreground">
-              <tr>
-                <th scope="col" className="py-1 pr-3 font-medium">
-                  Time ({format.zoneLabel})
-                </th>
-                <th scope="col" className="py-1 font-medium">
-                  RSSI
-                </th>
-              </tr>
-            </thead>
-            <tbody className="font-mono">
-              {samples.map((sample) => (
-                <tr key={`${sample.ts}-${sample.rssi}`}>
-                  <td className="py-0.5 pr-3">{format.clock(sample.ts)}</td>
-                  <td className="py-0.5">{format.rssi(sample.rssi)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </details>
+      <AccessibleChartTable
+        className="mt-1"
+        summary="Show RSSI samples as a table"
+        rows={samples}
+        rowKey={(sample) => `${sample.ts}-${sample.rssi}`}
+        columns={[
+          {
+            key: 'time',
+            label: `Time (${format.zoneLabel})`,
+            render: (s) => format.clock(s.ts),
+          },
+          {
+            key: 'rssi',
+            label: 'RSSI',
+            className: 'py-0.5',
+            render: (s) => format.rssi(s.rssi),
+          },
+        ]}
+      />
     </figure>
   )
 }

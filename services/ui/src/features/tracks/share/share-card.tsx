@@ -26,6 +26,7 @@
  */
 import type { Ref } from 'react'
 
+import { ClassGMarkGeometry } from '@/components/brand/classg-logo'
 import { EMPTY } from '@/lib/format'
 
 import type { ShareCardModel } from './share-card-model'
@@ -72,40 +73,16 @@ function Label({ x, y, children }: { x: number; y: number; children: string }) {
   )
 }
 
-/** The ClassG mark, geometry copied from components/brand/classg-logo.tsx. */
+/** The ClassG mark, positioned on the card. Geometry is shared with the live
+ *  header logo — see ClassGMarkGeometry's own comment for why the colours
+ *  are not. */
 function Mark({ x, y, size }: { x: number; y: number; size: number }) {
   const s = size / 160
   return (
     <g transform={`translate(${x}, ${y}) scale(${s})`}>
-      <rect
-        x="1"
-        y="1"
-        width="158"
-        height="158"
-        rx="34"
-        fill={C.night}
-        stroke={C.cyan}
-        strokeOpacity="0.32"
-        strokeWidth="2"
+      <ClassGMarkGeometry
+        colors={{ plateFill: C.night, plateStroke: C.cyan, cyan: C.cyan, fog: C.fog }}
       />
-      <g fill="none" strokeLinecap="round" strokeLinejoin="round">
-        <path
-          d="M84 30C54 30 30 54 30 84s24 54 54 54c20 0 39-11 48-28M103 84h35l-2 10c-1 6-2 11-4 16"
-          stroke={C.cyan}
-          strokeWidth="5"
-        />
-        <path d="M84 45A39 39 0 1 0 115.5 107.5" stroke={C.fog} strokeWidth="4" />
-      </g>
-      <g stroke={C.cyan} strokeWidth="2.25" strokeLinecap="round">
-        <path d="m106 43 18 18M124 43l-18 18" />
-      </g>
-      <g fill={C.cyan}>
-        <circle cx="106" cy="43" r="2.7" />
-        <circle cx="124" cy="43" r="2.7" />
-        <circle cx="106" cy="61" r="2.7" />
-        <circle cx="124" cy="61" r="2.7" />
-        <circle cx="115" cy="52" r="3.2" />
-      </g>
     </g>
   )
 }

@@ -25,13 +25,14 @@ import { useQuery } from '@tanstack/react-query'
 import { HardDriveIcon, TrendingDownIcon, UserRoundIcon } from 'lucide-react'
 
 import { useFormat } from '@/app/use-format'
+import { BarMeter } from '@/components/ui/bar-meter'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, Skeleton } from '@/components/ui/misc'
 import { capturesQuery, settingsQuery, systemQuery, telemetryQuery } from '@/lib/api/queries'
 import { cn } from '@/lib/cn'
 import { formatGoDuration } from '@/lib/format'
 
-import { SettingsGroup } from './setting-fields'
+import { SettingsGroup } from '../setting-fields'
 import { forecastDiskFull, usedFraction } from './storage-forecast'
 import type { ForecastVerdict } from './storage-forecast'
 
@@ -110,19 +111,13 @@ export function StoragePanel() {
             </Alert>
           ) : (
             <>
-              <div
-                className="bg-muted h-3 w-full overflow-hidden rounded-full"
+              <BarMeter
+                fraction={used}
                 role="img"
                 aria-label={`Disk ${(used * 100).toFixed(0)} percent used`}
-              >
-                <div
-                  className={cn(
-                    'h-full rounded-full',
-                    used > 0.9 ? 'bg-down' : used > 0.75 ? 'bg-warn' : 'bg-ok',
-                  )}
-                  style={{ width: `${used * 100}%` }}
-                />
-              </div>
+                className="h-3"
+                fillClassName={used > 0.9 ? 'bg-down' : used > 0.75 ? 'bg-warn' : 'bg-ok'}
+              />
               <dl className="tnum grid gap-x-6 gap-y-1 text-xs sm:grid-cols-3">
                 <Figure label="Used" value={`${(used * 100).toFixed(1)}%`} />
                 <Figure label="Free" value={format.bytes(host?.disk_free_bytes ?? 0)} />

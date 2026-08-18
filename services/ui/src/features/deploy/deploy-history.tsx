@@ -21,6 +21,8 @@ import { Alert, EmptyState, Skeleton } from '@/components/ui/misc'
 import { deploymentHistoryQuery } from '@/lib/api/queries'
 import type { DeploymentRun } from '@/lib/api/types'
 
+import { ArtefactList } from './artefact-list'
+
 // Keyed by `string`, not by the result union, on purpose. The type says the
 // agent only ever sends these three; the agent is a shell script on a box that
 // upgrades independently of this bundle, and a future result it learns to write
@@ -143,18 +145,7 @@ function RunRow({ run }: { run: DeploymentRun }) {
             </p>
           ) : null}
 
-          {run.artefacts && run.artefacts.length > 0 ? (
-            <ul className="flex flex-wrap gap-2">
-              {run.artefacts.map((artefact) => (
-                <li key={artefact.name} className="flex items-center gap-1.5">
-                  <code className="font-mono text-2xs">{artefact.name}</code>
-                  <Badge variant={artefact.state === 'failed' ? 'down' : 'muted'}>
-                    {artefact.state}
-                  </Badge>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          <ArtefactList artefacts={run.artefacts} />
 
           {run.log && run.log.length > 0 ? (
             <pre className="bg-muted/40 max-h-72 overflow-auto rounded-md p-2 font-mono text-2xs whitespace-pre-wrap">

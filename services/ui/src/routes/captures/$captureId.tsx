@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { ArrowLeftIcon, DownloadIcon, PlayIcon } from 'lucide-react'
 
+import { BarMeter } from '@/components/ui/bar-meter'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -206,14 +207,11 @@ function ReportView({ report }: { report: CaptureReport }) {
               {report.channel_usage.map((entry) => (
                 <li key={entry.channel} className="flex items-center gap-2">
                   <span className="w-14 font-mono text-xs">ch {entry.channel}</span>
-                  <span className="bg-muted relative h-2 flex-1 overflow-hidden rounded-full">
-                    <span
-                      className="bg-track absolute inset-y-0 left-0 rounded-full"
-                      style={{
-                        width: `${totalBeacons ? (entry.beacons / totalBeacons) * 100 : 0}%`,
-                      }}
-                    />
-                  </span>
+                  <BarMeter
+                    fraction={totalBeacons ? entry.beacons / totalBeacons : 0}
+                    aria-label={`Channel ${entry.channel}: ${entry.beacons} beacons`}
+                    className="h-2 flex-1"
+                  />
                   <span className="w-14 text-right font-mono text-xs">{entry.beacons}</span>
                 </li>
               ))}
