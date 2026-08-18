@@ -202,6 +202,11 @@ export function NotificationsDrawer() {
             className={cn(
               'bg-popover border-border flex max-h-[min(32rem,calc(100dvh-5rem))] flex-col',
               'overflow-hidden rounded-lg border shadow-2xl',
+              // Enter only -- this panel has no exit delay to animate into, it
+              // just unmounts. A one-way slide is still worth having: without
+              // it the whole drawer used to snap into place with no read on
+              // where it came from.
+              'animate-in fade-in slide-in-from-top-2 duration-150',
             )}
           >
             {/*

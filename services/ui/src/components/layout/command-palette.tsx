@@ -59,12 +59,20 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Backdrop className="bg-background/70 fixed inset-0 z-50 backdrop-blur-sm" />
+        <Dialog.Backdrop
+          className={cn(
+            'bg-background/70 fixed inset-0 z-50 backdrop-blur-sm',
+            'transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0',
+          )}
+        />
         <Dialog.Popup
           className={cn(
             'bg-popover text-popover-foreground border-border fixed z-50 flex flex-col',
             'top-[12vh] left-1/2 w-[min(38rem,calc(100vw-1.5rem))] -translate-x-1/2',
             'overflow-hidden rounded-xl border shadow-2xl',
+            'transition-[transform,opacity] duration-150',
+            'data-[ending-style]:scale-95 data-[ending-style]:opacity-0',
+            'data-[starting-style]:scale-95 data-[starting-style]:opacity-0',
           )}
           aria-label="Command palette"
         >

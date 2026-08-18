@@ -62,6 +62,9 @@ export function Select<T extends string>({
             className={cn(
               'bg-popover text-popover-foreground border-border min-w-(--anchor-width)',
               'overflow-hidden rounded-md border p-1 shadow-lg',
+              'origin-(--transform-origin) transition-[transform,opacity]',
+              'data-[ending-style]:scale-95 data-[ending-style]:opacity-0',
+              'data-[starting-style]:scale-95 data-[starting-style]:opacity-0',
             )}
           >
             <BaseSelect.List>

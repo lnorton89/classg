@@ -33,6 +33,9 @@ export function Tooltip({ content, children, side = 'top', className }: TooltipP
             className={cn(
               'bg-popover text-popover-foreground border-border max-w-72 rounded-md border',
               'px-2.5 py-1.5 text-xs shadow-md',
+              'origin-(--transform-origin) transition-[transform,opacity] duration-100',
+              'data-[ending-style]:scale-95 data-[ending-style]:opacity-0',
+              'data-[starting-style]:scale-95 data-[starting-style]:opacity-0',
               className,
             )}
           >
