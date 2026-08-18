@@ -179,3 +179,34 @@ Reasonable on a bench unit or a spare. On the unit you actually rely on, weigh:
 
 A defensible middle: enable it on a spare unit, watch what lands, and deploy the
 one you rely on by hand.
+
+## Stale artefacts on a current tree
+
+Git being up to date says nothing about what is **built**. The two come apart
+more often than they sound like they would:
+
+- somebody merged by hand on the unit, so `LOCAL == REMOTE` and no run ever
+  saw a diff to act on;
+- a deploy moved a submodule pin but its build step failed, so the pointer is
+  current and the binary is not;
+- `cargo build` was interrupted, or the checkout was restored from a backup.
+
+The agent therefore checks **artefacts against their own sources** on every
+run, including the runs where there is nothing to pull — comparing two commit
+SHAs cannot see any of the cases above. When it rebuilds something on an
+otherwise idle run it reports `last_result: "rebuilt"` rather than
+`"up-to-date"`, so the admin page distinguishes "nothing to do" from "the tree
+was fine and something else was not".
+
+Two artefacts are covered: `classg-sensor-sdr`, which is restarted after a
+rebuild, and `pi-dash`, which is a submodule and has two ways to be out of
+date — a checkout that is not at the pinned commit (`git submodule status`
+marks it `+`), or a binary older than the pinned sources. Neither failing is
+fatal to a deploy: pi-dash is an operator convenience, and rolling back a
+working detector because a dashboard would not compile is the wrong trade.
+
+`cargo` decides freshness from its own fingerprints rather than from the
+mtime of the final binary, so it can print `Finished` and relink nothing. The
+binary then stays older than its sources and the next run rebuilds again — and
+restarts the sensor again. The agent stamps the binary once in that case and
+says so, which turns a ten-minute ADS-B outage loop into one log line.

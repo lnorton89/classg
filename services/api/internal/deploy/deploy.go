@@ -52,7 +52,12 @@ type State struct {
 	// LastCheckAt is when the script last looked. A stale value means the timer
 	// is not running, which is the most common "why is nothing deploying".
 	LastCheckAt *time.Time `json:"last_check_at,omitempty"`
-	// LastResult is one of: deploying, up-to-date, deployed, blocked, failed.
+	// LastResult is one of: deploying, up-to-date, rebuilt, deployed, blocked,
+	// failed.
+	//
+	// "rebuilt" means the tree was already current but an artefact was not --
+	// a binary older than its own sources, which is how pi-dash ran an old
+	// build through days of runs that all reported "up-to-date".
 	//
 	// "deploying" is the only one written BEFORE the thing it names. The agent
 	// writes it at the start of a rebuild, which on a Pi is several minutes --

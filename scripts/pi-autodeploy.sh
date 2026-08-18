@@ -207,9 +207,147 @@ if [ -f "$REQUEST_FILE" ]; then
     FORCE=1
 fi
 
+# Is a release binary older than the sources it was built from?
+#
+# Change detection compares the SHA before the merge with the SHA after, which
+# is exactly wrong once somebody has merged by hand on the box: the tree is
+# current, LOCAL == REMOTE, this script reports "up to date", and the release
+# binary is still whatever was built days ago. Not hypothetical -- this unit ran
+# a classg-sensor-sdr that predated the `bands` and `sweep` subcommands for two
+# days while every deploy run called itself current, because the commits that
+# added them arrived through a manual merge rather than through here.
+#
+# Comparing the artefact against its inputs catches that; comparing two SHAs
+# never can. Mtimes are good enough for the question being asked -- a rebuild
+# that was not needed costs minutes, a missed one costs a feature that silently
+# is not there.
+stale_bin() {
+    local bin="$1"
+    shift
+    [ -x "$bin" ] || return 0
+    [ -n "$(find "$@" -newer "$bin" -print -quit 2>/dev/null)" ]
+}
+
+# Stop a successful build that produced no new binary from looping forever.
+#
+# cargo decides freshness from its own fingerprints, not from the mtime of the
+# final binary, so it can legitimately print "Finished" and relink nothing --
+# a target directory restored from a backup, or a source file whose mtime moved
+# without its content changing. The binary then stays older than its sources,
+# stale_bin stays true, and every timer tick rebuilds and RESTARTS THE SENSOR:
+# an ADS-B outage every ten minutes for a build that is already correct.
+#
+# Touching it once, and saying so, converts that into one log line.
+settle_artefact() {
+    local bin="$1"
+    shift
+    if stale_bin "$bin" "$@"; then
+        log "  cargo considered the build current; stamping $(basename "$bin") so this does not repeat"
+        touch "$bin" 2>/dev/null || true
+    fi
+}
+
+# Rebuild whatever is older than its own sources, whatever git says.
+#
+# This runs on BOTH paths, and that is the entire point of it existing. The
+# staleness checks used to live below the up-to-date exit, so they only ever
+# ran when there was a commit to pull -- which is exactly backwards. A unit
+# that is current with a stale binary is the COMMON case: the tree stops
+# moving, every run reports "up to date", and the artefact somebody is actually
+# running stays whatever it was. pi-dash sat at an old build for days that way.
+#
+# Returns 0 if it rebuilt anything, so the caller can say so rather than
+# reporting a run that did work as a run that did nothing.
+rebuild_stale_artefacts() {
+    local did=1
+
+    local sdr="$REPO_DIR/services/sensor-sdr"
+    local sdr_bin="$sdr/target/release/classg-sensor-sdr"
+    if stale_bin "$sdr_bin" "$sdr/src" "$sdr/Cargo.toml" "$sdr/Cargo.lock"; then
+        log "the SDR sensor binary is older than its sources; rebuilding"
+        if (cd "$sdr" && cargo build --release --features rtlsdr 2>&1 |
+            tail -5 | while read -r l; do log "  $l"; done); then
+            settle_artefact "$sdr_bin" "$sdr/src" "$sdr/Cargo.toml" "$sdr/Cargo.lock"
+            sudo systemctl restart classg-sensor-sdr.service && log "classg-sensor-sdr restarted"
+            did=0
+        else
+            log "cargo build failed; leaving the running binary in place"
+        fi
+    fi
+
+    if rebuild_pidash_if_stale; then
+        did=0
+    fi
+
+    return "$did"
+}
+
+# pi-dash, which is a submodule and therefore has two ways to be out of date.
+#
+# The checkout can differ from the pin -- `git submodule status` marks that with
+# a leading '+', and it happens whenever a merge moved the pointer and nothing
+# ran `submodule update`. Or the pin and checkout can agree while the BINARY
+# predates them, which is what happens when the pin moved in a deploy whose
+# build step failed, or was bumped by hand.
+#
+# The `pidash` wrapper on PATH execs this checkout's release build directly, so
+# a rebuild is the whole deploy; there is no service to restart. It runs
+# interactively, so an operator with it open keeps the old binary until they
+# quit and relaunch -- correct behaviour for a dashboard somebody is reading.
+rebuild_pidash_if_stale() {
+    local dir="$REPO_DIR/tools/pi-dash"
+    local bin="$dir/target/release/pi-dash"
+    [ -d "$dir" ] || return 1
+
+    local reason=""
+    # A leading '+' means the checkout is not at the pinned commit; '-' means
+    # it was never initialised at all.
+    case "$(git -C "$REPO_DIR" submodule status tools/pi-dash 2>/dev/null)" in
+        "+"*) reason="the checkout is not at the pinned commit" ;;
+        "-"*) reason="the submodule was never initialised" ;;
+    esac
+    if [ -n "$reason" ]; then
+        log "updating the pi-dash submodule: $reason"
+        git -C "$REPO_DIR" submodule update --init --recursive tools/pi-dash 2>&1 |
+            while read -r l; do log "  $l"; done
+    fi
+
+    if [ -z "$reason" ] && ! stale_bin "$bin" "$dir/src" "$dir/Cargo.toml"; then
+        return 1
+    fi
+
+    log "rebuilding pi-dash"
+    if (cd "$dir" && cargo build --release 2>&1 | tail -3 |
+        while read -r l; do log "  $l"; done); then
+        settle_artefact "$bin" "$dir/src" "$dir/Cargo.toml"
+        log "pi-dash rebuilt; a running instance picks it up on next launch"
+        return 0
+    fi
+    # Not fatal anywhere. pi-dash is an operator convenience, and failing a
+    # deploy -- rolling back a working detector -- because a dashboard would
+    # not compile is the wrong trade.
+    log "pi-dash failed to build; everything else stands"
+    return 1
+}
+
 if [ "$LOCAL" = "$REMOTE" ] && [ "$FORCE" -eq 0 ]; then
-    log "up to date at ${LOCAL:0:8}"
-    write_state "up-to-date" ""
+    # A dry run says what it WOULD do. The staleness check below rebuilds and
+    # restarts a sensor, which is not a thing --dry-run may do -- and it sits
+    # above the general dry-run guard further down, so it needs its own.
+    if [ "$DRY_RUN" -eq 1 ]; then
+        log "dry run: up to date at ${LOCAL:0:8}; not checking build artefacts"
+        exit 0
+    fi
+    # Current on git, which says nothing about what is BUILT. Checked before
+    # reporting, because "up to date" over a stale binary is the report that
+    # let pi-dash sit at an old version through days of green deploys.
+    if rebuild_stale_artefacts; then
+        log "up to date at ${LOCAL:0:8}, after rebuilding what had gone stale"
+        write_state "rebuilt" "the tree was current but a build artefact was not"
+    else
+        log "up to date at ${LOCAL:0:8}"
+        write_state "up-to-date" ""
+    fi
     exit 0
 fi
 
@@ -301,36 +439,6 @@ fi
 
 changed_in() { printf '%s\n' "$CHANGED" | grep -q "^$1"; }
 
-# Is a release binary older than the sources it was built from?
-#
-# Change detection compares the SHA before the merge with the SHA after, which
-# is exactly wrong once somebody has merged by hand on the box: the tree is
-# current, LOCAL == REMOTE, this script reports "up to date", and the release
-# binary is still whatever was built days ago. Not hypothetical -- this unit ran
-# a classg-sensor-sdr that predated the `bands` and `sweep` subcommands for two
-# days while every deploy run called itself current, because the commits that
-# added them arrived through a manual merge rather than through here.
-#
-# Comparing the artefact against its inputs catches that; comparing two SHAs
-# never can. Mtimes are good enough for the question being asked -- a rebuild
-# that was not needed costs minutes, a missed one costs a feature that silently
-# is not there.
-stale_bin() {
-    local bin="$1"
-    shift
-    [ -x "$bin" ] || return 0
-    [ -n "$(find "$@" -newer "$bin" -print -quit 2>/dev/null)" ]
-}
-
-# Submodule pointers, captured before the merge so a moved pointer is
-# detectable afterwards. `git diff --name-only` does list a submodule path when
-# its pointer moves, but not when the submodule is simply uninitialised -- and
-# a fresh clone is exactly that case.
-submodule_sha() {
-    git -C "$REPO_DIR/$1" rev-parse HEAD 2>/dev/null || echo "uninitialised"
-}
-PIDASH_BEFORE=$(submodule_sha tools/pi-dash)
-
 echo "$LOCAL" > "$STATE_DIR/previous-sha"
 log "deploying ${LOCAL:0:8} -> ${REMOTE:0:8}"
 
@@ -377,17 +485,12 @@ else
     log "web tier unchanged; not rebuilding"
 fi
 
-# The Rust sensor. Only when it changed: a release build on a Pi is minutes, and
-# spending them to install a UI change would take ADS-B down for nothing.
-SDR_DIR="$REPO_DIR/services/sensor-sdr"
-if changed_in "services/sensor-sdr" ||
-    stale_bin "$SDR_DIR/target/release/classg-sensor-sdr" \
-        "$SDR_DIR/src" "$SDR_DIR/Cargo.toml" "$SDR_DIR/Cargo.lock"; then
-    if changed_in "services/sensor-sdr"; then
-        log "rebuilding the SDR sensor (this takes a few minutes on a Pi)"
-    else
-        log "rebuilding the SDR sensor: the binary is older than its sources"
-    fi
+# The Rust sensor, when the commit touched it. A release build on a Pi is
+# minutes, and spending them to install a UI change would take ADS-B down for
+# nothing -- so this is the "it changed" case, and rebuild_stale_artefacts
+# below covers the "it is older than its sources" case on every run.
+if changed_in "services/sensor-sdr"; then
+    log "rebuilding the SDR sensor (this takes a few minutes on a Pi)"
     if (cd services/sensor-sdr && cargo build --release --features rtlsdr 2>&1 | tail -5 | while read -r l; do log "  $l"; done); then
         sudo systemctl restart classg-sensor-sdr.service && log "classg-sensor-sdr restarted"
     else
@@ -396,36 +499,14 @@ if changed_in "services/sensor-sdr" ||
     fi
 fi
 
-# pi-dash: a Rust submodule, rebuilt when its pinned commit moves.
+# Everything whose ARTEFACT is out of date, whatever the commit touched.
 #
-# Following the PINNED pointer, never upstream's latest -- that is what a
-# submodule means, and silently advancing it would deploy a commit nobody chose.
-# The `pidash` wrapper on PATH execs this checkout's release build directly, so
-# a rebuild is the whole deploy; there is no service to restart. It runs
-# interactively, so an operator with it open keeps the old binary until they
-# quit and relaunch, which is the correct behaviour for a dashboard someone is
-# reading.
-PIDASH_AFTER=$(submodule_sha tools/pi-dash)
-PIDASH_BIN="$REPO_DIR/tools/pi-dash/target/release/pi-dash"
-if [ -d "$REPO_DIR/tools/pi-dash" ] &&
-    { [ "$PIDASH_BEFORE" != "$PIDASH_AFTER" ] ||
-        stale_bin "$PIDASH_BIN" "$REPO_DIR/tools/pi-dash/src" \
-            "$REPO_DIR/tools/pi-dash/Cargo.toml"; }; then
-    if [ "$PIDASH_BEFORE" = "$PIDASH_AFTER" ]; then
-        log "rebuilding pi-dash (the binary is missing or older than its sources)"
-    else
-        log "rebuilding pi-dash (${PIDASH_BEFORE:0:8} -> ${PIDASH_AFTER:0:8})"
-    fi
-    if (cd "$REPO_DIR/tools/pi-dash" && cargo build --release 2>&1 | tail -3 |
-        while read -r l; do log "  $l"; done); then
-        log "pi-dash rebuilt; a running instance picks it up on next launch"
-    else
-        # Not fatal to the deploy. pi-dash is an operator convenience, and
-        # failing the whole deploy -- and rolling back a working detector --
-        # because a dashboard would not compile is the wrong trade.
-        log "pi-dash failed to build; the rest of the deploy stands"
-    fi
-fi
+# After the rebuilds above rather than instead of them: a commit that changed
+# the SDR sensor has already rebuilt it and this finds nothing, while a commit
+# that only moved the pi-dash pin is caught here. It is the same call the
+# up-to-date path makes, so there is one definition of "stale" rather than one
+# per branch of this script.
+rebuild_stale_artefacts || true
 
 if changed_in "services/sensor-wifi"; then
     log "reinstalling the Wi-Fi sensor"
