@@ -722,6 +722,29 @@ export interface DeploymentArtefact {
   state: 'current' | 'rebuilt' | 'failed' | 'absent'
 }
 
+/** One finished agent run. Only runs that did something are recorded. */
+export interface DeploymentRun {
+  id: string
+  started_at: string
+  finished_at: string
+  duration_s: number
+  result: 'deployed' | 'failed' | 'rebuilt'
+  reason?: string
+  /** HEAD when the run finished — so a rolled-back run names where it went
+   *  back to, not what it tried. `previous_commit` is where it came from. */
+  commit?: string
+  commit_subject?: string
+  previous_commit?: string
+  artefacts?: DeploymentArtefact[]
+  log?: string[]
+}
+
+export interface DeploymentHistory {
+  configured: boolean
+  reason?: string
+  runs: DeploymentRun[]
+}
+
 export interface WatchdogStatus {
   configured: boolean
   reason?: string

@@ -14,6 +14,7 @@ import type {
   AuthMe,
   AuthUser,
   CreateUserRequest,
+  DeploymentHistory,
   DeploymentStatus,
   HookDeliveriesResponse,
   HookRule,
@@ -334,6 +335,11 @@ export const api = {
 
   deployment(): Promise<DeploymentStatus> {
     return request<DeploymentStatus>('/admin/deployment')
+  },
+
+  deploymentHistory(limit?: number): Promise<DeploymentHistory> {
+    const query = limit === undefined ? '' : `?limit=${String(limit)}`
+    return request<DeploymentHistory>(`/admin/deployment/history${query}`)
   },
 
   requestDeploy(): Promise<DeploymentStatus> {

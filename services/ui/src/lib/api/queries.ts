@@ -25,6 +25,7 @@ export const queryKeys = {
   hookRules: ['admin', 'hooks'] as const,
   hookDeliveries: ['admin', 'hook-deliveries'] as const,
   deployment: ['admin', 'deployment'] as const,
+  deploymentHistory: ['admin', 'deployment', 'history'] as const,
   watchdog: ['admin', 'watchdog'] as const,
   spectrumBands: ['spectrum', 'bands'] as const,
   spectrumSweeps: ['spectrum', 'sweeps'] as const,
@@ -212,6 +213,21 @@ export const hookDeliveriesQuery = () =>
  * answer changes on its own — the agent picks the request up on its own
  * schedule and the page should notice without a reload.
  */
+/**
+ * Past runs, newest first.
+ *
+ * Polled on a slow cadence and refetched when the status query says a deploy
+ * just ended -- a new row appears at most once per agent tick, and the log
+ * inside each row is the expensive part of the payload.
+ */
+export const deploymentHistoryQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.deploymentHistory,
+    queryFn: () => api.deploymentHistory(),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  })
+
 export const deploymentQuery = () =>
   queryOptions({
     queryKey: queryKeys.deployment,

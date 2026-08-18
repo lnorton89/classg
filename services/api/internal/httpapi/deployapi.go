@@ -17,6 +17,20 @@ func (s *Server) handleDeploymentStatus(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, s.deploy.Status())
 }
 
+// handleDeploymentHistory lists past runs, newest first.
+//
+// Admin like the rest of this surface: the log can name branches, commit
+// subjects and failure reasons, which describe the operator's infrastructure
+// rather than the airspace.
+func (s *Server) handleDeploymentHistory(w http.ResponseWriter, r *http.Request) {
+	limit, err := intParam(r, "limit", deploy.DefaultHistoryLimit, deploy.HistoryMax)
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, s.deploy.History(limit))
+}
+
 type deployRequestResponse struct {
 	Requested bool `json:"requested"`
 	// Note says what "requested" actually means, because it does not mean

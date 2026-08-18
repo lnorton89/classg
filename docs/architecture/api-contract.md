@@ -508,6 +508,34 @@ Both are `true` today, for different reasons, and the weights one is weaker than
   restart will apply**; see [data-model.md](data-model.md#confidence-scoring). The calibration
   page says so rather than showing a saved value as though it were live.
 
+### `GET /admin/deployment/history` — past runs, newest first.
+
+`?limit=` defaults to 20 and is capped at 50, which is what the agent keeps.
+Each run carries its whole log, so an unbounded limit is a way to ask a Pi to
+serialise megabytes.
+
+```jsonc
+{ "configured": true,
+  "runs": [
+    { "id": "1755500400-0d7d84d9",
+      "started_at": "…", "finished_at": "…", "duration_s": 187,
+      "result": "failed",
+      "reason": "docker compose could not build the web tier; rolled back to b27953a5",
+      "commit": "b27953a5…", "commit_subject": "…", "previous_commit": "0d7d84d9…",
+      "artefacts": [{ "name": "pi-dash", "state": "current" }],
+      "log": ["deploying b27953a5 -> 0d7d84d9", "…"] } ] }
+```
+
+Only runs that **did** something are recorded — `deployed`, `failed`,
+`rebuilt`. A ten-minute timer that finds nothing to do would otherwise bury a
+week's six real deploys under a thousand rows of "up to date".
+
+`commit` is HEAD when the run **finished**, so a rolled-back run names the
+commit it went back to; `previous_commit` is where it started. The agent writes
+JSON Lines and the API skips a line it cannot parse rather than failing the
+whole read: the file is appended to by a shell script on a box that can lose
+power mid-write, and one torn line must not cost the other forty-nine records.
+
 ---
 
 ## Errors
@@ -824,6 +852,12 @@ writes a request marker the agent picks up on its next tick.
 
 `state_age_s` matters as much as `timer_enabled`: a large age means the agent is
 not actually running, whatever the flag claims.
+
+`last_deploy_at` / `last_deploy_commit` / `last_deploy_ok` describe the last run
+that actually deployed, and are **carried forward** by every later check. They
+used to be written only by the run that deployed, so the next timer firing ten
+minutes later published a document without them and the admin page reported
+"Last deploy: never" on a unit that had deployed twenty minutes earlier.
 
 `artefacts` reports what the agent made of the things this unit builds for
 itself — `current`, `rebuilt`, `failed`, `absent`. It is **absent, not empty**,

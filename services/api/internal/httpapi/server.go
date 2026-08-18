@@ -251,6 +251,7 @@ func (s *Server) routes() http.Handler {
 	// commit subjects and failure reasons, which is more about the operator's
 	// infrastructure than about the airspace.
 	admin("GET "+BasePath+"/admin/deployment", s.handleDeploymentStatus)
+	admin("GET "+BasePath+"/admin/deployment/history", s.handleDeploymentHistory)
 	admin("POST "+BasePath+"/admin/deployment/deploy", s.handleRequestDeploy)
 	admin("DELETE "+BasePath+"/admin/deployment/deploy", s.handleCancelDeploy)
 	admin("GET "+BasePath+"/admin/watchdog", s.handleWatchdogStatus)

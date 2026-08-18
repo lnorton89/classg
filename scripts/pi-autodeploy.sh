@@ -159,6 +159,10 @@ ARTEFACTS=""
 # wrong subsystem is worse than no reason.
 FAILED_STEP=""
 
+# When this run began, for the history's duration figure.
+RUN_STARTED_AT=$(date -Iseconds -u | sed 's/+00:00/Z/')
+RUN_STARTED_EPOCH=$(date +%s)
+
 fail_step() {
     log "$1"
     [ -z "$FAILED_STEP" ] && FAILED_STEP="$1"
@@ -187,6 +191,20 @@ write_state() {
         timer_enabled=false
     fi
 
+    # The last deploy is carried forward from a file rather than from this
+    # run's variables, which are only set on the run that actually deployed.
+    # Without this every later check -- "up to date", "blocked", one every ten
+    # minutes -- wrote a state document with no deploy fields at all, and the
+    # admin page read that as "Last deploy: never" on a unit that had deployed
+    # twenty minutes earlier.
+    local d_at="${DEPLOY_AT:-}" d_commit="${DEPLOY_COMMIT:-}" d_ok="${DEPLOY_OK_JSON:-}"
+    if [ -n "$d_at" ]; then
+        printf '%s\n%s\n%s\n' "$d_at" "$d_commit" "${d_ok:-false}" \
+            > "$STATE_DIR/last-deploy" 2>/dev/null || true
+    elif [ -r "$STATE_DIR/last-deploy" ]; then
+        { read -r d_at; read -r d_commit; read -r d_ok; } < "$STATE_DIR/last-deploy"
+    fi
+
     mkdir -p "$STATE_DIR"
     {
         printf '{\n'
@@ -196,9 +214,9 @@ write_state() {
         printf '  "last_check_at": "%s",\n' "$(date -Iseconds -u | sed 's/+00:00/Z/')"
         printf '  "last_result": "%s",\n' "$result"
         printf '  "last_reason": "%s",\n' "$(json_escape "$reason")"
-        [ -n "${DEPLOY_AT:-}" ] && printf '  "last_deploy_at": "%s",\n' "$DEPLOY_AT"
-        [ -n "${DEPLOY_COMMIT:-}" ] && printf '  "last_deploy_commit": "%s",\n' "$DEPLOY_COMMIT"
-        printf '  "last_deploy_ok": %s,\n' "${DEPLOY_OK_JSON:-false}"
+        [ -n "$d_at" ] && printf '  "last_deploy_at": "%s",\n' "$d_at"
+        [ -n "$d_commit" ] && printf '  "last_deploy_commit": "%s",\n' "$d_commit"
+        printf '  "last_deploy_ok": %s,\n' "${d_ok:-false}"
         printf '  "remote_commit": "%s",\n' "$remote"
         printf '  "remote_ci": "%s",\n' "$ci"
         printf '  "timer_enabled": %s,\n' "$timer_enabled"
@@ -207,6 +225,61 @@ write_state() {
         printf '}\n'
     } > "$STATE_JSON.tmp" 2>/dev/null
     mv -f "$STATE_JSON.tmp" "$STATE_JSON" 2>/dev/null || true
+
+    append_history "$result" "$reason" "$head" "$subject"
+}
+
+# HISTORY_MAX runs are kept. Fifty is weeks of a ten-minute timer, because only
+# runs that DID something are recorded -- an idle unit adds nothing.
+HISTORY_MAX=50
+
+# append_history records one finished run, for the deploy list in the admin page.
+#
+# Only results that represent work: deployed, failed, rebuilt. A timer that
+# fires every ten minutes and finds nothing to do would otherwise bury the six
+# real deploys of a week under a thousand rows of "up to date" -- and the point
+# of the list is being able to find the deploy that broke something.
+#
+# JSON Lines rather than one document: appending a line is atomic enough for a
+# single writer, where rewriting a growing array means a read-modify-write that
+# can be interrupted halfway and lose everything before it.
+append_history() {
+    local result="$1" reason="$2" head="$3" subject="$4"
+    case "$result" in
+        deployed|failed|rebuilt) ;;
+        *) return 0 ;;
+    esac
+
+    local finished duration entry file
+    finished=$(date -Iseconds -u | sed 's/+00:00/Z/')
+    duration=$(( $(date +%s) - RUN_STARTED_EPOCH ))
+    file="$STATE_DIR/deploy-history.jsonl"
+
+    entry=$(
+        printf '{'
+        printf '"id": "%s-%s", ' "$RUN_STARTED_EPOCH" "${head:0:8}"
+        printf '"started_at": "%s", ' "$RUN_STARTED_AT"
+        printf '"finished_at": "%s", ' "$finished"
+        printf '"duration_s": %s, ' "$duration"
+        printf '"result": "%s", ' "$result"
+        printf '"reason": "%s", ' "$(json_escape "$reason")"
+        printf '"commit": "%s", ' "$head"
+        printf '"commit_subject": "%s", ' "$(json_escape "$subject")"
+        printf '"previous_commit": "%s", ' "${LOCAL:-}"
+        [ -n "$ARTEFACTS" ] && printf '"artefacts": [%s], ' "$ARTEFACTS"
+        printf '"log": %s' "$(json_log_array)"
+        printf '}'
+    )
+
+    printf '%s\n' "$entry" >> "$file" 2>/dev/null || return 0
+
+    # Trim in place, oldest first. Through a temp file and a rename so a reader
+    # never sees a half-written history.
+    if [ "$(wc -l < "$file" 2>/dev/null || echo 0)" -gt "$HISTORY_MAX" ]; then
+        if tail -n "$HISTORY_MAX" "$file" > "$file.tmp" 2>/dev/null; then
+            mv -f "$file.tmp" "$file" 2>/dev/null || true
+        fi
+    fi
 }
 
 # The state directory must exist and be writable before anything else. Both

@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -130,7 +131,49 @@ type Reader struct {
 const (
 	stateFile   = "deploy-state.json"
 	requestFile = "deploy-requested"
+	historyFile = "deploy-history.jsonl"
 )
+
+// DefaultHistoryLimit is how many past runs History returns when the caller
+// does not say. The agent keeps fifty; a page showing all of them at once is a
+// wall, and the interesting one is nearly always recent.
+//
+// HistoryMax bounds what a caller may ask for. It matches what the agent
+// keeps, so asking for more is a request the file cannot satisfy anyway --
+// and each run carries its whole log, which makes an unbounded limit a way to
+// ask a Pi to serialise megabytes.
+const (
+	DefaultHistoryLimit = 20
+	HistoryMax          = 50
+)
+
+// Run is one finished agent run, as recorded in the history.
+//
+// Only runs that did something are recorded -- deployed, failed, rebuilt -- so
+// this is a list of deploys rather than a list of timer firings.
+type Run struct {
+	ID         string    `json:"id"`
+	StartedAt  time.Time `json:"started_at"`
+	FinishedAt time.Time `json:"finished_at"`
+	DurationS  int64     `json:"duration_s"`
+	// Result is deployed, failed, or rebuilt.
+	Result string `json:"result"`
+	Reason string `json:"reason,omitempty"`
+	// Commit is HEAD when the run finished, so a rolled-back run names the
+	// commit it went back to rather than the one it tried.
+	Commit         string     `json:"commit,omitempty"`
+	CommitSubject  string     `json:"commit_subject,omitempty"`
+	PreviousCommit string     `json:"previous_commit,omitempty"`
+	Artefacts      []Artefact `json:"artefacts,omitempty"`
+	Log            []string   `json:"log,omitempty"`
+}
+
+// History is the recorded runs, newest first.
+type History struct {
+	Configured bool   `json:"configured"`
+	Reason     string `json:"reason,omitempty"`
+	Runs       []Run  `json:"runs"`
+}
 
 func (r Reader) now() time.Time {
 	if r.Now != nil {
@@ -174,6 +217,58 @@ func (r Reader) Status() Status {
 		out.StateAgeS = &age
 	}
 	return out
+}
+
+// History reads the recorded runs, newest first.
+//
+// JSON Lines, so a line that does not parse is SKIPPED rather than failing the
+// whole read. The file is appended to by a shell script on a box that can lose
+// power mid-write; one torn last line must not cost an operator the other
+// forty-nine records.
+func (r Reader) History(limit int) History {
+	if !r.Enabled() {
+		return History{
+			Reason: "no deploy state directory is configured (CLASSG_DEPLOY_STATE_DIR)",
+			Runs:   []Run{},
+		}
+	}
+	if limit <= 0 {
+		limit = DefaultHistoryLimit
+	}
+
+	raw, err := os.ReadFile(filepath.Join(r.Dir, historyFile))
+	if errors.Is(err, os.ErrNotExist) {
+		// Not an error and not a misconfiguration: a unit that has never
+		// deployed since the agent gained a history has an empty list.
+		return History{Configured: true, Runs: []Run{}}
+	}
+	if err != nil {
+		return History{Reason: "cannot read the deploy history: " + err.Error(), Runs: []Run{}}
+	}
+
+	runs := make([]Run, 0, limit)
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		var run Run
+		if err := json.Unmarshal([]byte(line), &run); err != nil {
+			continue
+		}
+		runs = append(runs, run)
+	}
+
+	// Newest first, and only as many as asked for. Reversed in place rather
+	// than sorted by time: the file is append-only, so its order is already
+	// chronological, and a run with a bad clock should not jump the queue.
+	for i, j := 0, len(runs)-1; i < j; i, j = i+1, j-1 {
+		runs[i], runs[j] = runs[j], runs[i]
+	}
+	if len(runs) > limit {
+		runs = runs[:limit]
+	}
+	return History{Configured: true, Runs: runs}
 }
 
 // Request asks for a deploy on the next tick.

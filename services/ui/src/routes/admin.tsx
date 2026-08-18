@@ -5,6 +5,7 @@ import { PageContainer } from '@/components/layout/page-container'
 import { PageHeader, SectionHeader } from '@/components/layout/page-header'
 import { Alert } from '@/components/ui/misc'
 import { AdminUsers } from '@/features/auth/admin-users'
+import { DeployHistory } from '@/features/deploy/deploy-history'
 import { DeploymentPanel } from '@/features/deploy/deployment-panel'
 import { WatchdogPanel } from '@/features/deploy/watchdog-panel'
 import { HooksPanel } from '@/features/hooks/hooks-panel'
@@ -77,6 +78,7 @@ function AdminRoute() {
           description="What it is running, and what it does about its own failures. Neither is driven from here — the API cannot run anything on the host, so both are file exchanges with agents that act on their own schedule."
         />
         <DeploymentPanel />
+        <DeployHistory />
         <WatchdogPanel />
       </section>
 

@@ -186,3 +186,68 @@ func TestWatchdogHealthyPass(t *testing.T) {
 		t.Fatalf("got %+v", w)
 	}
 }
+
+func TestHistoryIsNewestFirstAndBounded(t *testing.T) {
+	r := newReader(t)
+	write(t, r.Dir, historyFile, `{"id":"1-aaaa","result":"deployed","commit":"aaaa","duration_s":91,"log":["one"]}
+{"id":"2-bbbb","result":"failed","reason":"docker compose could not build","commit":"bbbb"}
+{"id":"3-cccc","result":"rebuilt","commit":"cccc","artefacts":[{"name":"pi-dash","state":"rebuilt"}]}
+`)
+
+	h := r.History(0)
+	if !h.Configured {
+		t.Fatalf("not configured: %+v", h)
+	}
+	if len(h.Runs) != 3 {
+		t.Fatalf("wanted 3 runs, got %d", len(h.Runs))
+	}
+	// Newest first: the file is appended to, so the last line is the newest.
+	if h.Runs[0].ID != "3-cccc" || h.Runs[2].ID != "1-aaaa" {
+		t.Fatalf("wrong order: %s ... %s", h.Runs[0].ID, h.Runs[2].ID)
+	}
+	if h.Runs[0].Artefacts[0].Name != "pi-dash" {
+		t.Fatalf("artefacts lost: %+v", h.Runs[0])
+	}
+	if h.Runs[2].DurationS != 91 || h.Runs[2].Log[0] != "one" {
+		t.Fatalf("fields lost: %+v", h.Runs[2])
+	}
+
+	if got := r.History(2); len(got.Runs) != 2 || got.Runs[0].ID != "3-cccc" {
+		t.Fatalf("limit ignored: %+v", got.Runs)
+	}
+}
+
+// The file is appended to by a shell script on a box that can lose power
+// mid-write. One torn line must not cost an operator the other records.
+func TestHistorySkipsATornLineRatherThanFailing(t *testing.T) {
+	r := newReader(t)
+	write(t, r.Dir, historyFile, `{"id":"1-aaaa","result":"deployed"}
+
+{"id":"2-bbbb","result":"failed"}
+{"id":"3-cccc","result":"rebuil
+`)
+
+	h := r.History(0)
+	if len(h.Runs) != 2 {
+		t.Fatalf("wanted the 2 intact runs, got %d: %+v", len(h.Runs), h.Runs)
+	}
+	if h.Reason != "" {
+		t.Fatalf("a torn line should not be reported as a fault: %q", h.Reason)
+	}
+}
+
+// A unit that has never deployed since the agent gained a history has no file.
+// That is an empty list, not a misconfiguration -- and never a nil slice, which
+// encodes as JSON null and makes a client check for one more thing.
+func TestHistoryWithNoFileIsAnEmptyList(t *testing.T) {
+	r := newReader(t)
+	h := r.History(0)
+	if !h.Configured || len(h.Runs) != 0 || h.Runs == nil {
+		t.Fatalf("wanted a configured empty list, got %+v", h)
+	}
+
+	var none Reader
+	if h := none.History(0); h.Configured || h.Reason == "" || h.Runs == nil {
+		t.Fatalf("an unset Dir gave %+v", h)
+	}
+}
