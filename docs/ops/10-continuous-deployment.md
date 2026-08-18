@@ -114,18 +114,21 @@ otherwise. A requested deploy is still refused if CI is not green or a
 measurement is in progress — the button raises a hand, it does not override the
 gates.
 
-Point both sides at the same directory:
+**There is nothing to configure.** Both sides default to `<repo>/.agent-state`
+and agree by construction.
 
-```bash
-# the agent (systemd unit environment, or your shell)
-CLASSG_DEPLOY_STATE=/var/lib/classg/deploy
+That default is deliberate rather than convenient. Compose runs from `docker/`
+and reads `docker/.env` — **not** the repo-root `.env` the systemd units use. A
+state directory set in the root `.env` is therefore invisible to the container,
+and the mount silently falls back to its own default. That happened on a live
+unit: the agents wrote to `~/.local/state/classg`, the API mounted an empty
+directory, and the admin page reported "no agent" with everything working
+perfectly. One repo-relative default removes the whole class of problem.
 
-# the API — bind-mount it into the container in docker/compose.yaml
-CLASSG_DEPLOY_STATE_DIR=/var/lib/classg/deploy
-```
-
-Without it, the panel reports "not configured" and says what to do, which is the
-normal state on a dev machine.
+Override both together if you must — `CLASSG_DEPLOY_STATE` for the agents,
+`CLASSG_AGENT_STATE_DIR` for the Compose mount — remembering that the second one
+has to be somewhere Compose can actually see it (`docker/.env`, or the
+environment of whoever runs `docker compose`).
 
 `state_age_s` in the response is worth more than `timer_enabled`: a large age
 means the agent is not actually running, whatever the flag claims.

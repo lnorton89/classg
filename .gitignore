@@ -76,3 +76,7 @@ build-errors.log
 
 # Dev-stack runtime state: sensor pidfile and log.
 .dev/
+
+# Host-agent state: the deploy agent and watchdog write here and the API reads
+# it through a bind mount. Runtime state, never committed.
+.agent-state/

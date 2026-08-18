@@ -28,7 +28,10 @@ REPO_DIR="${CLASSG_REPO_DIR:-$HOME/classg}"
 BRANCH="${CLASSG_DEPLOY_BRANCH:-main}"
 API="${CLASSG_PI_API:-http://127.0.0.1:8081}"
 GH_REPO="${CLASSG_GH_REPO:-lnorton89/classg}"
-STATE_DIR="${CLASSG_DEPLOY_STATE:-$HOME/.local/state/classg}"
+# See the same constant in classg-watchdog.sh: compose cannot read the repo-root
+# .env, so both sides default to one repo-relative path and agree by
+# construction rather than by configuration.
+STATE_DIR="${CLASSG_DEPLOY_STATE:-$REPO_DIR/.agent-state}"
 LOG_TAG="classg-autodeploy"
 STATE_JSON="$STATE_DIR/deploy-state.json"
 REQUEST_FILE="$STATE_DIR/deploy-requested"

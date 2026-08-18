@@ -35,7 +35,16 @@ set -uo pipefail
 
 REPO_DIR="${CLASSG_REPO_DIR:-$HOME/classg}"
 API="${CLASSG_PI_API:-http://127.0.0.1:8081}"
-STATE_DIR="${CLASSG_DEPLOY_STATE:-$HOME/.local/state/classg}"
+# Defaults INSIDE the repo, and that is deliberate. Compose runs from docker/
+# and reads docker/.env, not the repo-root .env the systemd units use -- so a
+# state directory configured in the root .env is invisible to the container, and
+# the mount silently falls back to its own default. Observed on a live unit: the
+# agents wrote to ~/.local/state/classg and the API mounted an empty directory,
+# and the admin page reported "no agent" with everything working perfectly.
+#
+# Defaulting both sides to the same repo-relative path means they agree by
+# construction, with nothing to configure and nothing to keep in sync.
+STATE_DIR="${CLASSG_DEPLOY_STATE:-$REPO_DIR/.agent-state}"
 STATE_JSON="$STATE_DIR/watchdog-state.json"
 ATTEMPTS_DIR="$STATE_DIR/watchdog-attempts"
 LOG_TAG="classg-watchdog"
