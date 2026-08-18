@@ -22,7 +22,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, DataList, DataRow, Skeleton } from '@/components/ui/misc'
 import { ApiError, api } from '@/lib/api/client'
 import { deploymentQuery, queryKeys } from '@/lib/api/queries'
-import type { DeploymentStatus } from '@/lib/api/types'
+import type { DeploymentArtefact, DeploymentStatus } from '@/lib/api/types'
 
 /** Past this, the agent is not running whatever the timer flag says. The timer
  *  fires every ten minutes, so three times that is unambiguous. */
@@ -219,6 +219,8 @@ export function DeploymentPanel() {
           )}
         </div>
 
+        <ArtefactList artefacts={d.artefacts} />
+
         {d.log && d.log.length > 0 ? (
           <details>
             <summary className="text-muted-foreground cursor-pointer text-2xs">
@@ -285,4 +287,40 @@ function formatAge(seconds: number | undefined): string {
   const minutes = Math.round(seconds / 60)
   if (minutes < 90) return `${minutes} min`
   return `${Math.round(minutes / 60)} h`
+}
+
+/**
+ * What the agent made of the things this unit builds for itself.
+ *
+ * Worth a row of its own rather than leaving it to the log, because the log
+ * only speaks when the agent acts: "pi-dash was checked and is current" and
+ * "pi-dash was never checked" produce exactly the same silence, and pi-dash
+ * spent days running an old build inside that ambiguity. An absent list is
+ * therefore rendered as absent, never as everything being fine.
+ */
+function ArtefactList({ artefacts }: { artefacts?: DeploymentArtefact[] }) {
+  if (!artefacts || artefacts.length === 0) return null
+
+  const tone = (state: DeploymentArtefact['state']) =>
+    state === 'failed'
+      ? 'down'
+      : state === 'absent'
+        ? 'muted'
+        : state === 'rebuilt'
+          ? 'ok'
+          : 'muted'
+
+  return (
+    <div>
+      <p className="label-caps mb-1">Locally built, at the last check</p>
+      <ul className="flex flex-wrap gap-2">
+        {artefacts.map((artefact) => (
+          <li key={artefact.name} className="flex items-center gap-1.5">
+            <code className="font-mono text-2xs">{artefact.name}</code>
+            <Badge variant={tone(artefact.state)}>{artefact.state}</Badge>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }

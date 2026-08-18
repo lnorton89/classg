@@ -84,9 +84,27 @@ type State struct {
 	// the API cannot ask.
 	TimerEnabled bool `json:"timer_enabled"`
 
+	// Artefacts is what the agent found when it checked the things it builds
+	// on this box, one entry per artefact.
+	//
+	// Absent rather than empty on the runs that deliberately skip the check --
+	// a busy unit, a dirty tree. That distinction is the whole reason this
+	// exists: a run that never looked and a run that looked and found
+	// everything current are identical in a log that only speaks when it acts,
+	// and pi-dash spent days stale inside exactly that blind spot.
+	Artefacts []Artefact `json:"artefacts,omitempty"`
+
 	// Log is the tail of the last run, so an operator can see what happened
 	// without shelling in.
 	Log []string `json:"log,omitempty"`
+}
+
+// Artefact is one thing this unit builds for itself, and what the last check
+// made of it.
+type Artefact struct {
+	Name string `json:"name"`
+	// State is one of: current, rebuilt, failed, absent.
+	State string `json:"state"`
 }
 
 // Status is what the API serves: State plus what it can work out itself.

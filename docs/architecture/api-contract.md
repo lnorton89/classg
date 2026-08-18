@@ -817,11 +817,20 @@ writes a request marker the agent picks up on its next tick.
   "remote_commit": "…", "remote_ci": "success",
   "timer_enabled": true, "update_available": false, "deploy_requested": false,
   "state_age_s": 214,
+  "artefacts": [{ "name": "classg-sensor-sdr", "state": "current" },
+                { "name": "pi-dash", "state": "rebuilt" }],
   "log": ["up to date at f30b354d"] }
 ```
 
 `state_age_s` matters as much as `timer_enabled`: a large age means the agent is
 not actually running, whatever the flag claims.
+
+`artefacts` reports what the agent made of the things this unit builds for
+itself — `current`, `rebuilt`, `failed`, `absent`. It is **absent, not empty**,
+on the runs that deliberately skip the check (a busy unit, a dirty tree), and
+that distinction is the reason the field exists: the agent's log only speaks
+when it acts, so "checked and found current" and "never checked" are the same
+silence, and pi-dash ran an old build for days inside it.
 
 `configured: false` with a `reason` is the normal answer on a dev machine or a
 unit that never installed the agent — not an error.

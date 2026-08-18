@@ -162,4 +162,30 @@ describe('DeploymentPanel', () => {
 
     await waitFor(() => expect(screen.getByText(/rolled back/)).toBeInTheDocument())
   })
+
+  it('names each locally built artefact and what the last check made of it', async () => {
+    deployment.mockResolvedValue(
+      status({
+        artefacts: [
+          { name: 'classg-sensor-sdr', state: 'current' },
+          { name: 'pi-dash', state: 'rebuilt' },
+        ],
+      }),
+    )
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByText('pi-dash')).toBeInTheDocument())
+    expect(screen.getByText('current')).toBeVisible()
+    expect(screen.getByText('rebuilt')).toBeVisible()
+  })
+
+  // The distinction this whole field exists for: a run that skipped the check
+  // must not look like a run that checked and found everything current.
+  it('says nothing at all when the last run did not check', async () => {
+    deployment.mockResolvedValue(status({ last_result: 'blocked' }))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByText(/Latest on main/)).toBeInTheDocument())
+    expect(screen.queryByText('Locally built, at the last check')).not.toBeInTheDocument()
+  })
 })

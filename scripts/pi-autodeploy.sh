@@ -101,6 +101,21 @@ json_log_array() {
     printf ']'
 }
 
+# ARTEFACTS records what rebuild_stale_artefacts found, so the state file can
+# say "pi-dash: current" rather than leaving an operator to infer it from the
+# absence of a log line. That inference is exactly what went wrong: a run that
+# never checked and a run that checked and found nothing look identical in a
+# log that only speaks when it acts.
+#
+# Empty on the paths that deliberately do not check (busy unit, dirty tree), and
+# the field is then absent rather than claiming everything is fine.
+ARTEFACTS=""
+
+note_artefact() {
+    [ -n "$ARTEFACTS" ] && ARTEFACTS="$ARTEFACTS, "
+    ARTEFACTS="$ARTEFACTS{\"name\": \"$1\", \"state\": \"$2\"}"
+}
+
 # write_state publishes what just happened, for GET /admin/deployment.
 #
 # Written to a temp file and renamed, so the API never reads a half-written
@@ -134,6 +149,7 @@ write_state() {
         printf '  "remote_commit": "%s",\n' "$remote"
         printf '  "remote_ci": "%s",\n' "$ci"
         printf '  "timer_enabled": %s,\n' "$timer_enabled"
+        [ -n "$ARTEFACTS" ] && printf '  "artefacts": [%s],\n' "$ARTEFACTS"
         printf '  "log": %s\n' "$(json_log_array)"
         printf '}\n'
     } > "$STATE_JSON.tmp" 2>/dev/null
@@ -269,10 +285,14 @@ rebuild_stale_artefacts() {
             tail -5 | while read -r l; do log "  $l"; done); then
             settle_artefact "$sdr_bin" "$sdr/src" "$sdr/Cargo.toml" "$sdr/Cargo.lock"
             sudo systemctl restart classg-sensor-sdr.service && log "classg-sensor-sdr restarted"
+            note_artefact "classg-sensor-sdr" "rebuilt"
             did=0
         else
             log "cargo build failed; leaving the running binary in place"
+            note_artefact "classg-sensor-sdr" "failed"
         fi
+    else
+        note_artefact "classg-sensor-sdr" "current"
     fi
 
     if rebuild_pidash_if_stale; then
@@ -297,7 +317,10 @@ rebuild_stale_artefacts() {
 rebuild_pidash_if_stale() {
     local dir="$REPO_DIR/tools/pi-dash"
     local bin="$dir/target/release/pi-dash"
-    [ -d "$dir" ] || return 1
+    if [ ! -d "$dir" ]; then
+        note_artefact "pi-dash" "absent"
+        return 1
+    fi
 
     local reason=""
     # A leading '+' means the checkout is not at the pinned commit; '-' means
@@ -313,6 +336,7 @@ rebuild_pidash_if_stale() {
     fi
 
     if [ -z "$reason" ] && ! stale_bin "$bin" "$dir/src" "$dir/Cargo.toml"; then
+        note_artefact "pi-dash" "current"
         return 1
     fi
 
@@ -321,8 +345,10 @@ rebuild_pidash_if_stale() {
         while read -r l; do log "  $l"; done); then
         settle_artefact "$bin" "$dir/src" "$dir/Cargo.toml"
         log "pi-dash rebuilt; a running instance picks it up on next launch"
+        note_artefact "pi-dash" "rebuilt"
         return 0
     fi
+    note_artefact "pi-dash" "failed"
     # Not fatal anywhere. pi-dash is an operator convenience, and failing a
     # deploy -- rolling back a working detector -- because a dashboard would
     # not compile is the wrong trade.

@@ -218,3 +218,11 @@ mtime of the final binary, so it can print `Finished` and relink nothing. The
 binary then stays older than its sources and the next run rebuilds again — and
 restarts the sensor again. The agent stamps the binary once in that case and
 says so, which turns a ten-minute ADS-B outage loop into one log line.
+
+Every check writes its verdict to the state file as `artefacts`, whether or not
+it did anything, and the admin page shows it. That is deliberate redundancy with
+the log: the log only speaks when the agent acts, so a run that checked and
+found everything current is indistinguishable from a run that never checked at
+all — which is precisely the blind spot pi-dash sat in. The field is absent
+rather than empty on the two exits that skip the check, so "not checked" cannot
+be misread as "all fine".

@@ -710,7 +710,16 @@ export interface DeploymentStatus {
   /** Seconds since the agent last wrote. Worth more than timer_enabled: a large
    *  age means the agent is not running, whatever the flag says. */
   state_age_s?: number
+  /** What the last run made of the things this unit builds for itself.
+   *  Absent on runs that deliberately skipped the check, which is why an empty
+   *  list and a missing one must not render the same. */
+  artefacts?: DeploymentArtefact[]
   log?: string[]
+}
+
+export interface DeploymentArtefact {
+  name: string
+  state: 'current' | 'rebuilt' | 'failed' | 'absent'
 }
 
 export interface WatchdogStatus {
