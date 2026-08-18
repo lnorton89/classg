@@ -89,6 +89,10 @@ export function EventTimeline({
             event={event}
             left={x(event.fromMs)}
             width={Math.max(0.4, x(event.toMs) - x(event.fromMs))}
+            // A one-minute track in a seven-day window is 0.01% of the width.
+            // The percentage keeps the bar in the right PLACE; this keeps it
+            // visible at all, which for a single detection is the whole point.
+            minPx={3}
             top={laneY(event.lane)}
             selected={event.track.track_id === selectedId}
             onSelect={() => onSelect(event.track)}
@@ -97,16 +101,27 @@ export function EventTimeline({
         ))}
       </div>
 
-      <div className="text-muted-foreground tnum relative mt-1 h-4 text-2xs">
-        {ticks(window).map((t) => (
-          <span
-            key={t}
-            className="absolute -translate-x-1/2 whitespace-nowrap"
-            style={{ left: `${x(t)}%` }}
-          >
-            {formatTime(new Date(t).toISOString())}
-          </span>
-        ))}
+      {/* Labels are pulled inside the ends rather than centred on every tick.
+          Centred, the first and last hang half their width off the plot -- on
+          a phone the leftmost one was clipped mid-digit by the screen edge. */}
+      <div className="text-muted-foreground tnum relative mt-1 h-4 overflow-hidden text-2xs">
+        {ticks(window).map((t) => {
+          const at = x(t)
+          const anchor = at < 12 ? 'start' : at > 88 ? 'end' : 'middle'
+          return (
+            <span
+              key={t}
+              className={cn(
+                'absolute whitespace-nowrap',
+                anchor === 'middle' && '-translate-x-1/2',
+                anchor === 'end' && '-translate-x-full',
+              )}
+              style={{ left: `${at}%` }}
+            >
+              {formatTime(new Date(t).toISOString())}
+            </span>
+          )
+        })}
       </div>
 
       <p className="text-muted-foreground tnum mt-1 h-4 font-mono text-2xs" aria-live="off">
@@ -121,6 +136,7 @@ function EventBar({
   left,
   width,
   top,
+  minPx,
   selected,
   onSelect,
   formatTime,
@@ -129,6 +145,7 @@ function EventBar({
   left: number
   width: number
   top: number
+  minPx: number
   selected: boolean
   onSelect: () => void
   formatTime: (iso: string) => string
@@ -161,7 +178,7 @@ function EventBar({
         event.clippedStart && 'rounded-l-none border-l-0',
         event.clippedEnd && 'rounded-r-none border-r-0',
       )}
-      style={{ left: `${left}%`, width: `${width}%`, top, height: LANE_H }}
+      style={{ left: `${left}%`, width: `${width}%`, minWidth: minPx, top, height: LANE_H }}
     >
       <span className="truncate px-1 text-[10px] leading-[18px] font-medium">
         {width > 6 ? trackLabel(track) : ''}

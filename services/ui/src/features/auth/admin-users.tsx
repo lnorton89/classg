@@ -242,14 +242,24 @@ function UserRow({ user, isSelf }: { user: AuthUser; isSelf: boolean }) {
         {isSSO ? <Badge variant="muted">SSO</Badge> : null}
         {user.disabled ? <Badge variant="down">disabled</Badge> : null}
 
-        <div className="ml-auto flex items-center gap-2">
+        {/* Its own full-width row on a phone, beside the name from sm up.
+            It was `ml-auto flex` with no wrap around a fixed-width select and
+            three buttons -- about 440px of controls in a 330px row -- so
+            "Reset password" ran off the right edge of the screen and there was
+            no way to reach it. */}
+        <div
+          className={cn(
+            'flex w-full flex-wrap items-center gap-2',
+            'sm:ml-auto sm:w-auto sm:flex-nowrap',
+          )}
+        >
           <Select
             aria-label={`Role for ${user.username}`}
             value={user.role}
             onValueChange={(role) => update.mutate({ role })}
             options={ROLE_OPTIONS}
             disabled={update.isPending}
-            className="w-44"
+            className="w-full min-w-0 sm:w-44"
           />
           <Button
             size="sm"
@@ -271,6 +281,7 @@ function UserRow({ user, isSelf }: { user: AuthUser; isSelf: boolean }) {
             variant="ghost"
             onClick={() => remove.mutate()}
             disabled={remove.isPending || isSelf}
+            aria-label={`Delete ${user.username}`}
             // Deleting the account you are signed in with is almost always a
             // misclick; the API refuses it too.
             title={isSelf ? 'You cannot delete the account you are signed in with' : undefined}

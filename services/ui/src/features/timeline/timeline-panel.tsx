@@ -29,6 +29,7 @@ import { computeSkyState } from '@/features/health/sky-state'
 import { TracksTable } from '@/features/tracks/tracks-table'
 import { healthQuery, monitoringQuery, settingsQuery, tracksQuery } from '@/lib/api/queries'
 import { cn } from '@/lib/cn'
+import { formatGoDuration } from '@/lib/format'
 import type { Track } from '@/lib/api/types'
 
 import { EventTimeline } from './event-timeline'
@@ -105,7 +106,7 @@ export function TimelinePanel() {
           <CardTitle className="flex flex-wrap items-center gap-2">
             <HistoryIcon className="size-4" aria-hidden />
             Event band
-            <span className="text-muted-foreground text-xs font-normal">
+            <span className="text-muted-foreground w-full text-xs font-normal sm:w-auto">
               {format.timestamp(new Date(window.startMs).toISOString())} —{' '}
               {format.timestamp(new Date(window.endMs).toISOString())}
             </span>
@@ -118,29 +119,25 @@ export function TimelinePanel() {
         </CardHeader>
 
         <CardContent className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <div role="group" aria-label="Time window" className="flex flex-wrap gap-1">
-              {WINDOWS.map((w) => (
-                <Button
-                  key={w.id}
-                  size="sm"
-                  variant={w.id === windowId ? 'default' : 'outline'}
-                  aria-pressed={w.id === windowId}
-                  onClick={() => {
-                    setWindowId(w.id)
-                    setAnchorMs(Date.now())
-                  }}
-                >
-                  {w.label}
-                </Button>
-              ))}
-            </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="ml-auto"
-              onClick={() => setAnchorMs(Date.now())}
-            >
+          {/* One wrapping group, not two. `ml-auto` on the last button pushed
+              it to the far right of whatever row it landed on, so at phone
+              width it sat alone on its own line looking like a stray. */}
+          <div role="group" aria-label="Time window" className="flex flex-wrap gap-1.5">
+            {WINDOWS.map((w) => (
+              <Button
+                key={w.id}
+                size="sm"
+                variant={w.id === windowId ? 'default' : 'outline'}
+                aria-pressed={w.id === windowId}
+                onClick={() => {
+                  setWindowId(w.id)
+                  setAnchorMs(Date.now())
+                }}
+              >
+                {w.label}
+              </Button>
+            ))}
+            <Button size="sm" variant="ghost" onClick={() => setAnchorMs(Date.now())}>
               Jump to now
             </Button>
           </div>
@@ -181,7 +178,7 @@ export function TimelinePanel() {
               window={window}
               selectedId={selected?.track_id ?? null}
               onSelect={setSelected}
-              formatTime={format.clock}
+              formatTime={format.clockBrief}
             />
           )}
 
@@ -211,9 +208,9 @@ export function TimelinePanel() {
             <p className="text-muted-foreground flex items-start gap-1.5 text-2xs leading-relaxed">
               <CircleSlashIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
               <span>
-                Tracks are kept for <code className="font-mono">{retention}</code>. Anything
-                older has been deleted by the retention job, so an empty stretch at the left
-                edge of a long window may be purged history rather than a quiet sky.
+                Tracks are kept for {formatGoDuration(retention)}. Anything older has been
+                deleted by the retention job, so an empty stretch at the left edge of a long
+                window may be purged history rather than a quiet sky.
               </span>
             </p>
           ) : null}

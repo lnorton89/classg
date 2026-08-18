@@ -106,8 +106,11 @@ it('names the retention horizon when one is configured', async () => {
     settings: { 'retention.tracks': { value: '720h', source: 'default', mutable: true } },
   })
   renderPanel()
+  // Rendered as a person would say it, not as the Go duration it is stored
+  // as: "720h0m0s" under a sentence about how long history is kept is not a
+  // sentence about how long history is kept.
   await waitFor(() => {
-    expect(screen.getByText(/720h/)).toBeInTheDocument()
+    expect(screen.getByText(/30 days/)).toBeInTheDocument()
   })
   expect(screen.getByText(/purged history rather than a quiet sky/i)).toBeInTheDocument()
 })

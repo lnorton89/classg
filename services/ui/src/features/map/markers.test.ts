@@ -26,6 +26,7 @@ const format: Formatters = {
   coord: (v) => String(v),
   coords: (lat, lon) => `${String(lat)}, ${String(lon)}`,
   clock: (iso) => iso ?? '',
+  clockBrief: (iso) => iso ?? '',
   timestamp: (iso) => iso ?? '',
   relative: (iso) => iso ?? '',
   when: (iso) => iso ?? '',

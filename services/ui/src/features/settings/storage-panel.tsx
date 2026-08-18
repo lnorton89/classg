@@ -29,6 +29,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Alert, Skeleton } from '@/components/ui/misc'
 import { capturesQuery, settingsQuery, systemQuery, telemetryQuery } from '@/lib/api/queries'
 import { cn } from '@/lib/cn'
+import { formatGoDuration } from '@/lib/format'
 
 import { forecastDiskFull, usedFraction } from './storage-forecast'
 import type { ForecastVerdict } from './storage-forecast'
@@ -164,11 +165,21 @@ export function StoragePanel() {
                     className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-2"
                   >
                     <dt className="font-medium">{label}</dt>
-                    <dd className="tnum font-mono">
+                    {/* Read as a person would say it. These are stored as Go
+                        durations because the API parses them with
+                        time.ParseDuration, and Go has no unit above an hour --
+                        so ninety days is written 2160h and printed back as
+                        "2160h0m0s", which nobody reads as three months. */}
+                    <dd className="tnum">
                       {typeof value === 'string' && value.length > 0 ? (
-                        value
+                        <>
+                          {formatGoDuration(value)}{' '}
+                          <span className="text-muted-foreground font-mono text-2xs">
+                            ({value})
+                          </span>
+                        </>
                       ) : (
-                        <span className="text-muted-foreground font-sans">not set</span>
+                        <span className="text-muted-foreground">not set</span>
                       )}
                     </dd>
                     <p className="text-muted-foreground w-full text-2xs leading-snug">{note}</p>

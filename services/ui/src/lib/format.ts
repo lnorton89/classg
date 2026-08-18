@@ -73,6 +73,51 @@ export function formatDuration(seconds: number): string {
   return `${s}s`
 }
 
+/**
+ * A Go duration string, as something a person would say.
+ *
+ * The retention settings are stored as Go durations because the API parses
+ * them with time.ParseDuration, and Go has no unit larger than an hour — so
+ * ninety days is written `2160h`, and Go prints it back as `2160h0m0s`. That
+ * string reached the screen verbatim, under a sentence explaining how long
+ * history is kept. Nobody reads 2160h0m0s as three months.
+ *
+ * Returns the input unchanged when it is not a duration. This renders operator
+ * configuration, and showing a value that was not understood beats showing a
+ * confident wrong one or an em dash where their setting used to be.
+ */
+export function formatGoDuration(raw: string | null | undefined): string {
+  if (!raw) return EMPTY
+  const text = raw.trim()
+  const match = /^(-?)(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?$/.exec(
+    text,
+  )
+  if (!match || (!match[2] && !match[3] && !match[4])) return text
+
+  const hours = Number(match[2] ?? 0)
+  const minutes = Number(match[3] ?? 0)
+  const seconds = Number(match[4] ?? 0)
+  const total = hours * 3600 + minutes * 60 + seconds
+  if (!Number.isFinite(total) || total <= 0) return text
+
+  const sign = match[1] === '-' ? '-' : ''
+  const days = total / 86400
+  // Only when it divides evenly. "1.5 days" is a worse way to say 36 hours,
+  // and a retention window is almost always a round number of one unit.
+  if (days >= 1 && Number.isInteger(days)) {
+    return `${sign}${days} ${days === 1 ? 'day' : 'days'}`
+  }
+  const asHours = total / 3600
+  if (asHours >= 1 && Number.isInteger(asHours)) {
+    return `${sign}${asHours} ${asHours === 1 ? 'hour' : 'hours'}`
+  }
+  const asMinutes = total / 60
+  if (asMinutes >= 1 && Number.isInteger(asMinutes)) {
+    return `${sign}${asMinutes} ${asMinutes === 1 ? 'minute' : 'minutes'}`
+  }
+  return `${sign}${formatDuration(total)}`
+}
+
 /** "3s ago" / "18m ago". Coarse on purpose — false precision here is noise. */
 export function formatRelative(iso: string | null | undefined, now = Date.now()): string {
   if (!iso) return EMPTY

@@ -142,10 +142,13 @@ function SignedInShell({ children }: { children: ReactNode }) {
             aria-label="ClassG — go to the live map"
             className="focus-visible:outline-ring shrink-0 rounded-lg"
           >
-            {/* The mark carries the identity on every screen; the wordmark and
-                then the tagline are added as the width allows. */}
-            <ClassGLogo size="lg" showWordmark={false} className="md:hidden" />
-            <ClassGLogo size="lg" className="hidden md:inline-flex xl:hidden" />
+            {/* The wordmark is on every screen now, including a phone.
+                Hiding it below md dated from when this row carried nine
+                controls and every pixel was contested; with three, the name of
+                the thing you are looking at is worth more than the gap it
+                used to leave. The tagline still waits for xl, where it has a
+                line of its own to sit on rather than squeezing the mark. */}
+            <ClassGLogo size="lg" className="xl:hidden" />
             <ClassGLogo size="lg" showTagline className="hidden xl:inline-flex" />
           </Link>
 
@@ -202,7 +205,7 @@ function SignedInShell({ children }: { children: ReactNode }) {
           'safe-bottom safe-x',
         )}
       >
-        <div className="flex justify-around px-1 py-1">
+        <div className="flex items-stretch gap-0.5 px-1 py-1">
           {PRIMARY_NAV.map((item) => (
             <NavLink key={item.to} item={item} />
           ))}
@@ -235,15 +238,21 @@ function NavLink({ item }: { item: NavItem }) {
         className: 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
       }}
       className={cn(
-        'flex min-w-16 flex-col items-center gap-0.5 rounded-md px-3 py-1.5',
-        'text-2xs font-medium transition-colors',
+        // `min-w-16` here plus `justify-around` on the bar meant seven items
+        // needed 448px and a phone has 390: Docs was pushed off the right edge
+        // and there was no way to reach the documentation on a phone at all.
+        // Equal flexible columns instead, so the bar divides whatever width
+        // there is and every destination stays reachable down to 320px.
+        'flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-md px-0.5 py-1.5',
+        'text-[10px] leading-tight font-medium tracking-tight transition-colors',
         // Stacked in the bottom bar, inline in the header. lg because that is
-        // where the one becomes the other.
-        'lg:flex-row lg:gap-2 lg:px-2.5 lg:py-1.5 lg:text-sm',
+        // where the one becomes the other -- and there it sizes to its label
+        // rather than sharing the row equally.
+        'lg:flex-none lg:flex-row lg:gap-2 lg:px-2.5 lg:py-1.5 lg:text-sm lg:tracking-normal',
       )}
     >
-      <item.icon className="size-4.5 lg:size-4" aria-hidden />
-      {item.label}
+      <item.icon className="size-4.5 shrink-0 lg:size-4" aria-hidden />
+      <span className="max-w-full truncate">{item.label}</span>
     </Link>
   )
 }

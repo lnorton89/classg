@@ -70,6 +70,8 @@ export interface Formatters {
   coords: (lat: number, lon: number) => string
   /** Wall clock in the chosen zone: "02:14:07" or "2:14:07 AM". */
   clock: (iso: string | null | undefined) => string
+  /** The same, without seconds: "02:14" or "2:14 AM". For axes and labels. */
+  clockBrief: (iso: string | null | undefined) => string
   /** Date and time, for anything that may not be from today. */
   timestamp: (iso: string | null | undefined) => string
   /** "18m ago". */
@@ -94,6 +96,16 @@ export function useFormat(): Formatters {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
+      hour12,
+      ...(zone ? { timeZone: zone } : {}),
+    })
+    // Hours and minutes only. An axis label is read at a glance and repeated
+    // four or five times across a chart, and seconds on a 24-hour window are
+    // three characters of noise per tick -- enough to push the outer labels
+    // off the ends of the plot, which is exactly what they did.
+    const briefFmt = new Intl.DateTimeFormat(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
       hour12,
       ...(zone ? { timeZone: zone } : {}),
     })
@@ -146,6 +158,10 @@ export function useFormat(): Formatters {
       coord: (value, axis) => formatCoordinate(value, axis, coordFormat),
       coords: (lat, lon) => formatCoordinatePair(lat, lon, coordFormat),
       clock: clockOf,
+      clockBrief: (iso) => {
+        const date = parse(iso)
+        return date ? briefFmt.format(date) : EMPTY
+      },
       timestamp: (iso) => {
         const date = parse(iso)
         return date ? stampFmt.format(date) : EMPTY
