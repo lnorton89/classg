@@ -77,6 +77,45 @@ log() {
 }
 die() { log "FAILED: $*"; write_state "failed" "$*"; exit 1; }
 
+# run_logged DIR TAIL_LINES -- COMMAND...
+#
+# Runs a command in DIR, keeps the last TAIL_LINES of its combined output in
+# RUN_LOG, and returns the command's own exit status.
+#
+# Through a temp file rather than the obvious `cmd 2>&1 | while read; do log;
+# done`, which is what this replaces and which silently threw every line away:
+# the right-hand side of a pipe is a SUBSHELL, so each `log` appended to that
+# subshell's copy of RUN_LOG and the copy died with it. The console and the
+# journal still got the lines -- `log` prints and calls logger before it
+# appends -- so this looked fine from a terminal while making the admin page's
+# log useless for the one job it has.
+#
+# It cost a real diagnosis. A deploy failed reporting `pip install failed` with
+# not one line of pip's output to say why, on a unit with no shell access.
+#
+# The pipe hid failures a second way too: `a | b` reports b's status, so a
+# command that died still looked successful whenever `while read` finished
+# cleanly -- which it always does.
+run_logged() {
+    local dir="$1" tail_lines="$2"; shift 2
+    [ "${1:-}" = "--" ] && shift
+
+    local out status
+    if ! out=$(mktemp); then
+        log "could not make a temp file; running this step unlogged"
+        ( cd "$dir" && "$@" )
+        return $?
+    fi
+
+    ( cd "$dir" && "$@" ) > "$out" 2>&1
+    status=$?
+    while IFS= read -r line; do
+        [ -n "$line" ] && log "  $line"
+    done < <(tail -n "$tail_lines" "$out")
+    rm -f "$out"
+    return "$status"
+}
+
 # json_escape handles one line. Enough for what this writes -- log lines, commit
 # subjects, reasons -- and deliberately not a general escaper: backslash, quote,
 # and the control characters that actually turn up.
@@ -110,6 +149,20 @@ json_log_array() {
 # Empty on the paths that deliberately do not check (busy unit, dirty tree), and
 # the field is then absent rather than claiming everything is fine.
 ARTEFACTS=""
+
+# FAILED_STEP is the first build step that failed, kept so the rollback can say
+# what actually went wrong.
+#
+# It used to say "the unit did not come back healthy" whichever step broke,
+# which sent me looking at an API that was answering perfectly well while the
+# real fault was a pip install four steps earlier. A reason that names the
+# wrong subsystem is worse than no reason.
+FAILED_STEP=""
+
+fail_step() {
+    log "$1"
+    [ -z "$FAILED_STEP" ] && FAILED_STEP="$1"
+}
 
 note_artefact() {
     [ -n "$ARTEFACTS" ] && ARTEFACTS="$ARTEFACTS, "
@@ -281,8 +334,7 @@ rebuild_stale_artefacts() {
     local sdr_bin="$sdr/target/release/classg-sensor-sdr"
     if stale_bin "$sdr_bin" "$sdr/src" "$sdr/Cargo.toml" "$sdr/Cargo.lock"; then
         log "the SDR sensor binary is older than its sources; rebuilding"
-        if (cd "$sdr" && cargo build --release --features rtlsdr 2>&1 |
-            tail -5 | while read -r l; do log "  $l"; done); then
+        if run_logged "$sdr" 5 -- cargo build --release --features rtlsdr; then
             settle_artefact "$sdr_bin" "$sdr/src" "$sdr/Cargo.toml" "$sdr/Cargo.lock"
             sudo systemctl restart classg-sensor-sdr.service && log "classg-sensor-sdr restarted"
             note_artefact "classg-sensor-sdr" "rebuilt"
@@ -331,8 +383,8 @@ rebuild_pidash_if_stale() {
     esac
     if [ -n "$reason" ]; then
         log "updating the pi-dash submodule: $reason"
-        git -C "$REPO_DIR" submodule update --init --recursive tools/pi-dash 2>&1 |
-            while read -r l; do log "  $l"; done
+        run_logged "$REPO_DIR" 10 -- \
+            git submodule update --init --recursive tools/pi-dash || true
     fi
 
     if [ -z "$reason" ] && ! stale_bin "$bin" "$dir/src" "$dir/Cargo.toml"; then
@@ -341,8 +393,7 @@ rebuild_pidash_if_stale() {
     fi
 
     log "rebuilding pi-dash"
-    if (cd "$dir" && cargo build --release 2>&1 | tail -3 |
-        while read -r l; do log "  $l"; done); then
+    if run_logged "$dir" 3 -- cargo build --release; then
         settle_artefact "$bin" "$dir/src" "$dir/Cargo.toml"
         log "pi-dash rebuilt; a running instance picks it up on next launch"
         note_artefact "pi-dash" "rebuilt"
@@ -518,9 +569,9 @@ DEPLOY_OK=1
 if [ -f .gitmodules ]; then
     log "updating submodules"
     if ! git submodule sync --recursive >/dev/null 2>&1 ||
-        ! git submodule update --init --recursive 2>&1 | while read -r l; do log "  $l"; done; then
+        ! run_logged "$REPO_DIR" 10 -- git submodule update --init --recursive; then
         DEPLOY_OK=0
-        log "submodule update failed"
+        fail_step "the submodules could not be updated"
     fi
 fi
 
@@ -528,9 +579,9 @@ fi
 # registry, and for one Pi there does not need to be.
 if changed_in "services/api" || changed_in "services/fusion" || changed_in "services/ui" || changed_in "docker"; then
     log "rebuilding the web tier"
-    if ! (cd docker && docker compose up -d --build 2>&1 | while read -r l; do log "  $l"; done); then
+    if ! run_logged "$REPO_DIR/docker" 20 -- docker compose up -d --build; then
         DEPLOY_OK=0
-        log "docker compose failed"
+        fail_step "docker compose could not build or start the web tier"
     fi
 else
     log "web tier unchanged; not rebuilding"
@@ -542,11 +593,12 @@ fi
 # below covers the "it is older than its sources" case on every run.
 if changed_in "services/sensor-sdr"; then
     log "rebuilding the SDR sensor (this takes a few minutes on a Pi)"
-    if (cd services/sensor-sdr && cargo build --release --features rtlsdr 2>&1 | tail -5 | while read -r l; do log "  $l"; done); then
+    if run_logged "$REPO_DIR/services/sensor-sdr" 5 -- \
+        cargo build --release --features rtlsdr; then
         sudo systemctl restart classg-sensor-sdr.service && log "classg-sensor-sdr restarted"
     else
         DEPLOY_OK=0
-        log "cargo build failed; leaving the running binary in place"
+        fail_step "the SDR sensor did not build; the running binary is untouched"
     fi
 fi
 
@@ -559,14 +611,37 @@ fi
 # per branch of this script.
 rebuild_stale_artefacts || true
 
+# The Wi-Fi sensor, into the virtualenv the systemd unit actually runs.
+#
+# `python3 -m pip install -e .` was wrong twice over, and this is the first
+# deploy that ever touched services/sensor-wifi, so it had never once run.
+#
+# Wrong once because the unit's ExecStart is
+# services/sensor-wifi/.venv/bin/python: anything installed into the system
+# interpreter is installed where the sensor will never look. Wrong twice
+# because Bookworm marks that interpreter externally-managed (PEP 668) and pip
+# refuses outright -- which is what failed the deploy and rolled the unit back.
+#
+# The install is only needed when dependencies or entry points move: the venv
+# holds an EDITABLE install, so a change to a .py file is live on the next
+# restart with no pip involved at all. That is why the restart happens either
+# way, and why a pip failure no longer fails the deploy on its own -- the code
+# is already in place, and refusing to restart would leave the sensor running
+# older code than the tree it is now reporting.
 if changed_in "services/sensor-wifi"; then
-    log "reinstalling the Wi-Fi sensor"
-    if (cd services/sensor-wifi && python3 -m pip install --quiet -e . 2>&1 | while read -r l; do log "  $l"; done); then
-        sudo systemctl restart classg-sensor-wifi.service && log "classg-sensor-wifi restarted"
+    wifi_dir="$REPO_DIR/services/sensor-wifi"
+    wifi_python="$wifi_dir/.venv/bin/python"
+    if [ -x "$wifi_python" ]; then
+        log "reinstalling the Wi-Fi sensor into its virtualenv"
+        if ! run_logged "$wifi_dir" 10 -- "$wifi_python" -m pip install --quiet -e .; then
+            # Not fatal. An editable install means the source is already what
+            # runs; this only re-resolves dependencies.
+            log "pip install failed; restarting on the existing environment anyway"
+        fi
     else
-        DEPLOY_OK=0
-        log "pip install failed"
+        log "no virtualenv at $wifi_python; skipping the install and restarting"
     fi
+    sudo systemctl restart classg-sensor-wifi.service && log "classg-sensor-wifi restarted"
 fi
 
 # --- did it come back? ------------------------------------------------------
@@ -599,12 +674,16 @@ fi
 # CREATE TABLE IF NOT EXISTS throughout, so an older binary meets a newer schema
 # with extra columns it ignores. Anything that stops being true breaks this
 # assumption and needs a real migration story before it ships.
-log "the unit did not come back healthy; rolling back to ${LOCAL:0:8}"
+if [ "$HEALTHY" -eq 0 ]; then
+    fail_step "the API did not answer after the rebuild"
+fi
+ROLLBACK_REASON="${FAILED_STEP:-the unit did not come back healthy}"
+log "$ROLLBACK_REASON; rolling back to ${LOCAL:0:8}"
 git checkout --quiet "$LOCAL" || die "rollback checkout failed -- this unit needs hands"
 if changed_in "services/api" || changed_in "services/fusion" || changed_in "services/ui" || changed_in "docker"; then
-    (cd docker && docker compose up -d --build 2>&1 | tail -5 | while read -r l; do log "  rollback: $l"; done)
+    run_logged "$REPO_DIR/docker" 5 -- docker compose up -d --build || true
 fi
 log "rolled back. This unit stays on ${LOCAL:0:8} until someone looks at ${REMOTE:0:8}."
 DEPLOY_OK_JSON=false
-write_state "failed" "the unit did not come back healthy; rolled back"
+write_state "failed" "$ROLLBACK_REASON; rolled back to ${LOCAL:0:8}"
 exit 1

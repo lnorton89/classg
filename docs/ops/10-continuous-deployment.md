@@ -62,10 +62,21 @@ change is not a trade this gets to make on anyone's behalf.
 |---|---|
 | `services/api`, `services/fusion`, `services/ui`, `docker` | `docker compose up -d --build` |
 | `services/sensor-sdr` | `cargo build --release --features rtlsdr`, then restart the unit |
-| `services/sensor-wifi` | `pip install -e .`, then restart the unit |
+| `services/sensor-wifi` | `.venv/bin/python -m pip install -e .`, then restart the unit |
 
 A release build of the Rust sensor is minutes on a Pi. Spending them to install
 a UI change would take ADS-B down for nothing.
+
+**The Wi-Fi install goes into the venv, and the restart happens either way.**
+Two things make that the right shape, both learned by breaking it. The unit's
+`ExecStart` is `services/sensor-wifi/.venv/bin/python`, so a bare `python3 -m
+pip` installs where the sensor will never look — and on Bookworm it does not
+even get that far, because the system interpreter is marked
+externally-managed (PEP 668) and pip refuses. And the venv's install is
+*editable*, so a change to a `.py` file is already live: the pip step only
+re-resolves dependencies. Failing the whole deploy on it meant rolling a unit
+back over a step whose work was already done, so a pip failure is now logged
+and the restart proceeds.
 
 ## Installing it
 
@@ -218,6 +229,15 @@ mtime of the final binary, so it can print `Finished` and relink nothing. The
 binary then stays older than its sources and the next run rebuilds again — and
 restarts the sensor again. The agent stamps the binary once in that case and
 says so, which turns a ten-minute ADS-B outage loop into one log line.
+
+The agent's own log is the tail of each run, and until this was fixed it was a
+tail of nothing: every build step piped its output into `while read -r l; do
+log "  $l"; done`, and the right-hand side of a pipe is a subshell, so each
+appended line died with it. From a terminal it looked fine — `log` prints and
+calls `logger` before it appends — while the admin page showed a bare "pip
+install failed" with no pip output on a unit with no shell access. Build steps
+now run through `run_logged`, which keeps the output and the command's real
+exit status.
 
 Every check writes its verdict to the state file as `artefacts`, whether or not
 it did anything, and the admin page shows it. That is deliberate redundancy with
