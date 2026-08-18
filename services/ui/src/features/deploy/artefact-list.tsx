@@ -15,9 +15,16 @@ import type { DeploymentArtefact } from '@/lib/api/types'
  * Shared so the two call sites only agree on tone once: this used to be
  * reimplemented in both places, and they had drifted apart — a `rebuilt`
  * artefact read as `ok` in one and `muted` in the other for the same state.
+ *
+ * `behind` is warn rather than muted, and that distinction is the reason the
+ * state exists. "current" on a submodule means current FOR ITS PIN, which a
+ * unit can report truthfully while work pushed upstream days ago has never
+ * reached it. Drawn the same grey as current, it would answer the question
+ * nobody was asking.
  */
-function artefactTone(state: DeploymentArtefact['state']): 'ok' | 'down' | 'muted' {
+function artefactTone(state: DeploymentArtefact['state']): 'ok' | 'warn' | 'down' | 'muted' {
   if (state === 'failed') return 'down'
+  if (state === 'behind') return 'warn'
   if (state === 'rebuilt') return 'ok'
   return 'muted'
 }

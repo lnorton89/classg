@@ -1,3 +1,7 @@
 [submodule "tools/pi-dash"]
 	path = tools/pi-dash
 	url = https://github.com/lnorton89/pi-dash.git
+	# Named explicitly so `git submodule update --remote` is deterministic.
+	# Without it that command follows whatever the remote calls its default
+	# branch, which is a thing that can change without anything here changing.
+	branch = main

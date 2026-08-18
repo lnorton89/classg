@@ -179,6 +179,19 @@ describe('DeploymentPanel', () => {
     expect(screen.getByText('rebuilt')).toBeVisible()
   })
 
+  // A submodule can be built and current for the commit it is pinned to while
+  // upstream has moved past that commit. Both readings are true; only one of
+  // them is what anybody means by up to date, and collapsing them is how
+  // pi-dash reported itself current on a unit that had never seen days of
+  // upstream work.
+  it('distinguishes a stale pin from a stale build', async () => {
+    deployment.mockResolvedValue(status({ artefacts: [{ name: 'pi-dash', state: 'behind' }] }))
+    renderPanel()
+
+    await waitFor(() => expect(screen.getByText('behind')).toBeInTheDocument())
+    expect(screen.queryByText('current')).not.toBeInTheDocument()
+  })
+
   // The distinction this whole field exists for: a run that skipped the check
   // must not look like a run that checked and found everything current.
   it('says nothing at all when the last run did not check', async () => {

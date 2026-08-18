@@ -152,16 +152,40 @@ run_sweep() {
 handle_request() {
     [ -f "$REQUEST" ] || return 0
     local body id band
+
+    # Read, and read again if the first look made no sense.
+    #
+    # The API writes this by rename now, so a torn read should be impossible --
+    # but the API is a container and this is a host script, and they upgrade
+    # independently. An older API still writing straight to the path leaves
+    # this reading a file mid-write, and the cost of getting that wrong is not
+    # small: the request is consumed below whatever happens, so a torn read
+    # means the operator watches the spectrum page hang for the full
+    # CLASSG_SWEEP_TIMEOUT before being told nothing answered.
+    #
+    # One retry, a moment later, distinguishes a half-written file from a
+    # genuinely malformed one without looping forever on real garbage.
     body=$(cat "$REQUEST" 2>/dev/null)
+    id=$(json_field "$body" id)
+    band=$(json_field "$body" band)
+    if { [ -z "$id" ] || [ -z "$band" ]; } && [ -f "$REQUEST" ]; then
+        sleep 0.2
+        body=$(cat "$REQUEST" 2>/dev/null)
+        id=$(json_field "$body" id)
+        band=$(json_field "$body" band)
+        [ -n "$id" ] && [ -n "$band" ] &&
+            log "the sweep request only parsed on the second read; it was caught mid-write"
+    fi
+
     # Consumed immediately, whatever happens next -- a request that survives a
     # crash would be re-run on the next start, taking the radio for a sweep
     # nobody is waiting for any more.
     rm -f "$REQUEST"
 
-    id=$(json_field "$body" id)
-    band=$(json_field "$body" band)
     if [ -z "$id" ] || [ -z "$band" ]; then
-        log "ignoring a malformed sweep request"
+        # Says what it saw. "ignoring a malformed sweep request" on its own left
+        # nothing to tell a truncated document from a wrong one.
+        log "ignoring a malformed sweep request (${#body} bytes, id='${id}', band='${band}')"
         return 0
     fi
     run_sweep "$id" "$band"

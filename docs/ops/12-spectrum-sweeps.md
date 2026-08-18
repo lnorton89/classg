@@ -130,20 +130,29 @@ consequences worth knowing before reading the bars:
 ### What this adapter actually reports
 
 **Measured on the unit's ALFA AWUS036AXML (mt7921u) in monitor mode,
-2026-08-18: nothing usable.** `iw dev wlan1 survey dump` returns exactly one
-entry —
+2026-08-18: nothing usable.** `iw dev wlan1 survey dump` enumerates **98
+entries** — every channel the adapter supports across 2.4, 5 and 6 GHz — and
+**not one of them carries busy time, receive time or a noise floor.** The driver
+lists the channels and maintains no statistics for any of them.
+
+Exactly one entry has a `channel active time` that moves at all:
 
 ```
 frequency: 5955 MHz
 channel active time: 10254 ms
 ```
 
-— for a 6 GHz channel the hopper never tunes and the US regdomain forbids
-listening on anyway, with **no busy time, no receive time and no noise floor**.
-The active time advances at wall-clock rate rather than measuring dwell, and the
-2.4 GHz channels being swept do not appear at all. Sampled repeatedly while the
-hopper moved across channels 11, 8 and 6; the single 5955 MHz entry never
-changed shape.
+That is a 6 GHz channel the hopper never tunes and the US regdomain forbids
+listening on, and its active time advances at wall-clock rate rather than
+measuring dwell. Sampled repeatedly while the hopper moved across channels 11, 8
+and 6; nothing about it changed.
+
+The 98 was worth finding. The first read of this reported "exactly one entry",
+because the code filtered to entries with advancing active time before anyone
+counted them — so a driver that enumerates every channel and populates none
+looked identical to a driver that knows about one channel. The raw count is now
+published as `survey_seen` for exactly that reason, and it is what corrected
+this paragraph.
 
 So on this hardware the occupancy panel reports that the adapter has no
 occupancy to give, and says why. The code is kept because the reasoning holds

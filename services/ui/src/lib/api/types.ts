@@ -719,7 +719,13 @@ export interface DeploymentStatus {
 
 export interface DeploymentArtefact {
   name: string
-  state: 'current' | 'rebuilt' | 'failed' | 'absent'
+  /**
+   * `behind` is about the PIN, not the build: a submodule whose binary is
+   * current for the commit it is pinned to, while upstream has moved past it.
+   * Distinct from `current` because both are true at once and only one of them
+   * is what an operator means by up to date.
+   */
+  state: 'current' | 'behind' | 'rebuilt' | 'failed' | 'absent'
 }
 
 /** One finished agent run. Only runs that did something are recorded. */

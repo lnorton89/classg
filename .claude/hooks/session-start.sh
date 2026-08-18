@@ -173,7 +173,44 @@ fi
 
 SELF_IP="$(tailscale ip -4 2>/dev/null | head -1)"
 [ -n "$SELF_IP" ] || bail "joined but no tailnet address was assigned"
-note "this container is $SELF_IP ($TS_HOSTNAME)"
+
+# Tagged or not, said out loud.
+#
+# An untagged node is not a broken one -- it reaches the Pi perfectly well over
+# the API, which is how most of the work here gets done. What it cannot do is
+# open a shell without a human: Tailscale SSH policy for a user-owned node is
+# usually `action: check`, and check means a browser round trip in a container
+# where nobody is holding a browser. The connection succeeds, the host key
+# verifies, and the server answers with a login URL that nothing will ever
+# visit. That reads as a hang, and it cost an afternoon of assuming the key or
+# the container was at fault when the answer was one word in the tailnet policy.
+#
+# So: report which shape this node joined in, and where the difference is
+# written down. The join itself is unaffected either way.
+# Self.Tags specifically, never a grep for "tag:" across the document. The
+# document lists every peer, and this tailnet has tagged peers -- the first
+# match in the whole blob was `tag:container` off somebody else's node, which
+# would have reported this container as tagged while it plainly is not.
+# A wrong claim here is worse than none, so an unparseable status says nothing.
+self_tags() {
+    command -v python3 >/dev/null 2>&1 || return 0
+    tailscale status --json 2>/dev/null | python3 -c '
+import json, sys
+try:
+    print(",".join(json.load(sys.stdin).get("Self", {}).get("Tags") or []))
+except Exception:
+    pass
+' 2>/dev/null
+}
+
+SELF_TAGS="$(self_tags)"
+if [ -n "$SELF_TAGS" ]; then
+    note "this container is $SELF_IP ($TS_HOSTNAME, $SELF_TAGS)"
+else
+    note "this container is $SELF_IP ($TS_HOSTNAME, untagged)"
+    note "untagged: the API works; SSH needs a browser unless the policy says accept"
+    note "see docs/ops/08-cloud-tailscale.md#the-tagged-shape-in-full"
+fi
 
 # ---------------------------------------------------------------- locate Pi
 

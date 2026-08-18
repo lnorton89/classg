@@ -248,11 +248,11 @@ class SurveySampler:
 
             # Active time on its own is not occupancy, and on this hardware it
             # is not even dwell. Measured on the unit's mt7921u in monitor
-            # mode: `iw survey dump` returns exactly one entry, for 5955 MHz --
-            # a 6 GHz channel the hopper never tunes and the regdomain forbids
-            # -- whose "channel active time" advances at wall-clock rate with
-            # busy, receive and noise all absent. The channels actually being
-            # swept report nothing at all.
+            # mode: `iw survey dump` enumerates 98 entries -- every channel the
+            # adapter supports -- and NOT ONE carries busy time, receive time
+            # or a noise floor. Exactly one, 5955 MHz, has an active time that
+            # moves at all, and it advances at wall-clock rate on a 6 GHz
+            # channel the hopper never tunes and the regdomain forbids.
             #
             # So an entry with no noise figure and no busy or receive time
             # carries no measurement, whatever its active time claims. Drawing

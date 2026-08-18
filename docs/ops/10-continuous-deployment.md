@@ -16,13 +16,37 @@ every ten minutes. Each run:
 1. Fetches `origin/main`. If it matches what is checked out, stop.
 2. Refuses if the working tree is dirty — a dirty tree on a field unit is
    someone mid-diagnosis, and `git pull` would clobber it.
-3. **Asks GitHub whether CI concluded `success` for that exact commit.** Still
-   running, failed, or no runs recorded → leave the unit where it is.
+3. **Asks GitHub whether CI concluded `success` for that exact commit.** Failed
+   → leave the unit where it is. Still running or not started yet → wait for it,
+   up to four more looks a minute apart, rather than losing the tick.
 4. Refuses while a capture or a sweep is running.
 5. Fast-forwards, rebuilds only what changed, restarts, and waits for
    `/health` to answer.
 6. If it does not come back, rolls the checkout back and rebuilds from the
    previous commit.
+
+### Waiting for CI rather than losing the tick
+
+The timer fires every ten minutes; a CI run takes four or five. A tick landing
+mid-run used to give up at once and wait the whole interval, so a commit could
+sit undeployed for the best part of twenty minutes with its CI green for
+fifteen of them. During an active push session it blocked on nearly every tick
+— observed on 2026-08-18, stuck for an hour across six consecutive checks that
+each said "CI is still running".
+
+So a run that finds CI in flight now looks four more times, a minute apart,
+before giving up. What that costs and what it protects:
+
+| | |
+|---|---|
+| Extra API calls | Four per waiting run, worst case. Unauthenticated api.github.com allows 60 an hour and the timer alone uses 6; an hour in which every tick waits and every wait is exhausted reaches 30 |
+| A red result | Ends the wait immediately. There is no sense spending the budget on a commit that will not deploy |
+| An unreachable GitHub | Never waits. Retrying a dead network for five minutes learns nothing, and the unit keeps the commit that was green when it landed |
+| A busy unit | Never waits. Asked before the loop, because holding the run open for five minutes to then refuse over a sweep in progress wastes the wait and the lock |
+| A dry run | Never waits. It is meant to report what would happen, not take five minutes doing it |
+
+While waiting it publishes `blocked` with a reason saying so, so the admin page
+shows the agent working rather than the previous run's verdict going stale.
 
 ### Pull, not push
 
@@ -216,6 +240,41 @@ exist. When it rebuilds something on an
 otherwise idle run it reports `last_result: "rebuilt"` rather than
 `"up-to-date"`, so the admin page distinguishes "nothing to do" from "the tree
 was fine and something else was not".
+
+### A submodule is a pin, not a subscription
+
+`tools/pi-dash` names one exact commit and never follows upstream on its own,
+which produced a question worth writing down: pi-dash "did not update on the
+latest deploy", and the agent was right that it had nothing to do. The pin had
+not moved since a commit several days older than the work in question, so the
+unit rebuilt the pinned version and reported `current` — truthfully, and
+uselessly, because "current for its pin" and "current with upstream" are
+different facts and only one of them was being asked about.
+
+Both are reported now:
+
+| State | Means |
+|---|---|
+| `current` | The binary matches the pinned commit, and the pin matches upstream `main`. |
+| `behind` | The binary is current **for its pin**, and upstream has moved past that pin. Nothing is broken; the unit is running an older pi-dash on purpose. |
+
+The check is a `git ls-remote` — git protocol, not the REST API, so it costs
+nothing against the 60-an-hour budget the CI gate is careful with. An
+unreachable upstream reports `current`, because "I could not ask" must not
+render as "you are behind".
+
+[`.github/workflows/bump-pi-dash.yml`](../../.github/workflows/bump-pi-dash.yml)
+moves the pin daily, so `behind` should be transient. **Seeing it stick is how
+you find out that workflow has stopped** — which is most of why it is shown.
+
+The bump goes through a commit on `main` rather than letting the unit track
+pi-dash's branch directly, and that is deliberate. This unit deploys a commit
+only once CI concluded success for that exact SHA; a Pi following an upstream
+branch would run code that never passed a gate, and would fight the agent's own
+`submodule update`, which exists to force the checkout back to the pin. CI does
+not build pi-dash — there is no job for it — so a bump whose code does not
+compile still goes green here and fails on the unit, where the failure is
+non-fatal and logged for the reason below.
 
 Two artefacts are covered: `classg-sensor-sdr`, which is restarted after a
 rebuild, and `pi-dash`, which is a submodule and has two ways to be out of
