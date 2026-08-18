@@ -14,6 +14,11 @@ import type {
   AuthMe,
   AuthUser,
   CreateUserRequest,
+  DeploymentStatus,
+  HookDeliveriesResponse,
+  HookRule,
+  HookRulesResponse,
+  TestHookResponse,
   LoginRequest,
   SessionsResponse,
   SetupRequest,
@@ -289,6 +294,49 @@ export const api = {
    */
   ssoStartUrl(returnTo: string): string {
     return `${API_BASE}/auth/sso/start${buildQuery({ return: returnTo })}`
+  },
+
+  hookRules(): Promise<HookRulesResponse> {
+    return request<HookRulesResponse>('/admin/hooks')
+  },
+
+  createHookRule(body: Partial<HookRule>): Promise<HookRule> {
+    return request<HookRule>('/admin/hooks', { method: 'POST', body: JSON.stringify(body) })
+  },
+
+  updateHookRule(ruleId: string, body: Partial<HookRule>): Promise<HookRule> {
+    return request<HookRule>(`/admin/hooks/${encodeURIComponent(ruleId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    })
+  },
+
+  deleteHookRule(ruleId: string): Promise<undefined> {
+    return request<undefined>(`/admin/hooks/${encodeURIComponent(ruleId)}`, {
+      method: 'DELETE',
+    })
+  },
+
+  testHookRule(ruleId: string): Promise<TestHookResponse> {
+    return request<TestHookResponse>(`/admin/hooks/${encodeURIComponent(ruleId)}/test`, {
+      method: 'POST',
+    })
+  },
+
+  hookDeliveries(): Promise<HookDeliveriesResponse> {
+    return request<HookDeliveriesResponse>('/admin/hook-deliveries')
+  },
+
+  deployment(): Promise<DeploymentStatus> {
+    return request<DeploymentStatus>('/admin/deployment')
+  },
+
+  requestDeploy(): Promise<DeploymentStatus> {
+    return request<DeploymentStatus>('/admin/deployment/deploy', { method: 'POST' })
+  },
+
+  cancelDeploy(): Promise<undefined> {
+    return request<undefined>('/admin/deployment/deploy', { method: 'DELETE' })
   },
 
   users(): Promise<UsersResponse> {

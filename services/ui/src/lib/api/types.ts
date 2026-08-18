@@ -603,3 +603,106 @@ export interface AuthSession {
 export interface SessionsResponse {
   sessions: AuthSession[]
 }
+
+// --- Hooks ----------------------------------------------------------------
+
+export type HookEvent =
+  | 'track.confirmed'
+  | 'track.closed'
+  | 'detection.created'
+  | 'sensor.unhealthy'
+  | 'sensor.recovered'
+  | 'capture.completed'
+  | 'sweep.completed'
+
+export type HookAction = 'webhook' | 'email'
+
+export type DeliveryStatus = 'pending' | 'delivered' | 'failed' | 'suppressed'
+
+/** The placeholder a write-only secret reads back as. Sending it unchanged on a
+ *  PUT means "leave the stored value alone" — see api-contract.md#hooks. */
+export const SECRET_PLACEHOLDER = '••••••••'
+
+export interface HookRule {
+  rule_id: string
+  name: string
+  enabled: boolean
+  event: HookEvent
+  min_confidence?: number
+  classes?: string[]
+  sensor_kinds?: string[]
+  only_drones?: boolean
+  /** Per rule AND per subject. Zero from the server means the default. */
+  cooldown_s: number
+  action: HookAction
+  config: Record<string, unknown>
+  created_at: string
+  updated_at: string
+  last_fired_at?: string
+  fire_count: number
+}
+
+export interface HookEventDoc {
+  event: HookEvent
+  description: string
+}
+
+export interface HookRulesResponse {
+  rules: HookRule[]
+  events: HookEventDoc[]
+  /** False on a unit with no mail server: the UI must not offer an email hook
+   *  there and then report the problem only when an alert fails to arrive. */
+  smtp_configured: boolean
+}
+
+export interface HookDelivery {
+  delivery_id: string
+  rule_id: string
+  rule_name?: string
+  event: string
+  subject?: string
+  status: DeliveryStatus
+  attempts: number
+  error?: string
+  response_code?: number
+  created_at: string
+  completed_at?: string
+}
+
+export interface HookDeliveriesResponse {
+  deliveries: HookDelivery[]
+  /** Events discarded because the dispatch queue was full. */
+  dropped: number
+}
+
+export interface TestHookResponse {
+  delivered: boolean
+  response_code?: number
+  error?: string
+}
+
+// --- Deployment -----------------------------------------------------------
+
+export interface DeploymentStatus {
+  /** False on a dev machine or a unit with no deploy agent. Not an error. */
+  configured: boolean
+  reason?: string
+  commit?: string
+  commit_subject?: string
+  commit_at?: string
+  last_check_at?: string
+  last_result?: string
+  last_reason?: string
+  last_deploy_at?: string
+  last_deploy_commit?: string
+  last_deploy_ok?: boolean
+  remote_commit?: string
+  remote_ci?: string
+  timer_enabled?: boolean
+  update_available: boolean
+  deploy_requested: boolean
+  /** Seconds since the agent last wrote. Worth more than timer_enabled: a large
+   *  age means the agent is not running, whatever the flag says. */
+  state_age_s?: number
+  log?: string[]
+}

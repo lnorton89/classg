@@ -1,0 +1,242 @@
+/**
+ * What this unit is running, and a way to ask for an update.
+ *
+ * The honesty this panel exists to preserve: **the API cannot deploy anything.**
+ * It writes a request marker that the host-side agent picks up on its own
+ * schedule. So the button says "Request deploy", the confirmation says the
+ * agent acts within ten minutes, and there is no spinner implying work is
+ * happening right now. A UI that showed "Deploying…" for ten minutes would be
+ * lying about where the work is.
+ *
+ * `state_age_s` is displayed as prominently as the timer flag, because it is
+ * worth more: a large age means the agent is not actually running, whatever
+ * `timer_enabled` claims.
+ */
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { CheckCircle2Icon, CircleDashedIcon, RocketIcon, XCircleIcon } from 'lucide-react'
+
+import { useFormat } from '@/app/use-format'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Alert, DataList, DataRow, Skeleton } from '@/components/ui/misc'
+import { ApiError, api } from '@/lib/api/client'
+import { deploymentQuery, queryKeys } from '@/lib/api/queries'
+import type { DeploymentStatus } from '@/lib/api/types'
+
+/** Past this, the agent is not running whatever the timer flag says. The timer
+ *  fires every ten minutes, so three times that is unambiguous. */
+const STALE_AFTER_S = 30 * 60
+
+export function DeploymentPanel() {
+  const queryClient = useQueryClient()
+  const format = useFormat()
+  const status = useQuery(deploymentQuery())
+
+  const deploy = useMutation({
+    mutationFn: () => api.requestDeploy(),
+    onSuccess: (next) => {
+      queryClient.setQueryData(queryKeys.deployment, next)
+    },
+  })
+  const cancel = useMutation({
+    mutationFn: () => api.cancelDeploy(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.deployment }),
+  })
+  const error = deploy.error instanceof ApiError ? deploy.error : null
+
+  if (status.isPending) return <Skeleton className="h-48 w-full" />
+
+  const d = status.data
+  if (!d) return null
+
+  if (!d.configured) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Deployment</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Alert tone="info" title="No deploy agent on this unit">
+            {d.reason ?? 'Not configured.'}
+          </Alert>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const stale = d.state_age_s !== undefined && d.state_age_s > STALE_AFTER_S
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex flex-wrap items-center gap-2">
+          Deployment
+          {d.update_available ? <Badge variant="warn">update available</Badge> : null}
+          {d.deploy_requested ? <Badge variant="warn">deploy queued</Badge> : null}
+        </CardTitle>
+        <CardDescription>
+          This unit pulls from <code className="font-mono text-xs">main</code> and deploys only
+          a commit whose CI passed. The API itself cannot deploy — it asks the host agent, which
+          acts on its own schedule.
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="space-y-3">
+        {stale ? (
+          <Alert tone="warn" title="The deploy agent has not checked in recently">
+            Last check {format.timestamp(d.last_check_at ?? '')} — {formatAge(d.state_age_s)}{' '}
+            ago. The timer is probably not running. On the unit:{' '}
+            <code className="font-mono text-xs">systemctl status classg-autodeploy.timer</code>
+          </Alert>
+        ) : null}
+
+        {error ? (
+          <Alert tone="error" title="Could not request a deploy">
+            {error.message}
+          </Alert>
+        ) : null}
+
+        <DataList>
+          <DataRow
+            label="Running"
+            value={
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="font-mono">{(d.commit ?? '').slice(0, 8) || 'unknown'}</span>
+                {d.commit_subject ? (
+                  <span className="text-muted-foreground">{d.commit_subject}</span>
+                ) : null}
+              </span>
+            }
+          />
+          <DataRow
+            label="Latest on main"
+            value={
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="font-mono">
+                  {(d.remote_commit ?? '').slice(0, 8) || 'unknown'}
+                </span>
+                <CiBadge ci={d.remote_ci} />
+              </span>
+            }
+          />
+          <DataRow
+            label="Last check"
+            value={d.last_check_at ? format.timestamp(d.last_check_at) : 'never'}
+            hint={d.state_age_s !== undefined ? `${formatAge(d.state_age_s)} ago` : undefined}
+          />
+          <DataRow
+            label="Last result"
+            value={d.last_result ?? 'unknown'}
+            hint={d.last_reason ?? undefined}
+          />
+          <DataRow
+            label="Last deploy"
+            value={
+              d.last_deploy_at ? (
+                <span className="flex flex-wrap items-center gap-2">
+                  {format.timestamp(d.last_deploy_at)}
+                  {d.last_deploy_ok ? (
+                    <Badge variant="ok">ok</Badge>
+                  ) : (
+                    <Badge variant="down">rolled back</Badge>
+                  )}
+                </span>
+              ) : (
+                'never'
+              )
+            }
+          />
+          <DataRow
+            label="Automatic deploys"
+            value={
+              d.timer_enabled ? (
+                <Badge variant="ok">on</Badge>
+              ) : (
+                <Badge variant="muted">off</Badge>
+              )
+            }
+          />
+        </DataList>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {d.deploy_requested ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => cancel.mutate()}
+                disabled={cancel.isPending}
+              >
+                Withdraw request
+              </Button>
+              <span className="text-muted-foreground text-2xs">
+                Queued. The agent picks this up within ten minutes and still refuses if CI is
+                not green or a capture or sweep is running.
+              </span>
+            </>
+          ) : (
+            <>
+              <Button onClick={() => deploy.mutate()} disabled={deploy.isPending}>
+                <RocketIcon className="size-4" aria-hidden />
+                Request deploy
+              </Button>
+              <span className="text-muted-foreground text-2xs">
+                Queues a deploy for the agent&apos;s next check — not immediate. Detection stops
+                while the unit rebuilds.
+              </span>
+            </>
+          )}
+        </div>
+
+        {d.log && d.log.length > 0 ? (
+          <details>
+            <summary className="text-muted-foreground cursor-pointer text-2xs">
+              Last agent run ({d.log.length} line{d.log.length === 1 ? '' : 's'})
+            </summary>
+            <pre className="bg-muted/40 mt-2 max-h-64 overflow-auto rounded-md p-2 font-mono text-2xs whitespace-pre-wrap">
+              {d.log.join('\n')}
+            </pre>
+          </details>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+function CiBadge({ ci }: { ci: DeploymentStatus['remote_ci'] }) {
+  if (ci === 'success') {
+    return (
+      <Badge variant="ok">
+        <CheckCircle2Icon className="size-3" aria-hidden />
+        CI green
+      </Badge>
+    )
+  }
+  if (ci === 'failure') {
+    return (
+      <Badge variant="down">
+        <XCircleIcon className="size-3" aria-hidden />
+        CI failed
+      </Badge>
+    )
+  }
+  if (ci === 'pending') {
+    return (
+      <Badge variant="warn">
+        <CircleDashedIcon className="size-3" aria-hidden />
+        CI running
+      </Badge>
+    )
+  }
+  // "unknown" is the honest answer when the agent had no reason to check --
+  // the unit was already up to date, so it never asked GitHub.
+  return <Badge variant="muted">CI not checked</Badge>
+}
+
+function formatAge(seconds: number | undefined): string {
+  if (seconds === undefined) return 'unknown'
+  if (seconds < 90) return `${seconds}s`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 90) return `${minutes} min`
+  return `${Math.round(minutes / 60)} h`
+}
