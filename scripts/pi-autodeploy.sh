@@ -547,47 +547,115 @@ blocked_exit() {
 #
 # The check-runs conclusion for the SHA, not "is main newer". Deploying a red
 # commit is how a unit stops detecting for a reason nobody chose.
-if [ "$SKIP_CI" -eq 1 ]; then
-    log "WARNING: skipping the CI check by request"
-else
-    STATUS_JSON=$(curl -sS --max-time 20 \
+
+# ci_state prints one of: unreachable, none, pending, failure, success.
+#
+# One HTTP call, no side effects, so the wait loop below can ask repeatedly.
+ci_state() {
+    local json total
+    json=$(curl -sS --max-time 20 \
         -H 'Accept: application/vnd.github+json' \
         "https://api.github.com/repos/$GH_REPO/commits/$REMOTE/check-runs" 2>/dev/null)
 
-    REMOTE_CI="unknown"
-    if [ -z "$STATUS_JSON" ]; then
-        # Unreachable GitHub is not a reason to deploy blind. The unit keeps
-        # running what it has, which is a commit that was green when it landed.
-        log "could not reach the GitHub API; leaving this unit on ${LOCAL:0:8}"
-        blocked_exit "the GitHub API is unreachable, so CI could not be checked"
-    fi
+    # Unreachable GitHub is not a reason to deploy blind. The unit keeps
+    # running what it has, which is a commit that was green when it landed.
+    [ -z "$json" ] && { printf 'unreachable'; return; }
 
-    TOTAL=$(printf '%s' "$STATUS_JSON" | grep -o '"total_count"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | grep -o '[0-9]*$')
-    TOTAL=${TOTAL:-0}
-    if [ "$TOTAL" -eq 0 ]; then
-        REMOTE_CI="pending"
-        log "no CI runs recorded for ${REMOTE:0:8} yet; will look again next time"
-        blocked_exit "no CI runs recorded for this commit yet"
-    fi
+    total=$(printf '%s' "$json" | grep -o '"total_count"[[:space:]]*:[[:space:]]*[0-9]*' |
+        head -1 | grep -o '[0-9]*$')
+    [ "${total:-0}" -eq 0 ] && { printf 'none'; return; }
 
     # Any run still going means "not yet", not "fine".
-    if printf '%s' "$STATUS_JSON" | grep -q '"status"[[:space:]]*:[[:space:]]*"\(queued\|in_progress\)"'; then
-        REMOTE_CI="pending"
-        log "CI is still running for ${REMOTE:0:8}; will look again next time"
-        blocked_exit "CI is still running for this commit"
+    if printf '%s' "$json" | grep -q '"status"[[:space:]]*:[[:space:]]*"\(queued\|in_progress\)"'; then
+        printf 'pending'; return
     fi
     # Any conclusion that is not success blocks. Listing them explicitly rather
     # than negating "success" means a conclusion GitHub adds later fails closed.
-    if printf '%s' "$STATUS_JSON" | grep -q '"conclusion"[[:space:]]*:[[:space:]]*"\(failure\|cancelled\|timed_out\|action_required\|stale\)"'; then
-        REMOTE_CI="failure"
-        log "CI is not green for ${REMOTE:0:8}; leaving this unit on ${LOCAL:0:8}"
-        blocked_exit "CI is not green for this commit"
+    if printf '%s' "$json" |
+        grep -q '"conclusion"[[:space:]]*:[[:space:]]*"\(failure\|cancelled\|timed_out\|action_required\|stale\)"'; then
+        printf 'failure'; return
     fi
+    printf 'success'
+}
+
+# Wait for CI that is already in flight rather than losing the whole tick.
+#
+# The timer fires every ten minutes; a CI run takes four or five. A tick that
+# lands mid-run used to give up immediately and wait the full interval, so a
+# commit could sit undeployed for the best part of twenty minutes while its CI
+# had been green for fifteen of them. During an active push session the unit
+# blocked on nearly every tick -- observed on 2026-08-18, stuck for an hour
+# across six consecutive checks that each said "CI is still running".
+#
+# Four extra looks a minute apart covers most of a run from wherever the tick
+# landed in it. The cost is API calls: unauthenticated api.github.com allows 60
+# an hour, the timer alone uses 6, and this raises the worst case -- every tick
+# blocked, every wait exhausted -- to 30. That still leaves half the allowance
+# for a person. A busy unit and a dry run both skip it: one has a measurement
+# to protect, the other is meant to report rather than take five minutes.
+CI_WAIT_LOOKS=4
+CI_WAIT_SLEEP=60
+
+if [ "$SKIP_CI" -eq 1 ]; then
+    log "WARNING: skipping the CI check by request"
+else
+    CI_STATE=$(ci_state)
+    REMOTE_CI="unknown"
+
+    # Asked once, before any waiting. Holding this run open for five minutes to
+    # then refuse because a sweep is in progress wastes the wait and the lock,
+    # and the busy check below would have refused immediately anyway.
+    WAIT_BUSY=""
+    [ "$DRY_RUN" -eq 0 ] && WAIT_BUSY=$(busy_reason)
+
+    if [ "$DRY_RUN" -eq 0 ] && [ -z "$WAIT_BUSY" ]; then
+        looks=0
+        while [ "$CI_STATE" = "pending" ] || [ "$CI_STATE" = "none" ]; do
+            [ "$looks" -ge "$CI_WAIT_LOOKS" ] && break
+            if [ "$looks" -eq 0 ]; then
+                REMOTE_CI="pending"
+                log "CI has not finished for ${REMOTE:0:8}; waiting up to $(( CI_WAIT_LOOKS * CI_WAIT_SLEEP / 60 )) minutes rather than losing this tick"
+                # Said out loud while it happens. Without this the admin page
+                # shows the previous run's verdict for five minutes and the
+                # agent looks asleep at exactly the moment it is not.
+                write_state "blocked" "CI has not finished for this commit; waiting for it rather than for the next check"
+            fi
+            sleep "$CI_WAIT_SLEEP"
+            looks=$(( looks + 1 ))
+            CI_STATE=$(ci_state)
+        done
+        [ "$looks" -gt 0 ] && log "looked $looks more time(s) over $(( looks * CI_WAIT_SLEEP ))s; CI is now $CI_STATE"
+    fi
+
+    case "$CI_STATE" in
+        unreachable)
+            log "could not reach the GitHub API; leaving this unit on ${LOCAL:0:8}"
+            blocked_exit "the GitHub API is unreachable, so CI could not be checked"
+            ;;
+        none)
+            REMOTE_CI="pending"
+            log "no CI runs recorded for ${REMOTE:0:8} yet; will look again next time"
+            blocked_exit "no CI runs recorded for this commit yet"
+            ;;
+        pending)
+            REMOTE_CI="pending"
+            log "CI is still running for ${REMOTE:0:8}; will look again next time"
+            blocked_exit "CI is still running for this commit"
+            ;;
+        failure)
+            REMOTE_CI="failure"
+            log "CI is not green for ${REMOTE:0:8}; leaving this unit on ${LOCAL:0:8}"
+            blocked_exit "CI is not green for this commit"
+            ;;
+    esac
+
     REMOTE_CI="success"
     log "CI is green for ${REMOTE:0:8}"
 fi
 
-BUSY=$(busy_reason)
+# Reuses the answer from before the CI wait when there is one, so a unit that
+# was busy then is refused for the reason it was actually refused for.
+BUSY="${WAIT_BUSY:-$(busy_reason)}"
 if [ -n "$BUSY" ]; then
     log "postponing: $BUSY -- a restart mid-measurement throws away the measurement"
     write_state "blocked" "$BUSY"

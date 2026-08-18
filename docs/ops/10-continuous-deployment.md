@@ -16,13 +16,37 @@ every ten minutes. Each run:
 1. Fetches `origin/main`. If it matches what is checked out, stop.
 2. Refuses if the working tree is dirty — a dirty tree on a field unit is
    someone mid-diagnosis, and `git pull` would clobber it.
-3. **Asks GitHub whether CI concluded `success` for that exact commit.** Still
-   running, failed, or no runs recorded → leave the unit where it is.
+3. **Asks GitHub whether CI concluded `success` for that exact commit.** Failed
+   → leave the unit where it is. Still running or not started yet → wait for it,
+   up to four more looks a minute apart, rather than losing the tick.
 4. Refuses while a capture or a sweep is running.
 5. Fast-forwards, rebuilds only what changed, restarts, and waits for
    `/health` to answer.
 6. If it does not come back, rolls the checkout back and rebuilds from the
    previous commit.
+
+### Waiting for CI rather than losing the tick
+
+The timer fires every ten minutes; a CI run takes four or five. A tick landing
+mid-run used to give up at once and wait the whole interval, so a commit could
+sit undeployed for the best part of twenty minutes with its CI green for
+fifteen of them. During an active push session it blocked on nearly every tick
+— observed on 2026-08-18, stuck for an hour across six consecutive checks that
+each said "CI is still running".
+
+So a run that finds CI in flight now looks four more times, a minute apart,
+before giving up. What that costs and what it protects:
+
+| | |
+|---|---|
+| Extra API calls | Four per waiting run, worst case. Unauthenticated api.github.com allows 60 an hour and the timer alone uses 6; an hour in which every tick waits and every wait is exhausted reaches 30 |
+| A red result | Ends the wait immediately. There is no sense spending the budget on a commit that will not deploy |
+| An unreachable GitHub | Never waits. Retrying a dead network for five minutes learns nothing, and the unit keeps the commit that was green when it landed |
+| A busy unit | Never waits. Asked before the loop, because holding the run open for five minutes to then refuse over a sweep in progress wastes the wait and the lock |
+| A dry run | Never waits. It is meant to report what would happen, not take five minutes doing it |
+
+While waiting it publishes `blocked` with a reason saying so, so the admin page
+shows the agent working rather than the previous run's verdict going stale.
 
 ### Pull, not push
 
