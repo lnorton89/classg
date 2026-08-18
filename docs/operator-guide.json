@@ -51,7 +51,8 @@
           "items": [
             { "title": "Capture", "body": "Listens to management beacons through a monitor-mode interface and never associates with, transmits to, or disrupts nearby networks." },
             { "title": "Decode", "body": "Parses ASTM F3411 OpenDroneID messages and DJI vendor information elements into normalized Detection records." },
-            { "title": "Publish", "body": "Emits detections and regular health heartbeats over ZeroMQ so quiet sky remains distinguishable from sensor failure." }
+            { "title": "Publish", "body": "Emits detections and regular health heartbeats over ZeroMQ so quiet sky remains distinguishable from sensor failure." },
+            { "title": "Channel occupancy", "body": "Reads the driver's own per-channel busy time and noise floor between dwells and publishes them on the heartbeat. It is the only source of spectrum information for 2.4 and 5 GHz, which the SDR cannot tune, and it costs no radio time because it is a by-product of listening." }
           ]
         },
         {
@@ -174,7 +175,7 @@
             { "title": "Live map", "body": "Plots aircraft, operators when supplied by policy, trails, range rings, and visually distinct ADS-B traffic, beside a resizable detail pane." },
             { "title": "Tracks and evidence", "body": "Shows identity, lifecycle, position history, RSSI, and the exact evidence behind confidence." },
             { "title": "Timeline", "body": "Reads recorded history back: what was seen, when, and which sensor saw it, over a window rather than the live moment." },
-            { "title": "Spectrum", "body": "Requests a band sweep and renders the returned bins as energy against frequency. It measures, it does not identify." },
+            { "title": "Spectrum", "body": "Two sources, because no one radio covers the band. The SDR sweeps sub-2 GHz and returns power per frequency bin; the Wi-Fi adapter reports per-channel busy time across 2.4 and 5 GHz, which the SDR cannot tune. Both measure, neither identifies." },
             { "title": "Operations", "body": "Sensor health, capture workflow, configuration editors, and this documentation are available without a Node runtime in deployment." },
             { "title": "Administration", "body": "Accounts and sessions, outbound hooks and their delivery history, deployment status and control, and the host watchdog, all gated on the admin role." },
             { "title": "Live by default", "body": "Views follow the WebSocket rather than waiting to be reloaded, banners about finished work close themselves, and a newly deployed build applies itself once nothing is mid-sweep or mid-capture." }

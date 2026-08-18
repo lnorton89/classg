@@ -102,9 +102,48 @@ write; nothing short of writing tests the thing that was broken.
 | The sweep times out | The error names what the exchange directory holds: a request still sitting there means nothing collected it; a result under another id means something answered a sweep nobody was waiting for |
 | ADS-B does not come back | `journalctl -t classg-sweep-agent`; the restart is logged. `ExecStopPost` is the backstop |
 
+## The other half of the band
+
+The sweep engine stops at 1.766 GHz ([ADR-0004](../architecture/adr/0004-rtlsdr-scope.md)),
+so the Spectrum page has a second source for the bands it cannot reach at all.
+It is not a sweep and it is not an FFT — the Wi-Fi adapter cannot produce one.
+It is the per-channel counters mac80211 already keeps for its own channel
+selection, read with `iw dev wlan1 survey dump`:
+
+| Reading | What it is |
+|---|---|
+| Busy fraction | Of the time the radio spent on that channel, how much of it the medium was sensed busy |
+| Noise | The driver's own noise-floor measurement, in dBm |
+| Listening | Which channel the hopper was parked on when the sample was taken |
+
+The counters are **cumulative since the interface came up**, so the sensor
+differences them and publishes the window since the last heartbeat. Two
+consequences worth knowing before reading the bars:
+
+- **The first heartbeat after a restart shows nothing.** There is no previous
+  sample to difference against, and reporting the cumulative counters once would
+  draw hours of accumulated busy time as a spike.
+- **A channel missing from the list was not measured, not quiet.** Only channels
+  the hopper actually visited in that window have any active time, and dwell is
+  weighted heavily towards channel 6.
+
+It costs nothing to run. Unlike a sweep it takes no radio away from anything:
+the numbers are a by-product of listening, which is why this half of the page
+updates itself and has no button. If `iw` is absent or the driver reports no
+survey, the panel says the adapter has none rather than drawing an empty band.
+
+One number there is worth an alarm rather than a reading: **transmit time**.
+This is a receive-only system on a monitor-mode interface, so the driver's
+transmit counter must stay at zero. The panel escalates a non-zero value,
+because it means something else is using that adapter — it is the one place the
+receive-only constraint can be checked rather than asserted.
+
 ## What it deliberately does not do
 
 It does not classify. A peak above the threshold means something is
 transmitting; it never means a drone. Telling an ELRS control link from a smart
 meter needs cadence analysis this build does not ship, and no line on that chart
 should be read as an aircraft.
+
+The occupancy view classifies even less. Most of what it measures is other
+people's Wi-Fi, and a busy channel is a busy channel.
