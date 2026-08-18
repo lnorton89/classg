@@ -13,11 +13,56 @@ import (
 func newFileSweeper(t *testing.T) FileSweeper {
 	t.Helper()
 	return FileSweeper{
-		Dir:     t.TempDir(),
-		Timeout: 2 * time.Second,
+		Dir: t.TempDir(),
+		// Generous on purpose. This is the deadline for "no agent ever
+		// answered", not a measurement of how fast the exchange is: a test
+		// that answers in milliseconds never waits on it, and a broken one
+		// fails via the go test timeout with a stack rather than via a race
+		// between two arbitrary clocks. A 2s value here failed on a loaded CI
+		// runner while the code under test was entirely correct.
+		Timeout: 30 * time.Second,
 		Poll:    5 * time.Millisecond,
 		NewID:   func() string { return "req-1" },
 	}
+}
+
+// fakeAgent stands in for classg-sweep-agent.sh: it waits for a request,
+// answers it once, and stops.
+//
+// It polls for the whole life of the test rather than for a fixed number of
+// iterations. A stand-in with its own short deadline gives up before the code
+// under test does, which turns a scheduling delay on a busy runner into a
+// failure of the thing being tested -- exactly what a 800ms cap did here.
+func fakeAgent(t *testing.T, f FileSweeper, answer func(req sweepRequest) sweepResult) {
+	t.Helper()
+	done := make(chan struct{})
+	stop := make(chan struct{})
+	t.Cleanup(func() {
+		close(stop)
+		<-done
+	})
+
+	go func() {
+		defer close(done)
+		reqPath := filepath.Join(f.Dir, requestFile)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			raw, err := os.ReadFile(reqPath)
+			if err == nil {
+				var req sweepRequest
+				_ = json.Unmarshal(raw, &req)
+				_ = os.Remove(reqPath)
+				res, _ := json.Marshal(answer(req))
+				_ = os.WriteFile(filepath.Join(f.Dir, resultPrefix+req.ID+".json"), res, 0o644)
+				return
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+	}()
 }
 
 // Keyed on the band file, not the directory: the state directory is shared with
@@ -70,25 +115,12 @@ func TestSweepRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Stand in for the agent.
-	go func() {
-		reqPath := filepath.Join(f.Dir, requestFile)
-		for i := 0; i < 400; i++ {
-			raw, err := os.ReadFile(reqPath)
-			if err == nil {
-				var req sweepRequest
-				_ = json.Unmarshal(raw, &req)
-				_ = os.Remove(reqPath)
-				res, _ := json.Marshal(sweepResult{
-					ID:  req.ID,
-					Doc: json.RawMessage(`{"band":"` + req.Band + `","steps":[]}`),
-				})
-				_ = os.WriteFile(filepath.Join(f.Dir, resultPrefix+req.ID+".json"), res, 0o644)
-				return
-			}
-			time.Sleep(2 * time.Millisecond)
+	fakeAgent(t, f, func(req sweepRequest) sweepResult {
+		return sweepResult{
+			ID:  req.ID,
+			Doc: json.RawMessage(`{"band":"` + req.Band + `","steps":[]}`),
 		}
-	}()
+	})
 
 	doc, err := f.Sweep(context.Background(), "ism_915")
 	if err != nil {
@@ -114,24 +146,9 @@ func TestAgentErrorsClassifyLikeTheCommandPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	go func() {
-		reqPath := filepath.Join(f.Dir, requestFile)
-		for i := 0; i < 400; i++ {
-			raw, err := os.ReadFile(reqPath)
-			if err == nil {
-				var req sweepRequest
-				_ = json.Unmarshal(raw, &req)
-				_ = os.Remove(reqPath)
-				res, _ := json.Marshal(sweepResult{
-					ID:    req.ID,
-					Error: "librtlsdr returned -6 opening device 0",
-				})
-				_ = os.WriteFile(filepath.Join(f.Dir, resultPrefix+req.ID+".json"), res, 0o644)
-				return
-			}
-			time.Sleep(2 * time.Millisecond)
-		}
-	}()
+	fakeAgent(t, f, func(req sweepRequest) sweepResult {
+		return sweepResult{ID: req.ID, Error: "librtlsdr returned -6 opening device 0"}
+	})
 
 	_, err := f.Sweep(context.Background(), "ism_915")
 	if !errors.Is(err, ErrRadioBusy) {
