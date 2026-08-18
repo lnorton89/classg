@@ -48,6 +48,19 @@ it is never mistaken for a drone.
 Show _why_ something is a detection: "Class A (Remote ID) × 402, Class B (DJI) × 398" is
 honest in a way that a bare "94% confident" is not.
 
+**Timeline** — the review screen, the way a video recorder gives you one. Each track is an
+event with a start and an end, so a window of them packs into lanes as a band of time: pick
+1 hour to 7 days, read across it, click a bar to open the track. It answers "what happened
+while I was not looking", which is the question a live map cannot answer at all.
+
+An empty band is the hard case, because three completely different things look identical:
+nothing flew, nothing was watching, or the retention job has already deleted it. Only the
+first is evidence of a quiet sky, so the page refuses to draw an empty band without saying
+which one it is looking at — the same rule `/health` follows, applied to history. A bar spans
+first seen to last seen and stops there; an open track whose sensor went quiet is not widened
+to the present, because that would draw an aircraft still overhead when what we know is that
+we stopped hearing it.
+
 **Sensor health** — per-sensor heartbeat status, prominent. The operator must be able to tell
 at a glance whether an empty map means empty sky or broken sensor.
 
