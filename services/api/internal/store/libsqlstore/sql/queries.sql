@@ -296,3 +296,42 @@ FROM sessions ORDER BY last_seen DESC LIMIT ?;
 
 -- name: PurgeExpiredSessions :execrows
 DELETE FROM sessions WHERE expires_at < ?;
+
+-- name: PutHookRule :exec
+INSERT INTO hook_rules (rule_id, name, enabled, event, action, doc, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(rule_id) DO UPDATE SET
+    name = excluded.name,
+    enabled = excluded.enabled,
+    event = excluded.event,
+    action = excluded.action,
+    doc = excluded.doc,
+    updated_at = excluded.updated_at;
+
+-- name: GetHookRule :one
+SELECT doc FROM hook_rules WHERE rule_id = ?;
+
+-- name: ListHookRules :many
+SELECT doc FROM hook_rules ORDER BY created_at ASC;
+
+-- name: DeleteHookRule :execrows
+DELETE FROM hook_rules WHERE rule_id = ?;
+
+-- name: PutHookDelivery :exec
+INSERT INTO hook_deliveries (delivery_id, rule_id, rule_name, event, subject, status,
+                             attempts, error, response_code, created_at, completed_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(delivery_id) DO UPDATE SET
+    status = excluded.status,
+    attempts = excluded.attempts,
+    error = excluded.error,
+    response_code = excluded.response_code,
+    completed_at = excluded.completed_at;
+
+-- name: ListHookDeliveries :many
+SELECT delivery_id, rule_id, rule_name, event, subject, status, attempts, error,
+       response_code, created_at, completed_at
+FROM hook_deliveries ORDER BY created_at DESC LIMIT ?;
+
+-- name: PurgeHookDeliveries :execrows
+DELETE FROM hook_deliveries WHERE created_at < ?;

@@ -115,6 +115,18 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const deleteHookRule = `-- name: DeleteHookRule :execrows
+DELETE FROM hook_rules WHERE rule_id = ?
+`
+
+func (q *Queries) DeleteHookRule(ctx context.Context, ruleID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteHookRule, ruleID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteSession = `-- name: DeleteSession :execrows
 DELETE FROM sessions WHERE session_id = ?
 `
@@ -218,6 +230,17 @@ func (q *Queries) GetConfig(ctx context.Context, key string) (string, error) {
 	var value string
 	err := row.Scan(&value)
 	return value, err
+}
+
+const getHookRule = `-- name: GetHookRule :one
+SELECT doc FROM hook_rules WHERE rule_id = ?
+`
+
+func (q *Queries) GetHookRule(ctx context.Context, ruleID string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getHookRule, ruleID)
+	var doc string
+	err := row.Scan(&doc)
+	return doc, err
 }
 
 const getSession = `-- name: GetSession :one
@@ -496,6 +519,74 @@ func (q *Queries) ListDetections(ctx context.Context, arg ListDetectionsParams) 
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listHookDeliveries = `-- name: ListHookDeliveries :many
+SELECT delivery_id, rule_id, rule_name, event, subject, status, attempts, error,
+       response_code, created_at, completed_at
+FROM hook_deliveries ORDER BY created_at DESC LIMIT ?
+`
+
+func (q *Queries) ListHookDeliveries(ctx context.Context, limit int64) ([]HookDelivery, error) {
+	rows, err := q.db.QueryContext(ctx, listHookDeliveries, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []HookDelivery{}
+	for rows.Next() {
+		var i HookDelivery
+		if err := rows.Scan(
+			&i.DeliveryID,
+			&i.RuleID,
+			&i.RuleName,
+			&i.Event,
+			&i.Subject,
+			&i.Status,
+			&i.Attempts,
+			&i.Error,
+			&i.ResponseCode,
+			&i.CreatedAt,
+			&i.CompletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listHookRules = `-- name: ListHookRules :many
+SELECT doc FROM hook_rules ORDER BY created_at ASC
+`
+
+func (q *Queries) ListHookRules(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listHookRules)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var doc string
+		if err := rows.Scan(&doc); err != nil {
+			return nil, err
+		}
+		items = append(items, doc)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -844,6 +935,18 @@ func (q *Queries) PurgeExpiredSessions(ctx context.Context, expiresAt string) (i
 	return result.RowsAffected()
 }
 
+const purgeHookDeliveries = `-- name: PurgeHookDeliveries :execrows
+DELETE FROM hook_deliveries WHERE created_at < ?
+`
+
+func (q *Queries) PurgeHookDeliveries(ctx context.Context, createdAt string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeHookDeliveries, createdAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const purgeSweeps = `-- name: PurgeSweeps :execrows
 DELETE FROM spectrum_sweeps WHERE started_at < ?
 `
@@ -935,6 +1038,86 @@ type PutConfigParams struct {
 
 func (q *Queries) PutConfig(ctx context.Context, arg PutConfigParams) error {
 	_, err := q.db.ExecContext(ctx, putConfig, arg.Key, arg.Value, arg.UpdatedAt)
+	return err
+}
+
+const putHookDelivery = `-- name: PutHookDelivery :exec
+INSERT INTO hook_deliveries (delivery_id, rule_id, rule_name, event, subject, status,
+                             attempts, error, response_code, created_at, completed_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(delivery_id) DO UPDATE SET
+    status = excluded.status,
+    attempts = excluded.attempts,
+    error = excluded.error,
+    response_code = excluded.response_code,
+    completed_at = excluded.completed_at
+`
+
+type PutHookDeliveryParams struct {
+	DeliveryID   string
+	RuleID       string
+	RuleName     string
+	Event        string
+	Subject      string
+	Status       string
+	Attempts     int64
+	Error        string
+	ResponseCode int64
+	CreatedAt    string
+	CompletedAt  sql.NullString
+}
+
+func (q *Queries) PutHookDelivery(ctx context.Context, arg PutHookDeliveryParams) error {
+	_, err := q.db.ExecContext(ctx, putHookDelivery,
+		arg.DeliveryID,
+		arg.RuleID,
+		arg.RuleName,
+		arg.Event,
+		arg.Subject,
+		arg.Status,
+		arg.Attempts,
+		arg.Error,
+		arg.ResponseCode,
+		arg.CreatedAt,
+		arg.CompletedAt,
+	)
+	return err
+}
+
+const putHookRule = `-- name: PutHookRule :exec
+INSERT INTO hook_rules (rule_id, name, enabled, event, action, doc, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(rule_id) DO UPDATE SET
+    name = excluded.name,
+    enabled = excluded.enabled,
+    event = excluded.event,
+    action = excluded.action,
+    doc = excluded.doc,
+    updated_at = excluded.updated_at
+`
+
+type PutHookRuleParams struct {
+	RuleID    string
+	Name      string
+	Enabled   int64
+	Event     string
+	Action    string
+	Doc       string
+	CreatedAt string
+	UpdatedAt string
+}
+
+func (q *Queries) PutHookRule(ctx context.Context, arg PutHookRuleParams) error {
+	_, err := q.db.ExecContext(ctx, putHookRule,
+		arg.RuleID,
+		arg.Name,
+		arg.Enabled,
+		arg.Event,
+		arg.Action,
+		arg.Doc,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
 	return err
 }
 

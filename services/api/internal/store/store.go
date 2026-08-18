@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/classg/api/internal/auth"
+	"github.com/classg/api/internal/hooks"
 	"github.com/classg/api/internal/model"
 )
 
@@ -214,6 +215,16 @@ type Store interface {
 	ListSessions(ctx context.Context, limit int) ([]auth.Session, error)
 	PurgeExpiredSessions(ctx context.Context, now time.Time) (int64, error)
 
+	// Hook rules and their delivery history. Rules are stored whole, secrets
+	// included -- redaction happens at the API edge, because the dispatcher
+	// needs the real bearer token to actually deliver.
+	PutHookRule(ctx context.Context, r hooks.Rule) error
+	GetHookRule(ctx context.Context, id string) (hooks.Rule, error)
+	ListHookRules(ctx context.Context) ([]hooks.Rule, error)
+	DeleteHookRule(ctx context.Context, id string) error
+	PutHookDelivery(ctx context.Context, d hooks.Delivery) error
+	ListHookDeliveries(ctx context.Context, limit int) ([]hooks.Delivery, error)
+
 	GetConfig(ctx context.Context, key string) (json.RawMessage, error)
 	PutConfig(ctx context.Context, key string, value json.RawMessage) error
 
@@ -224,6 +235,7 @@ type Store interface {
 	PurgeTracks(ctx context.Context, before time.Time) (int64, error)
 	PurgeTelemetry(ctx context.Context, before time.Time) (int64, error)
 	PurgeSweeps(ctx context.Context, before time.Time) (int64, error)
+	PurgeHookDeliveries(ctx context.Context, before time.Time) (int64, error)
 
 	Close() error
 }

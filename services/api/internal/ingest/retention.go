@@ -34,7 +34,11 @@ type Retention struct {
 	Sessions interface {
 		PurgeSessions(ctx context.Context) (int64, error)
 	}
-	Interval time.Duration
+	// HookDeliveries is the alert history. Kept for a month by default: it is
+	// small, and "why did I not get an alert" is a question asked about last
+	// week rather than last hour.
+	HookDeliveries time.Duration
+	Interval       time.Duration
 }
 
 func (r *Retention) Run(ctx context.Context) {
@@ -86,6 +90,13 @@ func (r *Retention) Sweep(ctx context.Context, now time.Time) {
 			slog.Error("purging expired sessions failed", "err", err)
 		} else if n > 0 {
 			slog.Info("retention: purged expired sessions", "rows", n)
+		}
+	}
+	if r.HookDeliveries > 0 {
+		if n, err := r.Store.PurgeHookDeliveries(ctx, now.Add(-r.HookDeliveries)); err != nil {
+			slog.Error("purging hook deliveries failed", "err", err)
+		} else if n > 0 {
+			slog.Info("retention: purged hook deliveries", "rows", n, "older_than", r.HookDeliveries)
 		}
 	}
 	if r.Sweeps > 0 {

@@ -25,6 +25,7 @@ import (
 	"github.com/classg/api/internal/capture"
 	"github.com/classg/api/internal/config"
 	"github.com/classg/api/internal/health"
+	"github.com/classg/api/internal/hooks"
 	"github.com/classg/api/internal/httpapi"
 	"github.com/classg/api/internal/hub"
 	"github.com/classg/api/internal/ingest"
@@ -237,6 +238,27 @@ func run() error {
 			"auto_provision", cfg.OIDCAutoProvision)
 	}
 
+	// Alerting. Runs whether or not any rules exist -- a dispatcher with no
+	// rules is a few idle goroutines, and starting it conditionally would mean
+	// the first rule an admin creates does nothing until a restart.
+	hookDispatcher := &hooks.Dispatcher{
+		Store:   st,
+		Webhook: hooks.Webhook{AllowPrivate: cfg.HooksAllowPrivate},
+		SMTP: hooks.SMTP{
+			Host: cfg.SMTPHost, Port: cfg.SMTPPort,
+			Username: cfg.SMTPUser, Password: cfg.SMTPPassword,
+			From: cfg.SMTPFrom, StartTLS: cfg.SMTPStartTLS, Implicit: cfg.SMTPImplicit,
+		},
+		NewID: func() string { return ulid.New(time.Now().UTC()) },
+		Now:   func() time.Time { return time.Now().UTC() },
+	}
+	go hookDispatcher.Run(ctx)
+	if cfg.HooksAllowPrivate {
+		slog.Warn("webhook targets on private and loopback addresses are allowed",
+			"reason", "hooks.allow_private_targets=true",
+			"consequence", "a hook can reach this API and any host on the LAN")
+	}
+
 	srv := httpapi.New(httpapi.Options{
 		Config:     cfg,
 		Store:      st,
@@ -245,6 +267,7 @@ func run() error {
 		Captures:   captures,
 		Spectrum:   sweeps,
 		Auth:       authSvc,
+		Hooks:      hookDispatcher,
 		OIDC:       ssoProvider,
 		Settings:   set,
 		Monitoring: recording,
@@ -259,6 +282,7 @@ func run() error {
 		MaxHistory:             cfg.MaxHistory,
 		ExposeOperatorLocation: cfg.ExposeOperatorLocation,
 		Monitoring:             recording,
+		Hooks:                  hookDispatcher,
 	}
 
 	go bus.Run(ctx, bus.Options{
@@ -287,13 +311,14 @@ func run() error {
 
 	go (&ingest.HealthBroadcaster{Hub: h, Snapshot: srv.Health}).Run(ctx)
 	go (&ingest.Retention{
-		Store:      st,
-		Detections: cfg.RetentionDetections,
-		Tracks:     cfg.RetentionTracks,
-		Telemetry:  cfg.RetentionTelemetry,
-		Sweeps:     cfg.RetentionSweeps,
-		Sessions:   authSvc,
-		Interval:   cfg.RetentionInterval,
+		Store:          st,
+		Detections:     cfg.RetentionDetections,
+		Tracks:         cfg.RetentionTracks,
+		Telemetry:      cfg.RetentionTelemetry,
+		Sweeps:         cfg.RetentionSweeps,
+		HookDeliveries: cfg.RetentionHookDeliveries,
+		Sessions:       authSvc,
+		Interval:       cfg.RetentionInterval,
 	}).Run(ctx)
 	// Records what /metrics only ever exposes live. Nothing scrapes a field
 	// unit, so without this there is no history to look back at.

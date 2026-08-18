@@ -25,6 +25,7 @@ type Querier interface {
 	CountTrackDetections(ctx context.Context, arg CountTrackDetectionsParams) (int64, error)
 	CountTracks(ctx context.Context, arg CountTracksParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
+	DeleteHookRule(ctx context.Context, ruleID string) (int64, error)
 	DeleteSession(ctx context.Context, sessionID string) (int64, error)
 	DeleteUser(ctx context.Context, userID string) (int64, error)
 	DeleteUserSessions(ctx context.Context, userID string) (int64, error)
@@ -34,6 +35,7 @@ type Querier interface {
 	GetCapture(ctx context.Context, captureID string) (string, error)
 	GetCaptureReport(ctx context.Context, captureID string) (sql.NullString, error)
 	GetConfig(ctx context.Context, key string) (string, error)
+	GetHookRule(ctx context.Context, ruleID string) (string, error)
 	GetSession(ctx context.Context, sessionID string) (Session, error)
 	GetSweep(ctx context.Context, sweepID string) (string, error)
 	GetSweepBins(ctx context.Context, sweepID string) (sql.NullString, error)
@@ -52,6 +54,8 @@ type Querier interface {
 	InsertTelemetry(ctx context.Context, arg InsertTelemetryParams) error
 	ListCaptures(ctx context.Context) ([]string, error)
 	ListDetections(ctx context.Context, arg ListDetectionsParams) ([]ListDetectionsRow, error)
+	ListHookDeliveries(ctx context.Context, limit int64) ([]HookDelivery, error)
+	ListHookRules(ctx context.Context) ([]string, error)
 	ListSensors(ctx context.Context) ([]Sensor, error)
 	ListSessions(ctx context.Context, limit int64) ([]Session, error)
 	// Newest first, and deliberately without `bins`: the list is a menu, and
@@ -67,6 +71,7 @@ type Querier interface {
 	ListUsers(ctx context.Context) ([]User, error)
 	PurgeDetections(ctx context.Context, ts string) (int64, error)
 	PurgeExpiredSessions(ctx context.Context, expiresAt string) (int64, error)
+	PurgeHookDeliveries(ctx context.Context, createdAt string) (int64, error)
 	PurgeSweeps(ctx context.Context, startedAt string) (int64, error)
 	PurgeTelemetry(ctx context.Context, ts string) (int64, error)
 	PurgeTracks(ctx context.Context, lastSeen string) (int64, error)
@@ -77,6 +82,8 @@ type Querier interface {
 	// reported as not-found rather than passing silently.
 	PutCaptureReport(ctx context.Context, arg PutCaptureReportParams) (int64, error)
 	PutConfig(ctx context.Context, arg PutConfigParams) error
+	PutHookDelivery(ctx context.Context, arg PutHookDeliveryParams) error
+	PutHookRule(ctx context.Context, arg PutHookRuleParams) error
 	PutSession(ctx context.Context, arg PutSessionParams) error
 	PutSweep(ctx context.Context, arg PutSweepParams) error
 	// Separate from PutSweep so finishing a sweep does not rewrite the megabyte,

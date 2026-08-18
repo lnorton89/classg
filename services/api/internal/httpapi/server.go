@@ -18,6 +18,7 @@ import (
 	"github.com/classg/api/internal/capture"
 	"github.com/classg/api/internal/config"
 	"github.com/classg/api/internal/health"
+	"github.com/classg/api/internal/hooks"
 	"github.com/classg/api/internal/hub"
 	"github.com/classg/api/internal/monitoring"
 	"github.com/classg/api/internal/oidcauth"
@@ -44,6 +45,7 @@ type Server struct {
 	spectrum   *spectrum.Service
 	auth       *auth.Service
 	oidc       *oidcauth.Provider
+	hooks      *hooks.Dispatcher
 	sensors    Sensors
 	started    time.Time
 	settings   *settings.Settings
@@ -67,7 +69,10 @@ type Options struct {
 	// disabled service rather than leaving a nil to dereference.
 	Auth *auth.Service
 	// OIDC is nil when SSO is not configured, which is the common case.
-	OIDC    *oidcauth.Provider
+	OIDC *oidcauth.Provider
+	// Hooks may be nil; the endpoints then report the dispatcher as not
+	// running rather than panicking.
+	Hooks   *hooks.Dispatcher
 	Sensors Sensors
 	// Started must come from time.Now() and keep its monotonic reading. Passing
 	// a value that has been through .UTC(), .Round(0) or a parse makes uptime
@@ -88,6 +93,7 @@ func New(opts Options) *Server {
 		spectrum:   opts.Spectrum,
 		auth:       opts.Auth,
 		oidc:       opts.OIDC,
+		hooks:      opts.Hooks,
 		sensors:    opts.Sensors,
 		started:    opts.Started,
 	}
@@ -105,6 +111,10 @@ func New(opts Options) *Server {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.mux.ServeHTTP(w, r) }
+
+// now is wall-clock, for stamping records. Distinct from s.started, which keeps
+// its monotonic reading because uptime is an interval -- see Health.
+func (s *Server) now() time.Time { return time.Now().UTC() }
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
@@ -202,6 +212,16 @@ func (s *Server) routes() http.Handler {
 	admin("POST "+BasePath+"/admin/users", s.handleCreateUser)
 	admin("PATCH "+BasePath+"/admin/users/{user_id}", s.handleUpdateUser)
 	admin("DELETE "+BasePath+"/admin/users/{user_id}", s.handleDeleteUser)
+	// Hooks are admin, not operator: a hook is an egress path that can send
+	// what this box sees to an arbitrary URL or mailbox, so configuring one is
+	// administration of the machine rather than operation of it.
+	admin("GET "+BasePath+"/admin/hooks", s.handleListHookRules)
+	admin("POST "+BasePath+"/admin/hooks", s.handleCreateHookRule)
+	admin("PUT "+BasePath+"/admin/hooks/{rule_id}", s.handleUpdateHookRule)
+	admin("DELETE "+BasePath+"/admin/hooks/{rule_id}", s.handleDeleteHookRule)
+	admin("POST "+BasePath+"/admin/hooks/{rule_id}/test", s.handleTestHookRule)
+	admin("GET "+BasePath+"/admin/hook-deliveries", s.handleListHookDeliveries)
+
 	admin("GET "+BasePath+"/admin/sessions", s.handleListSessions)
 	admin("DELETE "+BasePath+"/admin/sessions/{session_id}", s.handleRevokeSession)
 

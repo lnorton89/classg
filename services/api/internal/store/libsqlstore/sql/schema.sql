@@ -171,3 +171,48 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions (user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions (expires_at);
+
+-- Hook rules: "when X happens, do Y".
+--
+-- `config` is action-specific JSON and can hold a secret -- a webhook
+-- Authorization header, for instance. It is write-only through the API: the
+-- rule read path replaces known secret keys with a placeholder, so an admin can
+-- see THAT a token is set without reading it back. The same rule /system
+-- follows for the Turso token.
+--
+-- Conditions live in `doc` rather than as columns because they are optional,
+-- heterogeneous and only ever evaluated in Go against an event that is already
+-- in memory. Columns would buy a WHERE clause nothing needs.
+CREATE TABLE IF NOT EXISTS hook_rules (
+    rule_id    TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    enabled    INTEGER NOT NULL DEFAULT 1,
+    event      TEXT NOT NULL,
+    action     TEXT NOT NULL,
+    doc        TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_hook_rules_event ON hook_rules (event) WHERE enabled = 1;
+
+-- Every attempt, including the ones suppressed by a cooldown.
+--
+-- Suppressed rows are the point of keeping this. "Why did I not get an alert"
+-- is the question an operator actually asks, and a system that only records
+-- what it sent cannot answer it.
+CREATE TABLE IF NOT EXISTS hook_deliveries (
+    delivery_id   TEXT PRIMARY KEY,
+    rule_id       TEXT NOT NULL,
+    rule_name     TEXT NOT NULL DEFAULT '',
+    event         TEXT NOT NULL,
+    subject       TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL,
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    error         TEXT NOT NULL DEFAULT '',
+    response_code INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL,
+    completed_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_hook_deliveries_created ON hook_deliveries (created_at DESC);

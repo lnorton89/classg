@@ -63,8 +63,18 @@ type Bootstrap struct {
 	// Authentication. Tier 1 because the OIDC client secret is a secret, and
 	// because a box whose auth mode is editable through its own web UI can be
 	// switched off by whoever already got in.
-	AuthMode        string
-	SessionTTL      time.Duration
+	AuthMode   string
+	SessionTTL time.Duration
+
+	// SMTP. Tier 1 because the password is a secret: in the settings table it
+	// would be readable by anything that can read /config/settings.
+	SMTPHost        string
+	SMTPPort        int
+	SMTPUser        string
+	SMTPPassword    string
+	SMTPFrom        string
+	SMTPStartTLS    bool
+	SMTPImplicit    bool
 	OIDCIssuer      string
 	OIDCClientID    string
 	OIDCSecret      string
@@ -94,6 +104,13 @@ type Config struct {
 
 	AuthMode          string
 	SessionTTL        time.Duration
+	SMTPHost          string
+	SMTPPort          int
+	SMTPUser          string
+	SMTPPassword      string
+	SMTPFrom          string
+	SMTPStartTLS      bool
+	SMTPImplicit      bool
 	OIDCIssuer        string
 	OIDCClientID      string
 	OIDCSecret        string
@@ -120,12 +137,14 @@ type Config struct {
 	ExpectedSensors  []SensorDecl
 	SensorStaleAfter time.Duration
 
-	RetentionDetections time.Duration
-	RetentionTracks     time.Duration
-	RetentionTelemetry  time.Duration
-	RetentionSweeps     time.Duration
-	TelemetryInterval   time.Duration
-	RetentionInterval   time.Duration
+	RetentionDetections     time.Duration
+	RetentionTracks         time.Duration
+	RetentionTelemetry      time.Duration
+	RetentionSweeps         time.Duration
+	RetentionHookDeliveries time.Duration
+	HooksAllowPrivate       bool
+	TelemetryInterval       time.Duration
+	RetentionInterval       time.Duration
 
 	SensorWifiDir            string
 	PythonBin                string
@@ -146,6 +165,19 @@ type Config struct {
 
 // LoadBootstrap reads Tier 1 and returns every validation problem at once.
 // Returning only the first means an operator fixes one variable per restart.
+// boolEnv reads a boolean with a default, tolerating the spellings people
+// actually write in a .env file.
+func boolEnv(getenv func(string) string, key string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(getenv(key))) {
+	case "true", "1", "yes", "on":
+		return true
+	case "false", "0", "no", "off":
+		return false
+	default:
+		return def
+	}
+}
+
 func LoadBootstrap(getenv func(string) string) (*Bootstrap, error) {
 	var problems []string
 	bad := func(format string, args ...any) {
@@ -170,6 +202,10 @@ func LoadBootstrap(getenv func(string) string) (*Bootstrap, error) {
 		TursoAuthToken: get("CLASSG_TURSO_AUTH_TOKEN", ""),
 
 		AuthMode:          strings.ToLower(get("CLASSG_AUTH_MODE", "required")),
+		SMTPHost:          get("CLASSG_SMTP_HOST", ""),
+		SMTPUser:          get("CLASSG_SMTP_USERNAME", ""),
+		SMTPPassword:      get("CLASSG_SMTP_PASSWORD", ""),
+		SMTPFrom:          get("CLASSG_SMTP_FROM", ""),
 		OIDCIssuer:        get("CLASSG_OIDC_ISSUER", ""),
 		OIDCClientID:      get("CLASSG_OIDC_CLIENT_ID", ""),
 		OIDCSecret:        get("CLASSG_OIDC_CLIENT_SECRET", ""),
@@ -205,6 +241,21 @@ func LoadBootstrap(getenv func(string) string) (*Bootstrap, error) {
 		default:
 			b.SessionTTL = v
 		}
+	}
+
+	if raw := strings.TrimSpace(getenv("CLASSG_SMTP_PORT")); raw != "" {
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < 1 || v > 65535 {
+			bad("CLASSG_SMTP_PORT: %q is not a port", raw)
+		} else {
+			b.SMTPPort = v
+		}
+	}
+	b.SMTPStartTLS = boolEnv(getenv, "CLASSG_SMTP_STARTTLS", true)
+	b.SMTPImplicit = boolEnv(getenv, "CLASSG_SMTP_TLS", false)
+	if b.SMTPHost != "" && b.SMTPFrom == "" {
+		bad("CLASSG_SMTP_FROM is required when CLASSG_SMTP_HOST is set; " +
+			"a mail server needs an envelope sender it will accept")
 	}
 
 	switch b.AuthMode {
@@ -297,6 +348,13 @@ func Assemble(b *Bootstrap, s *settings.Settings) (*Config, error) {
 		TursoURL:          b.TursoURL,
 		TursoAuthToken:    b.TursoAuthToken,
 		AuthMode:          b.AuthMode,
+		SMTPHost:          b.SMTPHost,
+		SMTPPort:          b.SMTPPort,
+		SMTPUser:          b.SMTPUser,
+		SMTPPassword:      b.SMTPPassword,
+		SMTPFrom:          b.SMTPFrom,
+		SMTPStartTLS:      b.SMTPStartTLS,
+		SMTPImplicit:      b.SMTPImplicit,
 		SessionTTL:        b.SessionTTL,
 		OIDCIssuer:        b.OIDCIssuer,
 		OIDCClientID:      b.OIDCClientID,
@@ -323,12 +381,14 @@ func Assemble(b *Bootstrap, s *settings.Settings) (*Config, error) {
 		ExpectedSensors:  s.SensorDecls("sensors.expected"),
 		SensorStaleAfter: s.Duration("sensors.stale_after"),
 
-		RetentionDetections: s.Duration("retention.detections"),
-		RetentionTracks:     s.Duration("retention.tracks"),
-		RetentionTelemetry:  s.Duration("retention.telemetry"),
-		RetentionSweeps:     s.Duration("retention.sweeps"),
-		TelemetryInterval:   s.Duration("telemetry.interval"),
-		RetentionInterval:   s.Duration("retention.interval"),
+		RetentionDetections:     s.Duration("retention.detections"),
+		RetentionTracks:         s.Duration("retention.tracks"),
+		RetentionTelemetry:      s.Duration("retention.telemetry"),
+		RetentionSweeps:         s.Duration("retention.sweeps"),
+		RetentionHookDeliveries: s.Duration("retention.hook_deliveries"),
+		HooksAllowPrivate:       s.Bool("hooks.allow_private_targets"),
+		TelemetryInterval:       s.Duration("telemetry.interval"),
+		RetentionInterval:       s.Duration("retention.interval"),
 
 		SensorWifiDir:            s.String("capture.sensor_wifi_dir"),
 		PythonBin:                s.String("capture.python_bin"),

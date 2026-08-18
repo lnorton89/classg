@@ -32,6 +32,31 @@ type Detection struct {
 	Doc            string
 }
 
+type HookDelivery struct {
+	DeliveryID   string
+	RuleID       string
+	RuleName     string
+	Event        string
+	Subject      string
+	Status       string
+	Attempts     int64
+	Error        string
+	ResponseCode int64
+	CreatedAt    string
+	CompletedAt  sql.NullString
+}
+
+type HookRule struct {
+	RuleID    string
+	Name      string
+	Enabled   int64
+	Event     string
+	Action    string
+	Doc       string
+	CreatedAt string
+	UpdatedAt string
+}
+
 type Sensor struct {
 	SensorID      string
 	SensorKind    string

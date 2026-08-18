@@ -217,6 +217,21 @@ var Defs = []Def{
 			"steps, so this is minutes -- but it is bounded, because a wedged USB device " +
 			"blocks a read forever rather than failing"},
 
+	// --- Hooks
+	//
+	// SMTP credentials are NOT here -- they are Tier 1 (config.Bootstrap),
+	// because a password in the settings table would be readable by anything
+	// that can read /config/settings.
+	{Key: "hooks.allow_private_targets", Env: "CLASSG_HOOKS_ALLOW_PRIVATE", Kind: KindBool,
+		Default: "false", Mutable: true,
+		Doc: "allow webhook targets on loopback, link-local and private ranges. Off by " +
+			"default: an admin who can point a hook at 169.254.169.254 can read a cloud " +
+			"metadata service through this box, and one pointed at 127.0.0.1 can drive " +
+			"this API. Turn it on for a genuinely local target such as Home Assistant"},
+	{Key: "retention.hook_deliveries", Env: "CLASSG_RETENTION_HOOK_DELIVERIES", Kind: KindDuration,
+		Default: "720h", Mutable: true,
+		Doc: "how long hook delivery history is kept"},
+
 	// --- Map
 	{Key: "map.receiver_position", Env: "CLASSG_RECEIVER_POSITION", Kind: KindLatLon,
 		Default: "", Mutable: true,
