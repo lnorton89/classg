@@ -137,6 +137,21 @@ export function canShareFiles(): boolean {
 }
 
 /**
+ * Whether the ONE thing blocking `canShareFiles` is the insecure-context check
+ * above, so the UI can say why the share sheet is missing instead of just not
+ * offering it. Deliberately not "the browser lacks Web Share" — that is the
+ * normal case on desktop and not worth a note. This is specifically for a
+ * console reached over plain http, which is the common deployment and the one
+ * case where telling the operator what would fix it is worth the sentence.
+ */
+export function shareBlockedByInsecureContext(): boolean {
+  if (typeof window === 'undefined') return false
+  if (window.isSecureContext) return false
+  if (typeof navigator === 'undefined') return false
+  return typeof navigator.share === 'function'
+}
+
+/**
  * Offer the card to the OS share sheet.
  *
  * Dismissing the sheet rejects with `AbortError`. That is a person changing

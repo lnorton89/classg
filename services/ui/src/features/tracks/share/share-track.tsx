@@ -2,22 +2,23 @@
  * "Share" on a track: preview the infographic, choose whether it carries the
  * exact position, then take away a PNG.
  *
- * An inline panel rather than a modal, and not only because there is no dialog
- * primitive here. The card embeds a location, so the operator should be able to
- * see what they are about to hand over while the underlying record is still on
- * screen next to it — a modal that covers the page invites approving a card
- * without checking it against the track it came from.
+ * A modal now, not an inline panel that used to push the rest of the page
+ * down by a full portrait card's height. The location toggle sits directly
+ * under the preview it affects, and the actions are pinned in a footer that
+ * never scrolls out of reach on a phone -- the failure mode the inline version
+ * had, where "Share" could be a full screen of scrolling below the fold.
  */
 import { useId, useRef, useState } from 'react'
-import { DownloadIcon, ImageIcon, Share2Icon, SmartphoneIcon, XIcon } from 'lucide-react'
+import { DownloadIcon, ImageIcon, Share2Icon, SmartphoneIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Dialog } from '@/components/ui/dialog'
 import { Switch } from '@/components/ui/switch'
 import { useToast } from '@/components/ui/toast-primitives'
 import { cn } from '@/lib/cn'
 import type { Track } from '@/lib/api/types'
 
-import type { RssiSample } from './rssi-samples'
+import type { RssiSample } from '../rssi-samples'
 
 import { CARD_HEIGHT, CARD_WIDTH, ShareCard } from './share-card'
 import { buildShareCardModel } from './share-card-model'
@@ -27,6 +28,7 @@ import {
   cardFilename,
   downloadBlob,
   renderCardToPngBlob,
+  shareBlockedByInsecureContext,
   ShareCardExportError,
   shareCardPng,
 } from './share-card-export'
@@ -43,7 +45,6 @@ export function ShareTrack({
   const [includeLocation, setIncludeLocation] = useState(true)
   const [busy, setBusy] = useState<'png' | 'copy' | 'share' | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-  const panelId = useId()
   const toggleId = useId()
   const toast = useToast()
 
@@ -51,6 +52,7 @@ export function ShareTrack({
   const hasPosition = Boolean(track.current)
   // Probed once per render: it depends on the origin being secure, not on state.
   const nativeShare = canShareFiles()
+  const insecureContext = !nativeShare && shareBlockedByInsecureContext()
 
   async function withCard<T>(run: (svg: SVGSVGElement) => Promise<T>): Promise<T | null> {
     const svg = svgRef.current
@@ -128,89 +130,95 @@ export function ShareTrack({
   }
 
   return (
-    <div className="min-w-0">
-      <Button
-        variant="outline"
-        size="sm"
-        aria-expanded={open}
-        aria-controls={open ? panelId : undefined}
-        onClick={() => setOpen((value) => !value)}
-      >
-        {open ? <XIcon aria-hidden /> : <Share2Icon aria-hidden />}
-        {open ? 'Close share card' : 'Share'}
-      </Button>
+    <Dialog
+      trigger={
+        <Button variant="outline" size="sm">
+          <Share2Icon aria-hidden />
+          Share
+        </Button>
+      }
+      title="Share this detection"
+      description="A record of the detection, without the console around it."
+      open={open}
+      onOpenChange={setOpen}
+      footer={
+        <div className="flex flex-col gap-2">
+          {nativeShare ? (
+            <Button
+              size="touch"
+              className="w-full"
+              onClick={() => void handleShare()}
+              disabled={busy !== null}
+            >
+              <SmartphoneIcon aria-hidden />
+              {busy === 'share' ? 'Preparing…' : 'Share…'}
+            </Button>
+          ) : null}
 
-      {open ? (
-        <section
-          id={panelId}
-          aria-label="Shareable track card"
-          className="border-border bg-card mt-3 rounded-lg border p-3 sm:p-4"
-        >
-          <div className="border-border overflow-hidden rounded-md border">
-            <ShareCard ref={svgRef} model={model} />
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-3">
-            <div className="flex items-center gap-2.5">
-              <Switch
-                id={toggleId}
-                checked={includeLocation}
-                onCheckedChange={setIncludeLocation}
-                disabled={!hasPosition}
-              />
-              <label htmlFor={toggleId} className="text-sm">
-                Include exact location
-              </label>
-            </div>
-
-            <div className="ml-auto flex flex-wrap gap-2">
-              {canCopyImages() ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void handleCopy()}
-                  disabled={busy !== null}
-                >
-                  <ImageIcon aria-hidden />
-                  {busy === 'copy' ? 'Copying…' : 'Copy image'}
-                </Button>
-              ) : null}
-              {/* Sharing is the primary action where the OS offers it -- on a
-                  phone a downloaded PNG means going to find it again. Download
-                  stays visible as the secondary rather than disappearing,
-                  because saving a copy and sending one are different intents. */}
+          <div className="flex gap-2">
+            {canCopyImages() ? (
               <Button
-                variant={nativeShare ? 'outline' : 'default'}
-                size="sm"
-                onClick={() => void handleDownload()}
+                variant="outline"
+                size={nativeShare ? 'sm' : 'touch'}
+                className="flex-1"
+                onClick={() => void handleCopy()}
                 disabled={busy !== null}
               >
-                <DownloadIcon aria-hidden />
-                {busy === 'png' ? 'Rendering…' : 'Download PNG'}
+                <ImageIcon aria-hidden />
+                {busy === 'copy' ? 'Copying…' : 'Copy'}
               </Button>
-              {nativeShare ? (
-                <Button size="sm" onClick={() => void handleShare()} disabled={busy !== null}>
-                  <SmartphoneIcon aria-hidden />
-                  {busy === 'share' ? 'Preparing…' : 'Share…'}
-                </Button>
-              ) : null}
-            </div>
+            ) : null}
+            <Button
+              variant={nativeShare ? 'outline' : 'default'}
+              size={nativeShare ? 'sm' : 'touch'}
+              className="flex-1"
+              onClick={() => void handleDownload()}
+              disabled={busy !== null}
+            >
+              <DownloadIcon aria-hidden />
+              {busy === 'png' ? 'Rendering…' : 'Download PNG'}
+            </Button>
           </div>
 
-          <p
-            className={cn(
-              'mt-2 text-xs',
-              includeLocation && hasPosition ? 'text-warn' : 'text-muted-foreground',
-            )}
-          >
-            {!hasPosition
-              ? 'This track broadcast no position, so the card carries no coordinates.'
-              : includeLocation
-                ? 'This card shows the exact coordinates. For an aircraft on the ground that is effectively an address.'
-                : 'Coordinates are removed. The signal trace and the ground-track summary stay — neither places the contact anywhere on earth.'}
-          </p>
-        </section>
-      ) : null}
-    </div>
+          {insecureContext ? (
+            <p className="text-muted-foreground text-2xs leading-snug">
+              Handing this straight to your phone's share sheet needs the console loaded over a
+              secure (https) connection — downloading the PNG still works here.
+            </p>
+          ) : null}
+        </div>
+      }
+    >
+      <div className="p-3 sm:p-4">
+        <div className="border-border mx-auto w-full max-w-72 overflow-hidden rounded-md border shadow-sm">
+          <ShareCard ref={svgRef} model={model} />
+        </div>
+
+        <div className="mt-4 flex items-center gap-2.5">
+          <Switch
+            id={toggleId}
+            checked={includeLocation}
+            onCheckedChange={setIncludeLocation}
+            disabled={!hasPosition}
+          />
+          <label htmlFor={toggleId} className="text-sm">
+            Include exact location
+          </label>
+        </div>
+
+        <p
+          className={cn(
+            'mt-2 text-xs',
+            includeLocation && hasPosition ? 'text-warn' : 'text-muted-foreground',
+          )}
+        >
+          {!hasPosition
+            ? 'This track broadcast no position, so the card carries no coordinates.'
+            : includeLocation
+              ? 'This card shows the exact coordinates. For an aircraft on the ground that is effectively an address.'
+              : 'Coordinates are removed. The signal trace and the ground-track summary stay — neither places the contact anywhere on earth.'}
+        </p>
+      </div>
+    </Dialog>
   )
 }
