@@ -172,10 +172,13 @@ def test_channel_and_band_mapping() -> None:
 
 
 # Measured on the unit's mt7921u in monitor mode, 2026-08-18. `iw survey dump`
-# returns exactly ONE entry, for 5955 MHz -- a 6 GHz channel the hopper never
-# tunes and the US regdomain forbids -- whose active time advances at wall-clock
-# rate with busy, receive and noise all absent. The channels actually being
-# swept do not appear at all.
+# enumerates 98 entries -- every channel the adapter supports across 2.4, 5 and
+# 6 GHz -- and not one carries busy time, receive time or a noise floor. Exactly
+# one, 5955 MHz, has an active time that moves at all, and it advances at
+# wall-clock rate on a 6 GHz channel the hopper never tunes.
+#
+# One entry is enough to pin the behaviour: what the code decides per entry is
+# what matters, and 98 of these differ from one only in how long the loop runs.
 MT7921U_MONITOR_MODE = """Survey data from wlan1
 \tfrequency:\t\t\t5955 MHz
 \tchannel active time:\t\t{active} ms
