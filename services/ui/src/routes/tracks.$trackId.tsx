@@ -366,7 +366,46 @@ function PositionHistory({ history }: { history: Position[] }) {
           <p className="text-muted-foreground px-1 py-3 text-sm">No position history.</p>
         ) : (
           <div className="max-h-80 overflow-auto [scrollbar-gutter:stable_both-edges]">
-            <div className="min-w-[42rem] pr-3 pb-3">
+            {/* Stacked below lg. Six columns of coordinates and figures need
+                about 42rem; a phone has 24, so five of the six were off the
+                right edge of a sideways scroll nested inside a vertical one.
+                The time and the position lead, because those are what somebody
+                scrubbing a track's history is reading down. */}
+            <ul className="space-y-2 pr-1 pb-2 lg:hidden">
+              {[...history].reverse().map((position, index) => (
+                <li
+                  key={`${position.at ?? index}-${position.lat}`}
+                  className="border-border/60 rounded-md border px-2.5 py-2 font-mono text-2xs"
+                >
+                  <p className="flex flex-wrap items-baseline justify-between gap-x-3">
+                    <span className="text-foreground">{format.clock(position.at)}</span>
+                    <span className="text-muted-foreground">
+                      {format.coords(position.lat, position.lon)}
+                    </span>
+                  </p>
+                  <dl className="tnum mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 sm:grid-cols-4">
+                    <div>
+                      <dt className="text-muted-foreground font-sans">AGL</dt>
+                      <dd>{format.length(position.height_agl_m)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground font-sans">Geodetic</dt>
+                      <dd>{format.length(position.alt_geodetic_m)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground font-sans">Speed</dt>
+                      <dd>{format.speed(position.speed_mps)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground font-sans">Track</dt>
+                      <dd>{format.heading(position.track_deg)}</dd>
+                    </div>
+                  </dl>
+                </li>
+              ))}
+            </ul>
+
+            <div className="hidden pr-3 pb-3 lg:block">
               <table className="w-full text-left text-xs">
                 <caption className="sr-only">Reported aircraft position history</caption>
                 <thead className="text-muted-foreground bg-card sticky top-0 z-10">

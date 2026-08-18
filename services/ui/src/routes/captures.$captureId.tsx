@@ -314,8 +314,32 @@ function ReportView({ report }: { report: CaptureReport }) {
                 record the result in <code>docs/ops/04-calibration.md</code>. Until then, treat
                 every DJI altitude, height, velocity and attitude value as unverified.
               </p>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[30rem] text-left text-xs">
+              {/* Four columns of numbers in about 30rem, which a phone does
+                  not have. Stacked below sm rather than scrolled sideways --
+                  this is a calibration worksheet somebody reads value by
+                  value, and a column hidden off the right edge is a value
+                  they will not check. */}
+              <ul className="space-y-2 sm:hidden">
+                {report.dji_calibration.map((row) => (
+                  <li
+                    key={row.field}
+                    className="border-border/60 rounded-md border px-2.5 py-2 font-mono text-2xs"
+                  >
+                    <p className="text-foreground font-sans text-xs font-medium">{row.field}</p>
+                    <dl className="tnum mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                      <dt className="text-muted-foreground font-sans">raw</dt>
+                      <dd>{row.raw ?? EMPTY}</dd>
+                      <dt className="text-muted-foreground font-sans">decoded</dt>
+                      <dd>{row.decoded === null ? EMPTY : `${row.decoded} ${row.unit}`}</dd>
+                      <dt className="text-muted-foreground font-sans">scale</dt>
+                      <dd>{row.scale}</dd>
+                    </dl>
+                  </li>
+                ))}
+              </ul>
+
+              <div className="hidden sm:block">
+                <table className="w-full text-left text-xs">
                   <thead className="text-muted-foreground">
                     <tr className="border-border border-b">
                       <th scope="col" className="py-1.5 pr-3 font-medium">

@@ -143,8 +143,52 @@ export function EvidenceBreakdown({
 
   return (
     <div className={cn('space-y-3', className)}>
-      <div className="overflow-x-auto [scrollbar-gutter:stable]">
-        <table className="mb-2 w-full min-w-[28rem] text-left text-xs">
+      {/* Stacked below sm, tabular from sm up. Five columns need about 28rem
+          and a phone has 24, so this scrolled sideways inside a card that was
+          already inside a scrolling page -- two nested scrolls, one of them
+          invisible, hiding the Weight column that explains the confidence
+          number above it. */}
+      <ul className="mb-2 space-y-2 sm:hidden">
+        {sorted.map((item) => {
+          const info = detectionClassInfo(item.class)
+          return (
+            <li key={item.class} className="border-border/60 rounded-md border px-2.5 py-2">
+              <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span
+                  className={cn('rounded border px-1 py-px font-mono text-2xs', info.chipClass)}
+                >
+                  {item.class}
+                </span>
+                <span className="text-xs font-medium">{info.short}</span>
+                <span className="text-muted-foreground ml-auto font-mono text-2xs">
+                  {format.relative(item.last_seen)}
+                </span>
+              </p>
+              <p className="text-muted-foreground mt-1 text-2xs">
+                {info.signal} · via {item.sensor_kind}
+              </p>
+              <p className="tnum mt-1 flex flex-wrap gap-x-3 font-mono text-2xs">
+                <span>
+                  <span className="text-muted-foreground">count</span> {item.count}
+                </span>
+                <span>
+                  <span className="text-muted-foreground">weight</span>{' '}
+                  {item.weight === 0 ? (
+                    // Class D never contributes; the tooltip that says so is
+                    // not reachable by touch, so the card says it in words.
+                    <span className="text-muted-foreground">n/a — context only</span>
+                  ) : (
+                    item.weight.toFixed(2)
+                  )}
+                </span>
+              </p>
+            </li>
+          )
+        })}
+      </ul>
+
+      <div className="hidden [scrollbar-gutter:stable] sm:block">
+        <table className="mb-2 w-full text-left text-xs">
           <caption className="sr-only">
             Evidence by detection class, with the weight each contributes to confidence
           </caption>

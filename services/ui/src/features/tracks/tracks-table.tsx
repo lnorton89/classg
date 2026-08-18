@@ -24,7 +24,7 @@ import {
   type SortingState,
 } from '@tanstack/react-table'
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, SearchIcon } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 
 import { useFormat, useTicker, type Formatters } from '@/app/use-format'
 import { CopyButton } from '@/components/ui/copy-button'
@@ -61,6 +61,34 @@ function searchableIdentity(track: Track): string {
   ]
     .filter(Boolean)
     .join(' ')
+}
+
+/**
+ * The card view's row labels.
+ *
+ * Not read from the column's `header`, which is free to be a React node and in
+ * one case already is. Short, because these sit in a narrow left column beside
+ * the value rather than across the top of a wide table.
+ */
+function columnLabel(id: string, format: Formatters): string {
+  switch (id) {
+    case 'state':
+      return 'State'
+    case 'confidence':
+      return 'Confidence'
+    case 'evidence':
+      return 'Evidence'
+    case 'detection_count':
+      return 'Detections'
+    case 'rssi':
+      return 'RSSI'
+    case 'last_seen':
+      return `Last seen (${format.zoneLabel})`
+    case 'position':
+      return 'Position'
+    default:
+      return id
+  }
 }
 
 /**
@@ -269,7 +297,43 @@ export function TracksTable({
         </p>
       </div>
 
-      <div className="border-border min-h-0 flex-1 overflow-auto rounded-lg border">
+      {/* Cards below lg, the table from lg up.
+          
+          Eight columns need about 52rem and a phone has 24, so the table was
+          scrolled sideways with Confidence, Evidence, Detections, RSSI, Last
+          seen and Position all off-screen -- and a horizontal scroll inside a
+          vertically scrolling page is a thing people do not find. The cards
+          render the SAME TanStack cells, so sorting, filtering and every
+          cell's formatting stay defined once. */}
+      <ul className={cn('space-y-2 lg:hidden', rows.length === 0 && 'hidden')}>
+        {rows.map((row) => {
+          const cells = row.getAllCells()
+          const [primary, ...rest] = cells
+          return (
+            <li key={row.id} className="border-border bg-card/40 rounded-lg border px-3 py-2.5">
+              {primary ? (
+                <div className="mb-2">
+                  <FlexRender cell={primary} />
+                </div>
+              ) : null}
+              <dl className="grid grid-cols-[auto_1fr] items-baseline gap-x-3 gap-y-1 text-xs">
+                {rest.map((cell) => (
+                  <Fragment key={cell.id}>
+                    <dt className="text-muted-foreground text-2xs">
+                      {columnLabel(cell.column.id, format)}
+                    </dt>
+                    <dd className="min-w-0">
+                      <FlexRender cell={cell} />
+                    </dd>
+                  </Fragment>
+                ))}
+              </dl>
+            </li>
+          )
+        })}
+      </ul>
+
+      <div className="border-border hidden min-h-0 flex-1 overflow-auto rounded-lg border lg:block">
         <table className="w-full min-w-[52rem] border-collapse text-left text-sm">
           <caption className="sr-only">{caption}</caption>
           <thead className="bg-card sticky top-0 z-10">
@@ -332,15 +396,19 @@ export function TracksTable({
             ))}
           </tbody>
         </table>
-
-        {rows.length === 0 ? (
-          <EmptyState title={tracks.length === 0 ? emptyTitle : 'No tracks match the filter'}>
-            {tracks.length === 0
-              ? emptyDescription
-              : 'Clear the search box or the state filter to see all tracks.'}
-          </EmptyState>
-        ) : null}
       </div>
+
+      {/* Outside both, because it belongs to neither. It used to sit inside the
+          table wrapper, which is now desktop-only -- an empty list on a phone
+          would have rendered nothing at all, and "no active tracks" is a
+          sentence this interface must never fail to say. */}
+      {rows.length === 0 ? (
+        <EmptyState title={tracks.length === 0 ? emptyTitle : 'No tracks match the filter'}>
+          {tracks.length === 0
+            ? emptyDescription
+            : 'Clear the search box or the state filter to see all tracks.'}
+        </EmptyState>
+      ) : null}
     </div>
   )
 }
