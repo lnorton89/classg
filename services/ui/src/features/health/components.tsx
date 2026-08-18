@@ -1,12 +1,8 @@
 import {
-  AntennaIcon,
   CircleCheckIcon,
   CircleSlashIcon,
-  CloudIcon,
   PlugZapIcon,
-  RadioIcon,
   TriangleAlertIcon,
-  WifiIcon,
   XIcon,
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -17,21 +13,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataRow } from '@/components/ui/misc'
 import { Tooltip } from '@/components/ui/tooltip'
 import { useFormat, useTicker } from '@/app/use-format'
-import type { SensorHealth, SensorKind } from '@/lib/api/types'
+import type { SensorHealth } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
 import { formatDetailValue } from './detail-format'
+import { SENSOR_ICONS } from './sensor-icons'
 import type { SkyState } from './sky-state'
-
-const SENSOR_ICONS: Record<SensorKind, typeof WifiIcon> = {
-  wifi: WifiIcon,
-  sdr: RadioIcon,
-  ble: AntennaIcon,
-  // A cloud, not an antenna. A `net` source is somebody else's receiver reached
-  // over the uplink, and an operator reading this page needs to see at a glance
-  // that it proves nothing about what *this* unit can hear.
-  net: CloudIcon,
-}
 
 /**
  * The persistent system-status pill in the header. Present on every route,

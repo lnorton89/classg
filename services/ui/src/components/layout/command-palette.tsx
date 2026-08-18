@@ -135,7 +135,7 @@ function PaletteBody({
       },
       {
         id: 'nav-sensors',
-        label: 'Sensors and captures',
+        label: 'Sensors, spectrum and captures',
         icon: SlidersHorizontalIcon,
         group: 'Go to',
         run: go('/sensors'),
