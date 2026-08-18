@@ -19,7 +19,7 @@
  * would look exactly as it does when everything works. So `/api/**` is
  * NetworkOnly, deliberately and permanently. When the API is unreachable the
  * fetch fails, TanStack Query reports the error, and the UI says so
- * (`SystemStatusPill`, `computeSkyState`, and the offline banner in
+ * (the header `StatusButton`, `computeSkyState`, and the offline banner in
  * `src/features/offline/`). That is the honest failure, and it is the one the
  * rest of the interface was built to render.
  *

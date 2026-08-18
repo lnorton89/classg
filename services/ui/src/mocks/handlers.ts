@@ -10,6 +10,7 @@ import { http, HttpResponse, type PathParams } from 'msw'
 import { API_BASE } from '@/lib/api/client'
 import type {
   ApiErrorBody,
+  AuthMe,
   Capture,
   CapturesResponse,
   ChannelPlan,
@@ -131,6 +132,33 @@ const MAX_TELEMETRY_SAMPLES = 5000
 // ---------------------------------------------------------------------------
 
 export const handlers = [
+  // --- Authentication -----------------------------------------------------
+  //
+  // Signed in, as an admin, always. Without this the dev server rendered the
+  // login screen and nothing behind it -- so every shell change had to be
+  // reviewed against a real Pi, and the signed-in header could not be looked
+  // at locally at all. The gate itself is exercised by the tests in
+  // features/auth, which mock the client directly.
+  http.get(`${base}/auth/me`, () =>
+    HttpResponse.json<AuthMe>({
+      authenticated: true,
+      auth_enabled: true,
+      setup_required: false,
+      user: {
+        user_id: 'mock-admin',
+        username: 'operator',
+        display_name: 'Mock Operator',
+        role: 'admin',
+        disabled: false,
+        created_at: '2026-08-01T09:00:00Z',
+        updated_at: '2026-08-01T09:00:00Z',
+        last_login_at: '2026-08-11T12:00:00Z',
+      },
+    }),
+  ),
+  http.post(`${base}/auth/login`, () => new HttpResponse(null, { status: 204 })),
+  http.post(`${base}/auth/logout`, () => new HttpResponse(null, { status: 204 })),
+
   // --- Health -------------------------------------------------------------
   http.get(`${base}/health`, () => HttpResponse.json<Health>(getScenario().health)),
 

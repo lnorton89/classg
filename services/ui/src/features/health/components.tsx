@@ -1,7 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import {
-  ActivityIcon,
   AntennaIcon,
   CircleCheckIcon,
   CircleSlashIcon,
@@ -13,14 +10,12 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-import { useLive } from '@/app/live-context'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataRow } from '@/components/ui/misc'
 import { Tooltip } from '@/components/ui/tooltip'
 import { useFormat, useTicker } from '@/app/use-format'
-import { healthQuery } from '@/lib/api/queries'
-import type { SensorHealth, SensorKind, SystemStatus } from '@/lib/api/types'
+import type { SensorHealth, SensorKind } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
 import { formatDetailValue } from './detail-format'
@@ -36,108 +31,10 @@ const SENSOR_ICONS: Record<SensorKind, typeof WifiIcon> = {
   net: CloudIcon,
 }
 
-const STATUS_LABEL: Record<SystemStatus, string> = {
-  ok: 'All sensors healthy',
-  degraded: 'Sensor degraded',
-  down: 'No coverage',
-}
-
 /**
  * The persistent system-status pill in the header. Present on every route,
  * because "is this thing actually working" is not a question that belongs on a
  * separate page you have to remember to visit.
- */
-export function SystemStatusPill({ className }: { className?: string }) {
-  const { data: health, isPending, isError } = useQuery(healthQuery())
-
-  // `!health` is redundant per the query's types, but it is what narrows
-  // `health` to defined for everything below. Removing it trades a dead check
-  // for a pile of new type errors.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  if (isPending || isError || !health) {
-    return (
-      <span
-        className={cn(
-          'border-border text-muted-foreground inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs',
-          className,
-        )}
-      >
-        <CircleSlashIcon className="size-3.5" aria-hidden />
-        {isError ? 'API unreachable' : 'Checking sensors…'}
-      </span>
-    )
-  }
-
-  const unhealthy = health.sensors.filter((s) => !s.healthy)
-  const tone = health.status === 'ok' ? 'ok' : health.status === 'degraded' ? 'warn' : 'down'
-  const Icon =
-    health.status === 'ok'
-      ? CircleCheckIcon
-      : health.status === 'down'
-        ? PlugZapIcon
-        : TriangleAlertIcon
-
-  return (
-    <Link
-      to="/sensors"
-      className={cn('rounded-md', className)}
-      aria-label={`System status: ${STATUS_LABEL[health.status]}. ${
-        unhealthy.length
-      } of ${health.sensors.length} sensors unhealthy. Open sensor health.`}
-    >
-      <Badge variant={tone} className="h-7 gap-1.5 px-2">
-        <Icon className="size-3.5" aria-hidden />
-        <span className="hidden sm:inline">{STATUS_LABEL[health.status]}</span>
-        <span className="sm:hidden">
-          {health.sensors.length - unhealthy.length}/{health.sensors.length}
-        </span>
-      </Badge>
-    </Link>
-  )
-}
-
-/** Live-stream connection indicator. A dead socket means stale data, not calm. */
-export function StreamStatusPill({ className }: { className?: string }) {
-  const { connection, lastFrameAt, reconnectAttempt } = useLive()
-  const format = useFormat()
-  // Per second, unlike the heavier lists: this pill is the freshness indicator,
-  // and it renders one badge. "Last frame 3s ago" going stale here would
-  // undermine the one thing it exists to tell you.
-  useTicker(1000)
-
-  const map = {
-    open: { tone: 'ok' as const, label: 'Live', icon: ActivityIcon },
-    connecting: { tone: 'muted' as const, label: 'Connecting…', icon: ActivityIcon },
-    reconnecting: {
-      tone: 'warn' as const,
-      label: `Reconnecting (${reconnectAttempt})`,
-      icon: TriangleAlertIcon,
-    },
-    closed: { tone: 'down' as const, label: 'Stream offline', icon: CircleSlashIcon },
-  }[connection]
-  const Icon = map.icon
-
-  return (
-    <Tooltip
-      content={
-        connection === 'open'
-          ? `Last frame ${format.relative(
-              lastFrameAt ? new Date(lastFrameAt).toISOString() : null,
-            )}. Tracks are refetched on every reconnect, so gaps do not persist.`
-          : 'The live stream is not connected. Track positions on screen may be stale.'
-      }
-    >
-      <Badge variant={map.tone} className={cn('h-7 gap-1.5 px-2', className)}>
-        <Icon className="size-3.5" aria-hidden />
-        <span className="hidden md:inline">{map.label}</span>
-      </Badge>
-    </Tooltip>
-  )
-}
-
-/**
- * The banner that answers "what does this map mean". Rendered over the map, and
- * styled hard: a degraded system must not be a subtle grey note.
  */
 export function SkyStateBanner({
   state,

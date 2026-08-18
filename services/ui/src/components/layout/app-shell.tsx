@@ -20,8 +20,7 @@ import { Kbd } from '@/components/ui/kbd'
 import { isApplePlatform } from '@/lib/platform'
 import { Toaster } from '@/components/ui/toast'
 import { Tooltip } from '@/components/ui/tooltip'
-import { SystemStatusPill, StreamStatusPill } from '@/features/health/components'
-import { RecordingIndicator } from '@/features/monitoring/recording-indicator'
+import { StatusButton } from '@/features/health/status-button'
 import { TrackAlerts } from '@/features/monitoring/track-alerts'
 import { NotificationsDrawer } from '@/features/notifications/notifications-drawer'
 import { AccountMenu } from '@/features/auth/account-menu'
@@ -123,12 +122,21 @@ function SignedInShell({ children }: { children: ReactNode }) {
           two questions the header exists to answer, and a header that scrolls
           sideways hides exactly those.
         */}
-        <div
-          className={cn(
-            'flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-1.5',
-            'sm:px-4 xl:h-16 xl:flex-nowrap xl:py-0',
-          )}
-        >
+        {/* ONE row, at every width, and it never wraps.
+            
+            It used to wrap below xl, because nine controls do not fit a phone:
+            brand, a scenario switcher, a recording pill, a bell, a stream
+            badge, a health badge, a search box, an identity icon, a sign-out
+            icon and a gear. Every one of them was justified on its own and the
+            result was a clipped logo above two rows of chrome, on the screen
+            with the least room for either.
+
+            What fixed it was not tighter spacing. It was deciding that the
+            header answers two questions -- is the system working, and who am I
+            -- and that everything else is one tap inside one of those two
+            answers. Four status controls became StatusButton; three identity
+            and navigation controls became AccountMenu. */}
+        <div className="flex h-14 items-center gap-2 px-3 sm:px-4 xl:h-16">
           <Link
             to="/"
             aria-label="ClassG — go to the live map"
@@ -141,38 +149,31 @@ function SignedInShell({ children }: { children: ReactNode }) {
             <ClassGLogo size="lg" showTagline className="hidden xl:inline-flex" />
           </Link>
 
-          {/* Desktop only. The mobile bar is a sibling of the header, not a
-              child of it -- see the note on it below. */}
-          <nav aria-label="Primary" className="ml-3 hidden justify-start gap-0.5 md:flex">
+          {/* lg, not md. At md the seven items did not fit beside the brand
+              and the controls: the row clipped "Spectrum" mid-word and put
+              Logs and Docs in a horizontal scroll nobody would find. A tablet
+              is a touch device and keeps the bottom bar, which shows all seven
+              without eliding any. overflow-x-auto stays as the safety valve
+              for an eighth item nobody has added yet. */}
+          <nav
+            aria-label="Primary"
+            className="ml-2 hidden min-w-0 justify-start gap-0.5 overflow-x-auto lg:flex"
+          >
             {PRIMARY_NAV.map((item) => (
               <NavLink key={item.to} item={item} />
             ))}
           </nav>
 
-          {/* Sits on the logo's row at every width. It used to be `w-full`
-              below xl, which bought a guaranteed second row and then still
-              overflowed on a phone -- six items do not fit 360px -- so the gear
-              wrapped alone onto a THIRD row. Three rows of chrome above a map
-              on the screen with the least room for it. The cluster now shares
-              the brand row, and the width comes from compacting its contents
-              (see the Pause control) rather than from stacking. */}
-          <div
-            className={cn(
-              'ml-auto flex min-w-0 flex-1 items-center justify-end gap-1 sm:gap-1.5',
-              'xl:w-auto xl:flex-none xl:shrink-0 xl:flex-nowrap',
-            )}
-          >
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
             <MockScenarioSwitcher />
-            <RecordingIndicator />
+            <StatusButton />
             <NotificationsDrawer />
-            <StreamStatusPill />
-            <SystemStatusPill />
             <PaletteButton onOpen={() => setPaletteOpen(true)} />
-            {/* Visible at every width, including mobile: the bottom bar is full
-                at five pages, and settings is the one destination that has to
-                stay reachable without one. */}
-            <AccountMenu />
+            {/* The gear stays visible where it costs nothing. Below md it is
+                an item in the account menu instead: five destinations already
+                fill the bottom bar, and settings is not one of the five. */}
             <SettingsButton />
+            <AccountMenu onOpenPalette={() => setPaletteOpen(true)} />
           </div>
         </div>
 
@@ -194,7 +195,7 @@ function SignedInShell({ children }: { children: ReactNode }) {
         aria-label="Primary"
         className={cn(
           'border-border bg-card/95 fixed inset-x-0 bottom-0 z-40',
-          'border-t backdrop-blur md:hidden',
+          'border-t backdrop-blur lg:hidden',
           // The insets go on the bar, the padding on the row inside it, so the
           // bar's background still reaches the bottom of the screen behind the
           // home indicator instead of leaving a strip of map showing.
@@ -208,8 +209,8 @@ function SignedInShell({ children }: { children: ReactNode }) {
         </div>
       </nav>
 
-      {/* safe-pb-nav clears the fixed mobile nav and the home indicator under
-          it; it collapses to 0 at md, where the nav moves into the header. */}
+      {/* safe-pb-nav clears the fixed bottom nav and the home indicator under
+          it; it collapses to 0 at lg, where the nav moves into the header. */}
       <main id="main" className="safe-pb-nav flex min-h-0 flex-1 flex-col overflow-y-auto">
         {children}
       </main>
@@ -236,10 +237,12 @@ function NavLink({ item }: { item: NavItem }) {
       className={cn(
         'flex min-w-16 flex-col items-center gap-0.5 rounded-md px-3 py-1.5',
         'text-2xs font-medium transition-colors',
-        'md:flex-row md:gap-2 md:px-2.5 md:py-1.5 md:text-sm',
+        // Stacked in the bottom bar, inline in the header. lg because that is
+        // where the one becomes the other.
+        'lg:flex-row lg:gap-2 lg:px-2.5 lg:py-1.5 lg:text-sm',
       )}
     >
-      <item.icon className="size-4.5 md:size-4" aria-hidden />
+      <item.icon className="size-4.5 lg:size-4" aria-hidden />
       {item.label}
     </Link>
   )
@@ -277,7 +280,7 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
 }
 
 /**
- * One gear, one destination.
+ * One gear, one destination — from md up.
  *
  * This replaced a three-dot menu that held Config, Settings and Docs behind a
  * click and a read. Two of those were settings pages that disagreed about which
@@ -285,6 +288,11 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
  * overflow — it is in the primary nav now. The theme cycle the menu also
  * carried lives in Settings › Appearance, and the command palette still
  * toggles it in one keystroke.
+ *
+ * Hidden below md, where the account menu carries Settings as an item. The
+ * toggle-back behaviour below is what makes it worth its own control on a
+ * screen with room: a gear that returns you to what you were reading, rather
+ * than pushing another settings page onto the phone's back stack.
  */
 function SettingsButton() {
   const router = useRouter()
@@ -325,6 +333,7 @@ function SettingsButton() {
           className={cn(
             buttonVariants({ variant: 'ghost', size: 'icon' }),
             'bg-accent text-foreground',
+            'hidden md:inline-flex',
           )}
         >
           <SettingsIcon className="size-4" aria-hidden />
@@ -342,6 +351,10 @@ function SettingsButton() {
         className={cn(
           buttonVariants({ variant: 'ghost', size: 'icon' }),
           'text-muted-foreground hover:text-foreground',
+          // Below md this is an item in the account menu instead. It is a
+          // destination you visit once to set the console up, and it was
+          // costing a phone header the same width as "is this thing recording".
+          'hidden md:inline-flex',
         )}
       >
         <SettingsIcon className="size-4" aria-hidden />

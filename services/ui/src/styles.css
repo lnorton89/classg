@@ -364,7 +364,13 @@
 @utility safe-pb-nav {
   padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 
-  @variant md {
+  /*
+   * lg, matching the breakpoint where the bottom bar hides and the nav moves
+   * into the header. It was md, and at md the seven-item nav did not fit: the
+   * header clipped "Spectrum" mid-word and hid Logs and Docs in a scroll
+   * nobody would find. A tablet is a touch device; it keeps the bottom bar.
+   */
+  @variant lg {
     padding-bottom: 0;
   }
 }
