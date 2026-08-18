@@ -5,7 +5,7 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { ReactNode } from 'react'
 
 import { Badge } from '@/components/ui/badge'
@@ -40,6 +40,11 @@ import type { SkyState } from './sky-state'
  */
 const QUIET_SKY_DISMISS_MS = 20_000
 
+/** Past this drag distance, releasing dismisses rather than snapping back. */
+const SWIPE_DISMISS_PX = 88
+/** How long the slide-away plays before the banner actually unmounts. */
+const CLOSE_ANIMATION_MS = 180
+
 export function SkyStateBanner({
   state,
   className,
@@ -56,13 +61,51 @@ export function SkyStateBanner({
   const dismissible = state.absenceIsEvidence
   const dismissed = dismissible && dismissedKind === state.kind
 
+  // Swipe and the timer both end here: a short slide-and-fade before the
+  // banner actually leaves the tree, so a released swipe or an expired timer
+  // reads as a dismissal happening rather than a banner disappearing.
+  const [closing, setClosing] = useState<1 | -1 | null>(null)
+  const [dragX, setDragX] = useState(0)
+  const [dragging, setDragging] = useState(false)
+  const dragStartX = useRef<number | null>(null)
+
+  function commitDismiss(direction: 1 | -1) {
+    if (closing !== null) return
+    setClosing(direction)
+    setTimeout(() => setDismissedKind(state.kind), CLOSE_ANIMATION_MS)
+  }
+
   useEffect(() => {
     if (!dismissible) return
-    const id = setTimeout(() => setDismissedKind(state.kind), QUIET_SKY_DISMISS_MS)
+    const id = setTimeout(() => commitDismiss(1), QUIET_SKY_DISMISS_MS)
     return () => clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- commitDismiss closes over state.kind, which is already this effect's dependency.
   }, [dismissible, state.kind])
 
   if (dismissed) return null
+
+  function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!dismissible || closing !== null) return
+    dragStartX.current = event.clientX
+    setDragging(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (dragStartX.current === null) return
+    setDragX(event.clientX - dragStartX.current)
+  }
+
+  function onPointerUp() {
+    if (dragStartX.current === null) return
+    dragStartX.current = null
+    setDragging(false)
+    if (Math.abs(dragX) > SWIPE_DISMISS_PX) {
+      commitDismiss(dragX < 0 ? -1 : 1)
+    } else {
+      setDragX(0)
+    }
+  }
 
   // Opaque, with severity carried by a left accent bar rather than a wash.
   // This banner sits ON TOP OF THE MAP on the Live route, and a 12-18% tint
@@ -90,18 +133,43 @@ export function SkyStateBanner({
     muted: CircleSlashIcon,
   }[state.tone]
 
+  const exiting = closing !== null
+  const style = exiting
+    ? { transform: `translateX(${closing * 120}%)`, opacity: 0 }
+    : dragging
+      ? {
+          transform: `translateX(${dragX}px)`,
+          opacity: 1 - Math.min(0.85, Math.abs(dragX) / 260),
+        }
+      : undefined
+
   return (
     <div
+      // key: a genuinely different message (the sky state's KIND changed)
+      // remounts this element -- which is also what resets closing/drag state
+      // left over from whatever this replaced, for free -- and makes the
+      // entrance below replay instead of a silent swap. "Quiet sky" becoming
+      // "sensor down" is exactly the change an operator must not be able to
+      // miss.
+      key={state.kind}
       // Assertive only when the operator must not trust the screen.
       role={state.absenceIsEvidence ? 'status' : 'alert'}
       aria-live={state.absenceIsEvidence ? 'polite' : 'assertive'}
       data-sky-state={state.kind}
       data-absence-is-evidence={state.absenceIsEvidence}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
       className={cn(
         'pointer-events-auto flex items-start gap-3 rounded-lg border px-3 py-2 shadow-lg',
         tone,
+        dismissible && 'touch-pan-y',
+        !dragging && 'transition-[transform,opacity] duration-200 ease-out',
+        !exiting && !dragging && 'animate-in fade-in slide-in-from-top-1 duration-200',
         className,
       )}
+      style={style}
     >
       <Icon className={cn('mt-0.5 size-4 shrink-0', iconTone)} aria-hidden />
       <div className="min-w-0 flex-1">
@@ -112,7 +180,7 @@ export function SkyStateBanner({
       {dismissible ? (
         <button
           type="button"
-          onClick={() => setDismissedKind(state.kind)}
+          onClick={() => commitDismiss(1)}
           aria-label="Dismiss until the sky state changes"
           className={cn(
             'text-muted-foreground hover:text-foreground hover:bg-foreground/10',

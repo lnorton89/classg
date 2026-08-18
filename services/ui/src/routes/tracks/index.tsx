@@ -2,12 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
 import { ArchiveIcon, RadarIcon, RadioTowerIcon } from 'lucide-react'
 
-import { SkyStateBanner } from '@/features/health/components'
-import { computeSkyState } from '@/features/health/sky-state'
 import { TrackStateKey } from '@/features/tracks/evidence'
 import { partitionTracks } from '@/features/tracks/partition'
 import { TracksTable } from '@/features/tracks/tracks-table'
-import { healthQuery, tracksQuery } from '@/lib/api/queries'
+import { tracksQuery } from '@/lib/api/queries'
 import { PageContainer } from '@/components/layout/page-container'
 import { PageHeader, SectionHeader } from '@/components/layout/page-header'
 
@@ -18,10 +16,8 @@ export const Route = createFileRoute('/tracks/')({
 
 function TracksView() {
   const { data } = useQuery(tracksQuery())
-  const { data: health } = useQuery(healthQuery())
   const tracks = data?.tracks ?? []
   const { active: activeTracks, closed: closedTracks } = partitionTracks(tracks)
-  const skyState = computeSkyState(health, activeTracks.length)
 
   return (
     <PageContainer>
@@ -32,12 +28,6 @@ function TracksView() {
       />
 
       <TrackStateKey />
-
-      {/* Coverage determines whether an empty table means an empty sky. Existing
-          tracks remain valid historical records even after a replay sensor exits. */}
-      {activeTracks.length === 0 && !skyState.absenceIsEvidence ? (
-        <SkyStateBanner state={skyState} />
-      ) : null}
 
       <section aria-labelledby="active-tracks-heading" className="flex min-h-0 flex-col gap-2">
         <SectionHeader

@@ -39,20 +39,13 @@ import { Button } from '@/components/ui/button'
 import { Alert, DataRow, EmptyState } from '@/components/ui/misc'
 import { useToast } from '@/components/ui/toast-primitives'
 import { CaptureHistory, SensorCaptureControl } from '@/features/captures/sensor-captures'
-import { SensorHealthCard, SkyStateBanner } from '@/features/health/components'
+import { SensorHealthCard } from '@/features/health/components'
 import { SENSOR_ICONS } from '@/features/health/sensor-icons'
-import { computeSkyState } from '@/features/health/sky-state'
 import { log } from '@/features/logs/log-store'
 import { SpectrumPanel } from '@/features/spectrum/spectrum-panel'
 import { WifiOccupancyPanel } from '@/features/spectrum/wifi-occupancy'
 import { ApiError, api } from '@/lib/api/client'
-import {
-  capturesQuery,
-  healthQuery,
-  queryKeys,
-  sensorsQuery,
-  tracksQuery,
-} from '@/lib/api/queries'
+import { capturesQuery, healthQuery, queryKeys, sensorsQuery } from '@/lib/api/queries'
 import type { RestartSensorResponse, SensorHealth } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
@@ -73,7 +66,6 @@ export function SensorsView() {
   const queryClient = useQueryClient()
   const { data: health } = useQuery(healthQuery())
   const { data: sensorsData } = useQuery(sensorsQuery())
-  const { data: tracksData } = useQuery(tracksQuery())
   const { data: capturesData } = useQuery(capturesQuery())
   const toast = useToast()
   const { preferences } = usePreferences()
@@ -104,17 +96,8 @@ export function SensorsView() {
   })
   const restartError = restart.error instanceof ApiError ? restart.error : null
 
-  const activeTracks =
-    tracksData?.tracks.filter((track) => track.state !== 'CLOSED').length ?? 0
   const sensors = sensorsData ?? health?.sensors ?? []
   const captures = capturesData?.captures ?? []
-  // The banner is computed from the SAME list the rows below render, not from
-  // health.sensors. They are two endpoints on two query caches, and when they
-  // disagreed the page said "Quiet sky -- all sensors are reporting" directly
-  // above a row marked "unhealthy". A banner whose entire job is telling the
-  // operator whether an empty map is evidence cannot be allowed to contradict
-  // the evidence printed underneath it.
-  const skyState = computeSkyState(health ? { ...health, sensors } : undefined, activeTracks)
 
   const defaultSelection: Selection | null = sensors[0]
     ? { kind: 'sensor', id: sensors[0].sensor_id }
@@ -132,8 +115,6 @@ export function SensorsView() {
         title="Sensors"
         description="Coverage, spectrum, and recordings for one sensor at a time — pick a sensor to see what it measures and manage it."
       />
-
-      <SkyStateBanner state={skyState} />
 
       <div className="grid items-start gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
         {/* min-w-0 so a long sensor id truncates instead of widening the column. */}
