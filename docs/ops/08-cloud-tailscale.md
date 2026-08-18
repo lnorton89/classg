@@ -158,11 +158,100 @@ tailscale ssh admin@"$CLASSG_PI_IP" 'systemctl list-units "classg*"'
 **This rule stops covering cloud sessions once they use the tagged auth key.**
 `autogroup:member` and `autogroup:self` match devices with an owner, and a node
 that authenticated with `tag:claude-cloud` has none — it is owned by the tag.
-Moving to the tagged key therefore needs a second rule with
-`src: ["tag:claude-cloud"]` and a `dst` that a tagged source can name, which in
-practice means tagging `pisdr` too. Tagging transfers a device's ownership to
-the tag and changes which existing rules apply to it, so do that deliberately
-rather than as a side effect of setting up a dev convenience.
+
+### The tagged shape, in full
+
+What a cloud session actually hits without this is not a permission error. The
+SSH connection succeeds, the host key verifies, and the server answers with a
+banner:
+
+```
+# Tailscale SSH requires an additional check.
+# To authenticate, visit: https://login.tailscale.com/a/…
+```
+
+That is `"action": "check"` — a browser round trip, in a container where nobody
+is holding a browser. It looks like a hang, and it is a policy decision rather
+than anything wrong with the container, the key, or the Pi.
+
+The whole policy for the tagged shape. Both devices are tagged, because an SSH
+rule's `dst` names an identity, and a tagged source cannot name a
+user-owned destination:
+
+```jsonc
+{
+  "tagOwners": {
+    "tag:claude-cloud": ["autogroup:admin"],
+    "tag:classg-unit":  ["autogroup:admin"],
+  },
+
+  "acls": [
+    // Packet-level. Without this the SSH rule below never gets a chance --
+    // tagged nodes are not `autogroup:member`, so the default "members reach
+    // everything" rule does not cover them.
+    {
+      "action": "accept",
+      "src":    ["tag:claude-cloud"],
+      "dst":    ["tag:classg-unit:22,8081"],   // shell and the ClassG API. Nothing else.
+    },
+    // Keep your own devices reaching the unit. Tagging transfers ownership to
+    // the tag, so any rule of yours written as `dst: ["autogroup:self"]` stops
+    // matching the Pi the moment it is tagged.
+    {
+      "action": "accept",
+      "src":    ["autogroup:member"],
+      "dst":    ["tag:classg-unit:*"],
+    },
+  ],
+
+  "ssh": [
+    {
+      "action": "accept",              // not "check" -- no human is present to re-auth
+      "src":    ["tag:claude-cloud"],
+      "dst":    ["tag:classg-unit"],
+      "users":  ["admin"],             // the login user on pisdr, never "root"
+    },
+    // Your own shell access, which the rule above does not cover.
+    {
+      "action": "accept",
+      "src":    ["autogroup:member"],
+      "dst":    ["tag:classg-unit"],
+      "users":  ["admin"],
+    },
+  ],
+}
+```
+
+Then tag the Pi, with `set` rather than `up` for the reason above:
+
+```bash
+sudo tailscale set --advertise-tags=tag:classg-unit
+```
+
+**Apply it in this order.** Two of the four steps can lock you out of the unit
+if taken early, and one of them takes the API with it — which is the link a
+cloud session does all its real work over:
+
+1. **Policy first, covering both shapes at once.** The `autogroup:member` rules
+   above keep your laptop working while the tags are still settling. A policy
+   that only names the tags, applied before anything is tagged, matches nothing.
+2. **Tag the Pi.** From this moment its ownership is the tag's, and any rule of
+   yours written against `autogroup:self` stops applying to it. If your laptop
+   loses the Pi here, step 1 was incomplete — reach it on the LAN and undo the
+   tag with `sudo tailscale set --advertise-tags=`.
+3. **Mint the tagged key** and set `TS_AUTHKEY`. Existing containers keep their
+   old untagged node key on disk and are unaffected until they are reclaimed.
+4. **Verify from a fresh cloud session** before narrowing anything. It should
+   reach `:8081` and open a shell with no banner.
+
+Only once a fresh session works should you consider dropping the
+`autogroup:member` rules, and there is little reason to: they are what you use.
+
+**Key expiry stops applying to a tagged device.** Tailscale disables it for
+tagged nodes, on the reasoning that a tagged machine has no human to re-auth it.
+That is convenient for a Pi in a cupboard and worth knowing rather than
+discovering: revocation for `pisdr` becomes removing the device or changing the
+policy, not waiting for a key to lapse.
 
 ## When it does not work
 
