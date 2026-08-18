@@ -65,10 +65,21 @@ export function WifiOccupancyPanel() {
             is not installed on the host. Detection is unaffected — this is one view fewer, not
             a fault.
           </Alert>
-        ) : state.kind === 'unknown' || state.kind === 'warming' ? (
+        ) : state.kind === 'warming' ? (
           <EmptyState icon={WifiIcon} title="Measuring the first window">
             The driver&rsquo;s counters are cumulative, so the first reading has nothing to
             compare against. The first window lands one heartbeat from now.
+          </EmptyState>
+        ) : state.kind === 'unknown' ? (
+          // Deliberately NOT the "measuring" copy. A sensor that has never
+          // mentioned a survey is not warming up -- nothing is measuring, and
+          // saying otherwise promises a reading that will never arrive. This is
+          // what a sensor build older than the feature looks like, which is
+          // exactly what a unit mid-rollout has.
+          <EmptyState icon={WifiIcon} title="This sensor reports no occupancy">
+            The Wi-Fi sensor is healthy and detecting; it is running a build that predates
+            channel occupancy, or has not completed a heartbeat since it started. Nothing is
+            wrong with the radio.
           </EmptyState>
         ) : (
           <OccupancyReading channels={state.channels} />

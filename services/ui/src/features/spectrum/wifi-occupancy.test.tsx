@@ -92,6 +92,18 @@ describe('WifiOccupancyPanel', () => {
     expect(await screen.findByText('Measuring the first window')).toBeVisible()
   })
 
+  // A sensor build older than the feature says nothing about surveys at all.
+  // Calling that "measuring the first window" promises a reading that will
+  // never arrive -- and during a rollout it is the state the unit is actually
+  // in, so it is the one most likely to be seen.
+  it('does not claim to be measuring when the sensor never mentioned a survey', async () => {
+    sensors = [wifi({ channel: 6 })]
+    renderPanel()
+
+    expect(await screen.findByText('This sensor reports no occupancy')).toBeVisible()
+    expect(screen.queryByText('Measuring the first window')).not.toBeInTheDocument()
+  })
+
   it('escalates transmit time, which a receive-only system must never report', async () => {
     sensors = [wifi({ survey_available: true, survey: [{ ...CHANNELS[0], tx_ms: 14 }] })]
     renderPanel()
