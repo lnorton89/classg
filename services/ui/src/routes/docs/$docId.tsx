@@ -4,7 +4,7 @@ import { BookOpenIcon, FileTextIcon, TerminalIcon } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert } from '@/components/ui/misc'
 
-import guide from '../../../../docs/operator-guide.json'
+import guide from '../../../../../docs/operator-guide.json'
 
 export type GuideDocument = (typeof guide.documents)[number]
 

@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import type { SettingsResponse } from '@/lib/api/types'
 
-import { ReceiverPositionEditor } from './settings.calibration'
+import { ReceiverPositionEditor } from './calibration'
 
 const API = '*/api/v1'
 

@@ -9,9 +9,9 @@ import {
 import type { ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
 
-import guide from '../../../../docs/operator-guide.json'
-import { DocsDocument } from './docs.$docId'
-import { DocsTree } from './docs'
+import guide from '../../../../../docs/operator-guide.json'
+import { DocsDocument } from './$docId'
+import { DocsTree } from '../docs'
 
 function renderInRouter(component: ReactNode) {
   const rootRoute = createRootRoute()

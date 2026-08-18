@@ -13,7 +13,7 @@
 import { EMPTY, formatConfidence, formatLatLon } from '@/lib/format'
 import type { Position, Track } from '@/lib/api/types'
 
-import type { RssiSample } from './rssi-samples'
+import type { RssiSample } from '../rssi-samples'
 
 /** Points in the sketch. More than this and the polyline is drawing noise. */
 const MAX_PATH_POINTS = 120

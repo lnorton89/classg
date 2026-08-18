@@ -6,8 +6,8 @@ import { useFormat } from '@/app/use-format'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Alert, DataRow } from '@/components/ui/misc'
 import { SettingsCard } from '@/features/settings/controls'
-import { HostHistory, type TelemetryWindow } from '@/features/settings/host-history'
-import { HostRow } from '@/features/settings/host-row'
+import { HostHistory, type TelemetryWindow } from '@/features/settings/hosts/host-history'
+import { HostRow } from '@/features/settings/hosts/host-row'
 import { healthQuery, systemQuery, telemetryQuery } from '@/lib/api/queries'
 
 export const Route = createFileRoute('/settings/about')({

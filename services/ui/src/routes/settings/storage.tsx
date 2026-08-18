@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { StoragePanel } from '@/features/settings/storage-panel'
+import { StoragePanel } from '@/features/settings/storage/storage-panel'
 
 export const Route = createFileRoute('/settings/storage')({
   component: StorageSettings,
