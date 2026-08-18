@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest'
 
 import { applyFrame } from './live-frames'
 import { queryKeys } from '@/lib/api/queries'
-import type { Detection, SensorHealth, Track, TracksResponse } from '@/lib/api/types'
+import type {
+  Detection,
+  SensorHealth,
+  SpectrumSweep,
+  Track,
+  TracksResponse,
+} from '@/lib/api/types'
 
 /** Every server frame carries `ts`; the value is irrelevant to these assertions. */
 const FRAME_TS = '2026-08-10T00:00:02Z'
@@ -126,5 +132,58 @@ describe('applyFrame', () => {
     expect(
       client.getQueryData<SensorHealth[]>(queryKeys.sensors)?.[0]?.config?.capture,
     ).toMatchObject({ interface: 'wlan0', duration_s: 120 })
+  })
+
+  /**
+   * The bug this pins: the panel selects a sweep the moment it is started, so
+   * the detail query fetches a record with no measurement in it. With a flat
+   * `staleTime: Infinity` that empty record was cached forever and the chart
+   * stayed blank after the sweep finished — only a page reload fixed it.
+   */
+  it("invalidates a sweep's detail when it settles, and never overwrites it", () => {
+    const client = new QueryClient()
+    const running: SpectrumSweep = {
+      sweep_id: 'S1',
+      band: 'ism_915',
+      state: 'running',
+      started_at: '2026-08-10T00:00:00Z',
+    }
+    client.setQueryData(queryKeys.spectrumSweeps, { sweeps: [running] })
+    // A detail entry with a trace, standing in for one already fetched.
+    const detailKey = queryKeys.spectrumSweep('S1', 1400)
+    client.setQueryData(detailKey, { ...running, trace: { dbfs: [1, 2, 3] } })
+
+    applyFrame(client, {
+      type: 'sweep.status',
+      ts: FRAME_TS,
+      sweep: { ...running, state: 'completed', noise_floor_dbfs: -70 },
+    })
+
+    const list = client.getQueryData<{ sweeps: SpectrumSweep[] }>(queryKeys.spectrumSweeps)
+    expect(list?.sweeps[0]).toMatchObject({ sweep_id: 'S1', state: 'completed' })
+
+    // The frame carries the record and never the bins, so writing it into the
+    // detail cache would replace a trace with a record that has none — the
+    // chart would go blank at the moment the measurement arrived.
+    expect(client.getQueryData<{ trace?: unknown }>(detailKey)?.trace).toBeDefined()
+    expect(client.getQueryState(detailKey)?.isInvalidated).toBe(true)
+  })
+
+  it('adds a sweep the list has never seen rather than dropping the frame', () => {
+    const client = new QueryClient()
+    client.setQueryData(queryKeys.spectrumSweeps, { sweeps: [] })
+    applyFrame(client, {
+      type: 'sweep.status',
+      ts: FRAME_TS,
+      sweep: {
+        sweep_id: 'S2',
+        band: 'ism_868',
+        state: 'running',
+        started_at: '2026-08-10T00:00:00Z',
+      },
+    })
+    expect(
+      client.getQueryData<{ sweeps: SpectrumSweep[] }>(queryKeys.spectrumSweeps)?.sweeps,
+    ).toHaveLength(1)
   })
 })

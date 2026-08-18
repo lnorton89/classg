@@ -66,14 +66,27 @@ export function DeploymentPanel() {
   }
 
   const stale = d.state_age_s !== undefined && d.state_age_s > STALE_AFTER_S
+  const deploying = d.last_result === 'deploying'
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
           Deployment
-          {d.update_available ? <Badge variant="warn">update available</Badge> : null}
-          {d.deploy_requested ? <Badge variant="warn">deploy queued</Badge> : null}
+          {/* In flight beats every other badge: it is the only one that says
+              something is happening right now, and it makes both of the others
+              moot for as long as it is true. */}
+          {deploying ? (
+            <Badge variant="warn" className="gap-1.5">
+              <span className="bg-warn size-1.5 animate-pulse rounded-full" aria-hidden />
+              deploying
+            </Badge>
+          ) : (
+            <>
+              {d.update_available ? <Badge variant="warn">update available</Badge> : null}
+              {d.deploy_requested ? <Badge variant="warn">deploy queued</Badge> : null}
+            </>
+          )}
         </CardTitle>
         <CardDescription>
           This unit pulls from <code className="font-mono text-xs">main</code> and deploys only
@@ -83,7 +96,14 @@ export function DeploymentPanel() {
       </CardHeader>
 
       <CardContent className="space-y-3">
-        {stale ? (
+        {deploying ? (
+          <Alert tone="info" title="A deploy is running on the unit now">
+            The rebuild takes several minutes on a Pi. Detection continues until each service is
+            restarted; the log below updates as it goes.
+          </Alert>
+        ) : null}
+
+        {stale && !deploying ? (
           <Alert tone="warn" title="The deploy agent has not checked in recently">
             Last check {format.timestamp(d.last_check_at ?? '')} — {formatAge(d.state_age_s)}{' '}
             ago. The timer is probably not running. On the unit:{' '}

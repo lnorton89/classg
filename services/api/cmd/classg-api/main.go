@@ -213,6 +213,10 @@ func run() error {
 			Sweeper: sweeper,
 			NewID:   func() string { return ulid.New(time.Now().UTC()) },
 			Now:     func() time.Time { return time.Now().UTC() },
+			OnUpdate: func(sw model.SpectrumSweep) {
+				ss := sw
+				h.Broadcast(hub.Frame{Type: hub.TypeSweepStatus, Sweep: &ss})
+			},
 		}
 		if ok, why := sweeps.Available(); !ok {
 			slog.Info("band sweeping is not available yet", "reason", why)

@@ -334,6 +334,16 @@ PIDASH_BEFORE=$(submodule_sha tools/pi-dash)
 echo "$LOCAL" > "$STATE_DIR/previous-sha"
 log "deploying ${LOCAL:0:8} -> ${REMOTE:0:8}"
 
+# Say so BEFORE the work, not only after it.
+#
+# Every other write_state call reports something that already happened, which
+# left a five-minute docker build looking identical to a unit sitting idle: the
+# admin page showed the previous run's verdict, the state file's age crept up,
+# and the only way to know a deploy was in flight was to be watching the
+# journal. A deploy is the longest-running thing this unit does to itself and
+# the one an operator most wants to watch.
+write_state "deploying" "rebuilding on this unit; this takes several minutes"
+
 git merge --ff-only "origin/$BRANCH" >/dev/null 2>&1 || die "fast-forward failed; this unit has diverged from $BRANCH"
 
 DEPLOY_OK=1

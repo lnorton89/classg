@@ -217,7 +217,17 @@ export const deploymentQuery = () =>
     queryKey: queryKeys.deployment,
     queryFn: () => api.deployment(),
     staleTime: 5_000,
-    refetchInterval: (query) => (query.state.data?.deploy_requested ? 10_000 : 60_000),
+    // Three cadences, because a deploy has three tempos. While the agent is
+    // actually rebuilding -- several minutes on a Pi -- the log grows line by
+    // line and somebody is watching it. While one is queued, the agent picks
+    // it up within its timer interval. Otherwise nothing is happening and a
+    // minute is plenty.
+    refetchInterval: (query) => {
+      const state = query.state.data
+      if (state?.last_result === 'deploying') return 3_000
+      if (state?.deploy_requested) return 10_000
+      return 60_000
+    },
   })
 
 /**
@@ -280,16 +290,27 @@ export const spectrumSweepsQuery = () =>
 /**
  * One sweep with its trace.
  *
- * `staleTime: Infinity` is right here and almost nowhere else: a completed
- * sweep is a measurement of one moment and will never change. A running one is
- * polled by `spectrumSweepsQuery` until it lands, and only becomes worth
- * fetching in detail once it has.
+ * A COMPLETED sweep is a measurement of one moment and will never change, so it
+ * is cached forever. A RUNNING one has no trace yet, and caching that forever
+ * is the bug this shape exists to prevent: the panel selects a sweep the
+ * instant it is started, fetches a record with no measurement in it, and with
+ * a flat `staleTime: Infinity` never fetched again -- so the chart stayed empty
+ * after the sweep finished and only a page reload fixed it.
+ *
+ * The live stream now pushes sweep.status and invalidates this key, which makes
+ * the update instant. The polling here is the backstop for the case where that
+ * cannot arrive: the socket is down, and the socket being down is exactly when
+ * a page that waits for a push waits forever.
  */
+const sweepIsSettled = (state: string | undefined) =>
+  state === 'completed' || state === 'failed'
+
 export const spectrumSweepQuery = (sweepId: string, bins: number) =>
   queryOptions({
     queryKey: queryKeys.spectrumSweep(sweepId, bins),
     queryFn: () => api.spectrumSweep(sweepId, bins),
-    staleTime: Infinity,
+    staleTime: (query) => (sweepIsSettled(query.state.data?.state) ? Infinity : 0),
+    refetchInterval: (query) => (sweepIsSettled(query.state.data?.state) ? false : 2_000),
   })
 
 export const capturesQuery = () =>

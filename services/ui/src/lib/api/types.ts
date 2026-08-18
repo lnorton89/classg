@@ -376,9 +376,12 @@ export interface ApiErrorBody {
 // Live stream — WS /stream
 // ---------------------------------------------------------------------------
 
+/** The topics the server will filter frames by. See LiveTopic in lib/api/live. */
+export type StreamTopic = 'tracks' | 'health' | 'detections' | 'captures' | 'spectrum'
+
 export interface SubscribeMessage {
   type: 'subscribe'
-  topics: ('tracks' | 'health' | 'detections')[]
+  topics: StreamTopic[]
 }
 
 export interface PongMessage {
@@ -407,6 +410,9 @@ export type ServerFrame =
   | { type: 'detection'; ts: string; detection: Detection }
   | { type: 'health'; ts: string; health: Health }
   | { type: 'capture.status'; ts: string; capture: Capture }
+  // The sweep RECORD, never its bins: a completed wideband sweep is over a
+  // megabyte of measurement, and the client refetches the trace it wants.
+  | { type: 'sweep.status'; ts: string; sweep: SpectrumSweep }
   | { type: 'monitoring'; ts: string; monitoring: MonitoringState }
   | { type: 'ping'; ts?: string }
 

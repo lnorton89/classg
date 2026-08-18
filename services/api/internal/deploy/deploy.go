@@ -52,7 +52,12 @@ type State struct {
 	// LastCheckAt is when the script last looked. A stale value means the timer
 	// is not running, which is the most common "why is nothing deploying".
 	LastCheckAt *time.Time `json:"last_check_at,omitempty"`
-	// LastResult is one of: up-to-date, deployed, blocked, failed.
+	// LastResult is one of: deploying, up-to-date, deployed, blocked, failed.
+	//
+	// "deploying" is the only one written BEFORE the thing it names. The agent
+	// writes it at the start of a rebuild, which on a Pi is several minutes --
+	// without it a deploy in flight is indistinguishable from an idle unit
+	// showing the previous run's verdict.
 	LastResult string `json:"last_result,omitempty"`
 	// LastReason explains a block -- "CI is still running", "a capture is
 	// running", "the working tree is dirty".

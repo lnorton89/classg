@@ -182,6 +182,20 @@ type Service struct {
 	// Now is the clock, injected for the same reason.
 	Now func() time.Time
 
+	// OnUpdate is called every time a sweep changes state: started, completed,
+	// failed. The API wires it to the hub so an open browser learns the sweep
+	// landed instead of waiting for a poll to notice.
+	//
+	// It is called with the RECORD only. The measurement stays in the store --
+	// a completed fpv_1g2 sweep is over a megabyte of bins, and pushing that
+	// down every socket to announce a state change would cost more than the
+	// sweep did.
+	//
+	// Called from the sweep's own goroutine, so an implementation that blocks
+	// holds the radio. The hub's Broadcast does not block, which is the whole
+	// reason it is shaped that way.
+	OnUpdate func(model.SpectrumSweep)
+
 	mu      sync.Mutex
 	running string
 }
@@ -267,6 +281,7 @@ func (s *Service) Start(ctx context.Context, band string) (model.SpectrumSweep, 
 		return model.SpectrumSweep{}, err
 	}
 
+	s.publish(sweep)
 	go s.run(sweep)
 	return sweep, nil
 }
@@ -299,6 +314,7 @@ func (s *Service) run(sweep model.SpectrumSweep) {
 		sweep.State = model.SweepFailed
 		sweep.Error = err.Error()
 		_ = s.Store.PutSweep(context.Background(), sweep)
+		s.publish(sweep)
 		return
 	}
 
@@ -307,6 +323,7 @@ func (s *Service) run(sweep model.SpectrumSweep) {
 		sweep.State = model.SweepFailed
 		sweep.Error = err.Error()
 		_ = s.Store.PutSweep(context.Background(), sweep)
+		s.publish(sweep)
 		return
 	}
 
@@ -325,4 +342,16 @@ func (s *Service) run(sweep model.SpectrumSweep) {
 	// floor and a peak -- a partial record beats losing the whole measurement
 	// because the largest column would not write.
 	_ = s.Store.PutSweepBins(ctx, sweep.SweepID, raw)
+
+	// After the bins, not before. A client told "completed" fetches the trace
+	// immediately, and announcing the state change first is a race it would
+	// lose -- it would ask for a measurement that is still being written and
+	// cache the answer forever.
+	s.publish(sweep)
+}
+
+func (s *Service) publish(sweep model.SpectrumSweep) {
+	if s.OnUpdate != nil {
+		s.OnUpdate(sweep)
+	}
 }

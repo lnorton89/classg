@@ -21,6 +21,10 @@ const (
 	TopicDetections = "detections"
 	TopicHealth     = "health"
 	TopicCaptures   = "captures"
+	// Sweeps get their own topic rather than riding captures. Both are
+	// operator-initiated measurements, but a client that wants one does not
+	// necessarily want the other, and a sweep document is large.
+	TopicSpectrum = "spectrum"
 )
 
 // Frame types from the contract.
@@ -30,6 +34,7 @@ const (
 	TypeDetection     = "detection"
 	TypeHealth        = "health"
 	TypeCaptureStatus = "capture.status"
+	TypeSweepStatus   = "sweep.status"
 	TypeMonitoring    = "monitoring"
 	TypePing          = "ping"
 	TypePong          = "pong"
@@ -38,14 +43,19 @@ const (
 // Frame is a server-to-client message. Every frame carries type and ts; the
 // rest is set according to type.
 type Frame struct {
-	Type       string            `json:"type"`
-	TS         time.Time         `json:"ts"`
-	Track      *model.Track      `json:"track,omitempty"`
-	TrackID    string            `json:"track_id,omitempty"`
-	Detection  *model.Detection  `json:"detection,omitempty"`
-	Health     *health.Report    `json:"health,omitempty"`
-	Capture    *model.Capture    `json:"capture,omitempty"`
-	Monitoring *monitoring.State `json:"monitoring,omitempty"`
+	Type      string           `json:"type"`
+	TS        time.Time        `json:"ts"`
+	Track     *model.Track     `json:"track,omitempty"`
+	TrackID   string           `json:"track_id,omitempty"`
+	Detection *model.Detection `json:"detection,omitempty"`
+	Health    *health.Report   `json:"health,omitempty"`
+	Capture   *model.Capture   `json:"capture,omitempty"`
+	// Sweep carries the RECORD, never the bins. A completed fpv_1g2 sweep is
+	// well over a megabyte of measurement, and pushing that to every open
+	// browser to say "it finished" would cost more than the sweep did. The
+	// client refetches the detail it wants.
+	Sweep      *model.SpectrumSweep `json:"sweep,omitempty"`
+	Monitoring *monitoring.State    `json:"monitoring,omitempty"`
 }
 
 // TopicFor maps a frame type to the topic a client must have subscribed to.
@@ -59,6 +69,8 @@ func TopicFor(frameType string) string {
 		return TopicHealth
 	case TypeCaptureStatus:
 		return TopicCaptures
+	case TypeSweepStatus:
+		return TopicSpectrum
 	case TypeMonitoring:
 		// Rides the health topic rather than needing its own subscription:
 		// whether the system is recording is part of whether it is working,

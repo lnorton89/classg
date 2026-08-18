@@ -175,9 +175,17 @@ func (f FileSweeper) Sweep(ctx context.Context, band string) ([]byte, error) {
 		}
 
 		if time.Now().After(deadline) {
+			// What is actually in the exchange directory, before withdrawing.
+			// "The agent did not answer" is true and useless on its own: a
+			// request still sitting there means nothing collected it, and a
+			// result under another id means something answered a sweep this
+			// caller was not waiting for. Those are different faults with
+			// different fixes, and the difference is one readdir away.
+			left := f.contents()
 			_ = os.Remove(reqPath)
 			return nil, fmt.Errorf("the sweep agent did not answer within %s. "+
-				"Is classg-sweep-agent.service running on the host?", f.timeout())
+				"Is classg-sweep-agent.service running on the host? "+
+				"The exchange directory holds: %s", f.timeout(), left)
 		}
 	}
 }
@@ -218,4 +226,21 @@ func (f FileSweeper) Agent() (AgentState, bool) {
 		return AgentState{}, false
 	}
 	return st, true
+}
+
+// contents lists the exchange directory for a diagnostic. Best effort: this is
+// only ever called on a path that has already failed.
+func (f FileSweeper) contents() string {
+	entries, err := os.ReadDir(f.Dir)
+	if err != nil {
+		return "unreadable (" + err.Error() + ")"
+	}
+	if len(entries) == 0 {
+		return "nothing"
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return strings.Join(names, ", ")
 }

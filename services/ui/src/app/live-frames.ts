@@ -10,7 +10,13 @@ import type { useQueryClient } from '@tanstack/react-query'
 
 import { normalizeTrack } from '@/lib/api/client'
 import { queryKeys } from '@/lib/api/queries'
-import type { DetectionsResponse, ServerFrame, Track, TracksResponse } from '@/lib/api/types'
+import type {
+  DetectionsResponse,
+  ServerFrame,
+  SpectrumSweepsResponse,
+  Track,
+  TracksResponse,
+} from '@/lib/api/types'
 
 type QueryClientLike = ReturnType<typeof useQueryClient>
 
@@ -84,6 +90,34 @@ export function applyFrame(queryClient: QueryClientLike, frame: ServerFrame): vo
     case 'capture.status': {
       queryClient.setQueryData(queryKeys.capture(frame.capture.capture_id), frame.capture)
       void queryClient.invalidateQueries({ queryKey: queryKeys.captures })
+      break
+    }
+
+    case 'sweep.status': {
+      const sweep = frame.sweep
+      // The list, updated in place rather than invalidated: it is what drives
+      // the "Sweeping…" state on the button, and a refetch would leave that
+      // button wrong for a round trip.
+      queryClient.setQueryData<SpectrumSweepsResponse>(queryKeys.spectrumSweeps, (old) => {
+        if (!old) return old
+        const index = old.sweeps.findIndex((s) => s.sweep_id === sweep.sweep_id)
+        if (index === -1) return { ...old, sweeps: [sweep, ...old.sweeps] }
+        const sweeps = [...old.sweeps]
+        sweeps[index] = sweep
+        return { ...old, sweeps }
+      })
+
+      // The DETAIL is invalidated, not written. This frame carries the record
+      // and never the bins -- a completed wideband sweep is over a megabyte of
+      // measurement -- so writing it into the detail cache would replace a
+      // trace with a record that has none, and the chart would go blank at the
+      // exact moment the measurement arrived.
+      if (sweep.state !== 'running') {
+        void queryClient.invalidateQueries({ queryKey: ['spectrum', 'sweep', sweep.sweep_id] })
+        // A completed sweep gives the radio back, so what the unit can offer
+        // changes with it.
+        void queryClient.invalidateQueries({ queryKey: queryKeys.spectrumBands })
+      }
       break
     }
 

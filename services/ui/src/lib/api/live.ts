@@ -13,13 +13,13 @@
  * stale track list rendered confidently is exactly the failure this project
  * exists to avoid.
  */
-import type { ClientFrame, ServerFrame } from './types'
+import type { ClientFrame, ServerFrame, StreamTopic } from './types'
 
 export type ConnectionState = 'connecting' | 'open' | 'reconnecting' | 'closed'
 
 export interface LiveStreamOptions {
   url: string
-  topics?: ('tracks' | 'health' | 'detections')[]
+  topics?: LiveTopic[]
   /** Injectable for tests. */
   socketFactory?: (url: string) => WebSocket
   /** First retry delay in ms. Doubles per attempt up to `maxDelayMs`. */
@@ -29,11 +29,18 @@ export interface LiveStreamOptions {
   jitter?: () => number
 }
 
-const DEFAULT_TOPICS: ('tracks' | 'health' | 'detections')[] = [
-  'tracks',
-  'health',
-  'detections',
-]
+export type LiveTopic = StreamTopic
+
+/**
+ * Everything the console renders live.
+ *
+ * `captures` and `spectrum` were missing, and the effect was subtle enough to
+ * survive a long time: the server filters frames by subscription, so
+ * capture.status frames were dropped at the hub and the client-side handler
+ * for them was dead code. A running capture only advanced when a query happened
+ * to refetch, and a finished sweep never updated the page that started it.
+ */
+const DEFAULT_TOPICS: LiveTopic[] = ['tracks', 'health', 'detections', 'captures', 'spectrum']
 
 type FrameListener = (frame: ServerFrame) => void
 type StateListener = (state: ConnectionState) => void
@@ -42,7 +49,7 @@ type ConnectListener = (info: { isReconnect: boolean }) => void
 
 export class LiveStream {
   private readonly url: string
-  private readonly topics: ('tracks' | 'health' | 'detections')[]
+  private readonly topics: LiveTopic[]
   private readonly socketFactory: (url: string) => WebSocket
   private readonly baseDelayMs: number
   private readonly maxDelayMs: number
