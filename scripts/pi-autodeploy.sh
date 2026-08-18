@@ -128,7 +128,26 @@ write_state() {
     mv -f "$STATE_JSON.tmp" "$STATE_JSON" 2>/dev/null || true
 }
 
-mkdir -p "$STATE_DIR"
+# The state directory must exist and be writable before anything else. Both
+# failures below were real on first install: Docker creates a missing
+# bind-mount source as root, so the agent -- which runs as an ordinary user --
+# could not write to the directory the container had just made for it.
+if ! mkdir -p "$STATE_DIR" 2>/dev/null; then
+    echo "cannot create $STATE_DIR -- is it owned by another user? " \
+        "(docker creates a missing bind-mount source as root)" >&2
+    exit 1
+fi
+
+# Opening the lock is checked SEPARATELY from taking it, and that distinction is
+# the whole point. When `exec 9>` failed on a root-owned directory, fd 9 was
+# never opened, `flock -n 9` failed with "Bad file descriptor", and the code
+# below read that as ordinary contention and skipped the pass -- quietly, for
+# ever. A watchdog that silently never runs is worse than no watchdog, because
+# the admin page keeps reporting its last successful pass.
+if ! : >>"$STATE_DIR/agent.lock" 2>/dev/null; then
+    echo "cannot write $STATE_DIR/agent.lock -- check ownership of $STATE_DIR" >&2
+    exit 1
+fi
 
 # One agent at a time. The watchdog and the deploy agent both run `docker
 # compose up` on the same project, and they run on independent timers -- so

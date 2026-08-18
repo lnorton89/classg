@@ -15,6 +15,22 @@ SUDOERS=/etc/sudoers.d/classg-watchdog
 [ -d "$REPO_DIR/.git" ] || { echo "no checkout at $REPO_DIR" >&2; exit 1; }
 
 echo "Installing the watchdog from $REPO_DIR"
+
+# Create the shared state directory NOW, owned by this user.
+#
+# Order matters. Docker creates a missing bind-mount source itself, as root, and
+# the agents then cannot write to the directory the container made for them --
+# which is exactly what happened on first install here. Creating it first means
+# Compose finds it and leaves the ownership alone.
+STATE_DIR="${CLASSG_DEPLOY_STATE:-$REPO_DIR/.agent-state}"
+mkdir -p "$STATE_DIR"
+if [ ! -w "$STATE_DIR" ]; then
+    echo "$STATE_DIR exists but is not writable by $USER." >&2
+    echo "If docker created it first:  sudo chown -R $USER $STATE_DIR" >&2
+    exit 1
+fi
+echo "Agent state directory: $STATE_DIR"
+
 sudo install -m 0644 "$REPO_DIR/deploy/systemd/classg-watchdog.service" "$UNIT_DIR/"
 sudo install -m 0644 "$REPO_DIR/deploy/systemd/classg-watchdog.timer" "$UNIT_DIR/"
 
