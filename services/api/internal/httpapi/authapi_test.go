@@ -146,6 +146,14 @@ func TestRoleEnforcementAcrossTheAPI(t *testing.T) {
 		{"POST", "/api/v1/admin/users", `{"username":"x","password":"` + testPassword + `","role":"viewer"}`, auth.RoleAdmin},
 		{"GET", "/api/v1/admin/sessions", "", auth.RoleAdmin},
 		{"DELETE", "/api/v1/admin/users/nope", "", auth.RoleAdmin},
+		// Deployment is admin rather than viewer because its log names
+		// branches, commit subjects and failure reasons -- the operator's
+		// infrastructure rather than the airspace.
+		{"GET", "/api/v1/admin/deployment", "", auth.RoleAdmin},
+		{"GET", "/api/v1/admin/deployment/history", "", auth.RoleAdmin},
+		{"GET", "/api/v1/admin/watchdog", "", auth.RoleAdmin},
+		{"GET", "/api/v1/admin/hooks", "", auth.RoleAdmin},
+		{"GET", "/api/v1/admin/hook-deliveries", "", auth.RoleAdmin},
 	}
 
 	roles := []auth.Role{auth.RoleViewer, auth.RoleOperator, auth.RoleAdmin}
