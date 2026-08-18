@@ -7,6 +7,7 @@
  * from the other end.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useRouter } from '@tanstack/react-router'
 import { LogInIcon } from 'lucide-react'
 import { useState } from 'react'
 
@@ -20,6 +21,7 @@ import type { SsoProvider } from '@/lib/api/types'
 
 export function LoginScreen({ providers }: { providers?: SsoProvider[] }) {
   const queryClient = useQueryClient()
+  const router = useRouter()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
 
@@ -36,6 +38,12 @@ export function LoginScreen({ providers }: { providers?: SsoProvider[] }) {
       // Everything cached was fetched as nobody. Drop it rather than showing a
       // signed-in user a page assembled from anonymous 401s.
       void queryClient.invalidateQueries()
+      // And re-run the ROUTE LOADERS, which invalidateQueries does not touch.
+      // A loader that threw a 401 while signed out has already been caught by
+      // the router's error boundary, and no amount of cache invalidation
+      // re-runs it -- so the first page after signing in was an error box
+      // about not being signed in.
+      void router.invalidate()
     },
   })
   const error = login.error instanceof ApiError ? login.error : null

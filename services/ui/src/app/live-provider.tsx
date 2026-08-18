@@ -17,6 +17,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { LiveContext, type LiveContextValue } from '@/app/live-context'
+import { useAuth } from '@/features/auth/use-auth'
 import { applyFrame } from '@/app/live-frames'
 import { createFrameLogger, logConnection, logSessionStart } from '@/features/logs/log-bridge'
 import { API_BASE } from '@/lib/api/client'
@@ -31,6 +32,20 @@ export interface LiveProviderProps {
 }
 
 export function LiveProvider({ children, createStream, enabled = true }: LiveProviderProps) {
+  // The socket needs a session, and this provider mounts above the auth gate.
+  //
+  // Without this it opened one immediately on load, before anyone had signed
+  // in, and the API refused the handshake -- three failed connections and a
+  // console full of "HTTP Authentication failed" on every visit to the login
+  // screen. Worse, the retry then sat in exponential backoff, so the console
+  // came up signed in with no live stream and waited out a delay it had earned
+  // while nobody was logged in.
+  //
+  // Reading the auth query here also means the effect re-runs the moment a
+  // login lands, which is what makes the stream connect immediately rather
+  // than whenever the backoff next fires.
+  const me = useAuth()
+  const connectable = me !== undefined && (me.authenticated || !me.auth_enabled)
   const queryClient = useQueryClient()
   const [connection, setConnection] = useState<ConnectionState>('closed')
   const [lastFrameAt, setLastFrameAt] = useState<number | null>(null)
@@ -42,7 +57,7 @@ export function LiveProvider({ children, createStream, enabled = true }: LivePro
   }, [createStream])
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || !connectable) return
     const stream = factoryRef.current
       ? factoryRef.current()
       : new LiveStream({ url: streamUrl(API_BASE) })
@@ -104,7 +119,7 @@ export function LiveProvider({ children, createStream, enabled = true }: LivePro
       offFrame()
       stream.close()
     }
-  }, [queryClient, enabled])
+  }, [queryClient, enabled, connectable])
 
   const value = useMemo<LiveContextValue>(
     () => ({ connection, lastFrameAt, reconnectAttempt }),

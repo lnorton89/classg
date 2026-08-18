@@ -49,6 +49,22 @@ function NotFound() {
  */
 function RouteError({ error, reset }: { error: Error; reset: () => void }) {
   const isApi = error instanceof ApiError
+
+  // A 401 from a loader is not an error, it is not being signed in yet.
+  //
+  // Route loaders run before the auth gate renders, so opening the console
+  // signed out threw one and this component turned it into a red box reading
+  // "API error: unauthenticated — log in to continue" with a Retry button.
+  // Signing in did not clear it: nothing re-runs a loader that already failed,
+  // so the operator landed on an error about being signed out while signed in.
+  //
+  // Rendering the shell instead hands the decision to AuthGate, which shows the
+  // login screen and then the page. The loaders re-run on the router
+  // invalidation the login mutation issues.
+  if (isApi && error.status === 401) {
+    return <AppShell>{null}</AppShell>
+  }
+
   return (
     <AppShell>
       <div className="p-6">
