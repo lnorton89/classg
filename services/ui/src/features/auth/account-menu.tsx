@@ -1,18 +1,19 @@
 /**
- * Who you are, and everything that follows from it.
+ * The gear: settings, and everything that follows from who you are.
  *
- * This was two bare icon buttons in the header — a shield that linked
- * somewhere and an arrow that signed you out — sitting alongside seven other
- * controls in a row that did not fit a phone. Neither icon said what it did,
- * and "shield" and "door" are not a menu.
+ * This was two icons in the header — a gear that linked straight to Settings,
+ * and a shield or a person that opened this same menu — answering the same
+ * question ("where do I manage this console") two different ways side by
+ * side. One control now: the gear opens the menu, and Settings is the first
+ * thing in it rather than a second button next to it.
  *
- * It is a menu now, and it absorbed the controls that had no business
- * spending header width — or, on a phone, bottom-nav width — of their own:
- * Settings, which is somewhere you go once to set the console up; the command
- * palette, which on a phone is a keyboard accelerator with no keyboard; and
- * Logs and Docs, which used to sit in the primary nav and made the bottom bar
- * seven destinations deep. Neither is reached for mid-incident the way Live
- * or Tracks is, so both live here instead, one tap away at every width.
+ * Before that it was two bare icon buttons — a shield that linked somewhere
+ * and an arrow that signed you out — sitting alongside seven other controls
+ * in a row that did not fit a phone. It absorbed the command palette, which
+ * on a phone is a keyboard accelerator with no keyboard, and Logs and Docs,
+ * which used to sit in the primary nav and made the bottom bar seven
+ * destinations deep. Neither is reached for mid-incident the way Live or
+ * Tracks is, so both live here instead, one tap away at every width.
  *
  * It still carries the auth-disabled warning, and that still does not go away.
  * A box whose authentication somebody switched off and forgot is worse than
@@ -28,7 +29,6 @@ import {
   SettingsIcon,
   ShieldAlertIcon,
   ShieldCheckIcon,
-  UserIcon,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
@@ -93,18 +93,13 @@ export function AccountMenu({ onOpenPalette }: { onOpenPalette: () => void }) {
       trigger={
         <button
           type="button"
-          aria-label={`Signed in as ${label}, role ${user.role}. Open the account menu.`}
+          aria-label={`Settings. Signed in as ${label}, role ${user.role}.`}
           className={cn(
-            'text-muted-foreground hover:text-foreground hover:bg-accent',
-            'flex size-8 shrink-0 items-center justify-center rounded-full border border-transparent',
-            'transition-colors focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+            buttonVariants({ variant: 'ghost', size: 'icon' }),
+            'text-muted-foreground hover:text-foreground',
           )}
         >
-          {user.role === 'admin' ? (
-            <ShieldCheckIcon className="size-4" aria-hidden />
-          ) : (
-            <UserIcon className="size-4" aria-hidden />
-          )}
+          <SettingsIcon className="size-4" aria-hidden />
         </button>
       }
     >
