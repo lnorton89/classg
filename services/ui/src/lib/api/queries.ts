@@ -130,11 +130,43 @@ export const trackDetectionsQuery = (trackId: string) =>
  * detections are the source — see ui-design.md, "How manned traffic reaches the
  * map" for why this is an inference rather than a documented path.
  */
+/**
+ * How far back manned traffic is considered current.
+ *
+ * An aircraft in range reports position every few seconds, so anything that has
+ * not been heard for five minutes is out of range or on the ground. It was
+ * previously unbounded, which meant the panel plotted aircraft last heard
+ * sixteen hours earlier alongside one heard thirty-five minutes ago and
+ * presented both as traffic that is up there now.
+ *
+ * Five rather than one: a brief gap in the feed, or a slow dump1090, should not
+ * make an aircraft flicker out of the list while it is still overhead.
+ */
+export const ADSB_WINDOW_MS = 5 * 60_000
+
+/**
+ * Manned traffic, bounded to the recent past.
+ *
+ * The key names the WINDOW, not the instant. Putting a timestamp in the key
+ * would mint a new cache entry on every render and refetch constantly; `since`
+ * is computed inside queryFn instead, so each fetch is fresh while the key
+ * stays stable.
+ *
+ * staleTime is short and there is a refetch interval, because this is live
+ * traffic. It used to be `Infinity`, which meant the first response was kept
+ * for the life of the page.
+ */
 export const adsbDetectionsQuery = () =>
   queryOptions({
     queryKey: queryKeys.detections({ class: ['D'], limit: 200 }),
-    queryFn: () => api.detections({ class: ['D'], limit: 200 }),
-    staleTime: Infinity,
+    queryFn: () =>
+      api.detections({
+        class: ['D'],
+        limit: 200,
+        since: new Date(Date.now() - ADSB_WINDOW_MS).toISOString(),
+      }),
+    staleTime: 10_000,
+    refetchInterval: 20_000,
   })
 
 /**

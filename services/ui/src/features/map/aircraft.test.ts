@@ -76,3 +76,50 @@ describe('aircraftFromDetections', () => {
     expect(aircraftFromDetections([])).toEqual([])
   })
 })
+
+describe('aircraftFromDetections age bound', () => {
+  const now = Date.parse('2026-08-18T12:00:00Z')
+
+  function at(minutesAgo: number, icao: string): Detection {
+    return {
+      schema_version: '1.0',
+      detection_id: `${icao}-${minutesAgo}`,
+      ts: new Date(now - minutesAgo * 60_000).toISOString(),
+      sensor_id: 'sdr-0',
+      sensor_kind: 'sdr',
+      detection_class: 'D',
+      adsb: { icao },
+    }
+  }
+
+  // The bug this closes: an aircraft last heard sixteen hours ago was plotted
+  // beside one heard thirty-five minutes ago, and both were presented as
+  // traffic that is up there right now.
+  it('drops reports older than the window', () => {
+    const out = aircraftFromDetections([at(1, 'AAA111'), at(960, 'BBB222')], 5 * 60_000, now)
+
+    expect(out).toHaveLength(1)
+    expect(out[0]?.adsb?.icao).toBe('AAA111')
+  })
+
+  it('keeps everything when no window is given', () => {
+    const out = aircraftFromDetections([at(1, 'AAA111'), at(960, 'BBB222')])
+
+    expect(out).toHaveLength(2)
+  })
+
+  it('keeps a report exactly at the edge', () => {
+    const out = aircraftFromDetections([at(5, 'AAA111')], 5 * 60_000, now)
+
+    expect(out).toHaveLength(1)
+  })
+
+  // A broken clock is a real report, and dropping contacts silently is worse
+  // than showing one with an odd time.
+  it('keeps a report whose timestamp will not parse', () => {
+    const broken = { ...at(1, 'CCC333'), ts: 'not-a-date' }
+    const out = aircraftFromDetections([broken], 5 * 60_000, now)
+
+    expect(out).toHaveLength(1)
+  })
+})

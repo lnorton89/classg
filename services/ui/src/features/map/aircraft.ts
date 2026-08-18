@@ -17,12 +17,31 @@ import type { Detection } from '@/lib/api/schema.gen'
  * as individual entries rather than dropped — they are still something the
  * receiver heard, and silently discarding contacts is the failure mode this
  * project likes least.
+ *
+ * `maxAgeMs` bounds how old a report may be and still count as traffic that is
+ * up there now. The API is asked for the same window, so this is a second line
+ * rather than the only one — but it is the line that matters if the API ever
+ * answers without honouring `since`, and plotting a sixteen-hour-old aircraft
+ * as current is exactly the kind of confident wrongness this project avoids
+ * elsewhere. Omit it to keep every detection, which is what the tests for the
+ * collapsing behaviour itself want.
  */
-export function aircraftFromDetections(detections: Detection[]): Detection[] {
+export function aircraftFromDetections(
+  detections: Detection[],
+  maxAgeMs?: number,
+  now: number = Date.now(),
+): Detection[] {
   const newestByIcao = new Map<string, Detection>()
   const unattributed: Detection[] = []
 
   for (const detection of detections) {
+    if (maxAgeMs !== undefined) {
+      const at = Date.parse(detection.ts)
+      // A timestamp that will not parse is kept rather than dropped: it is a
+      // real report with a broken clock, and discarding contacts silently is
+      // worse than showing one with an odd time.
+      if (Number.isFinite(at) && now - at > maxAgeMs) continue
+    }
     const icao = detection.adsb?.icao
     if (!icao) {
       unattributed.push(detection)

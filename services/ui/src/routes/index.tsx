@@ -21,7 +21,12 @@ import { useContactSelection } from '@/features/map/selection'
 import { SkyStateBanner } from '@/features/health/components'
 import { computeSkyState } from '@/features/health/sky-state'
 import { partitionTracks } from '@/features/tracks/partition'
-import { adsbDetectionsQuery, healthQuery, tracksQuery } from '@/lib/api/queries'
+import {
+  ADSB_WINDOW_MS,
+  adsbDetectionsQuery,
+  healthQuery,
+  tracksQuery,
+} from '@/lib/api/queries'
 import { cn } from '@/lib/cn'
 
 export const Route = createFileRoute('/')({
@@ -55,7 +60,10 @@ function LiveView() {
   // One entry per aircraft, not per report. The feed is a stream of SBS
   // messages, so an airliner overhead arrives dozens of times and the panel
   // counted every one of them as a separate contact.
-  const adsb = useMemo(() => aircraftFromDetections(adsbData?.detections ?? []), [adsbData])
+  const adsb = useMemo(
+    () => aircraftFromDetections(adsbData?.detections ?? [], ADSB_WINDOW_MS),
+    [adsbData],
+  )
   const showClosed = preferences.showClosedContacts
   // Hiding the closed section has to remove it from the count as well. A
   // "Contacts (12)" tab that opens onto nine rows reads as a rendering fault.
