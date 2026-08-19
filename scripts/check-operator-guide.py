@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Check docs/operator-guide.json against the things it documents.
+"""Check the documented commands against the things they document.
+
+Covers docs/operator-guide.json (which powers the in-app docs page) and the
+README's shell fences, because README rot is what a reader hits first: it
+documented a --channel flag the CLI ignored, a PCAP that exists on one machine,
+`make test` without the `make setup` that has to precede it, and Node 22 against
+a manifest demanding 24. All four were found by a human reading it, which is not
+a process.
 
 The guide powers the in-app docs page, and unlike schemas/ nothing used to
 check it against reality -- it once documented a --channel flag the CLI
@@ -26,6 +33,7 @@ import re
 import shlex
 import subprocess
 import sys
+import pathlib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -60,7 +68,13 @@ def wifi_cli(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def check_wifi_command(line: str, where: str) -> None:
-    tokens = shlex.split(line)
+    try:
+        tokens = shlex.split(line)
+    except ValueError:
+        # An unbalanced quote or a stray escape in a documented command. Worth
+        # nothing to guess at, and worth everything not to abort the whole run
+        # over -- a check that dies on one line stops being run at all.
+        return
     # normalise the two spellings to the part after the program name:
     # `classg-sensor-wifi ...` and `<python> -m classg_wifi.cli ...`
     for i, t in enumerate(tokens):
@@ -115,6 +129,40 @@ def check_command_line(line: str, where: str) -> None:
     # everything else: deliberately unchecked (see module docstring)
 
 
+# Lines that cannot be checked without guessing: placeholders a reader is meant
+# to substitute, command substitution, pipelines and continuations. Checking
+# those would produce false failures, and a check nobody trusts stops being run.
+#
+# Trailing comments are NOT in this list, deliberately. They were, and it made
+# the whole README pass vacuously: nearly every command in it is written
+# `make setup   # what it does`, so skipping any line containing a # skipped
+# almost everything. Verified by breaking `make setup` on purpose and watching
+# the check stay green. The comment is stripped instead.
+SKIP_MARKERS = ("<", "$(", "...", "|", "&&", "\\")
+
+
+def check_markdown(path: pathlib.Path) -> None:
+    """Run the same checks over ```bash fences in a markdown file."""
+    where_file = path.relative_to(REPO).as_posix()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    in_fence = False
+    for n, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("```"):
+            in_fence = stripped.startswith("```bash") or stripped.startswith("```sh")
+            continue
+        if not in_fence or not stripped:
+            continue
+        # Strip a trailing comment before the skip test, so `make setup # why`
+        # is checked as `make setup`.
+        command = stripped.split(" #", 1)[0].rstrip()
+        if not command or command.startswith("#"):
+            continue
+        if any(m in command for m in SKIP_MARKERS):
+            continue
+        check_command_line(command, f"{where_file}:{n}")
+
+
 def main() -> int:
     doc = json.loads(GUIDE.read_text(encoding="utf-8"))
     for d in doc["documents"]:
@@ -125,12 +173,14 @@ def main() -> int:
                     fail(f"{where}: path '{item['path']}' does not exist")
                 for line in item.get("command", "").splitlines():
                     check_command_line(line, where)
+    check_markdown(REPO / "README.md")
+
     if errors:
         for e in errors:
             print(f"FAIL {e}")
         return 1
-    print("operator-guide.json: all paths, make targets, npm scripts and "
-          "classg-sensor-wifi commands check out")
+    print("operator-guide.json and README.md: all paths, make targets, npm "
+          "scripts and classg-sensor-wifi commands check out")
     return 0
 
 
