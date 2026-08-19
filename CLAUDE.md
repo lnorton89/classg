@@ -111,7 +111,7 @@ produced false "verified" reports:
   only ever sees LF. Strip the CRs into a temp copy and check that instead:
 
   ```bash
-  mkdir -p /tmp/sc && for f in scripts/*.sh; do tr -d '' < "$f" > "/tmp/sc/$(basename "$f")"; done
+  mkdir -p /tmp/sc && for f in scripts/*.sh; do tr -d '\r' < "$f" > "/tmp/sc/$(basename "$f")"; done
   shellcheck /tmp/sc/*.sh
   ```
 
