@@ -72,6 +72,55 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("Sessions", func(t *testing.T) { testSessions(t, newStore) })
 	t.Run("SkipTotal", func(t *testing.T) { testSkipTotal(t, newStore) })
 	t.Run("HookRuleFired", func(t *testing.T) { testHookRuleFired(t, newStore) })
+	t.Run("LastSeenBefore", func(t *testing.T) { testLastSeenBefore(t, newStore) })
+}
+
+// LastSeenBefore decides which tracks the stale sweep closes, so the two
+// implementations disagreeing means dev closes a different set to production.
+// Strictly older, in both: a track whose last_seen is EXACTLY the cutoff is not
+// yet stale, and the sweep runs on a timer against a cutoff computed from the
+// same clock -- an inclusive comparison in one store would close a track the
+// other left open, which is a phantom drone on one map and not the other.
+func testLastSeenBefore(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+	cutoff := base.Add(-5 * time.Minute)
+	for _, tr := range []model.Track{
+		track("OLD", cutoff.Add(-time.Second), "CONFIRMED", 0.9),
+		track("EXACT", cutoff, "CONFIRMED", 0.9),
+		track("FRESH", cutoff.Add(time.Second), "CONFIRMED", 0.9),
+	} {
+		if err := s.UpsertTrack(ctx, tr); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	page, err := s.ListTracks(ctx, store.TrackQuery{LastSeenBefore: cutoff})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, tr := range page.Tracks {
+		got[tr.TrackID] = true
+	}
+	if !got["OLD"] {
+		t.Error("a track older than the cutoff must be returned as stale")
+	}
+	if got["EXACT"] {
+		t.Error("a track exactly at the cutoff is not yet stale; the comparison must be strict")
+	}
+	if got["FRESH"] {
+		t.Error("a track newer than the cutoff must not be returned")
+	}
+
+	// Absent means unfiltered, not "before the zero time".
+	all, err := s.ListTracks(ctx, store.TrackQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all.Tracks) != 3 {
+		t.Fatalf("unfiltered returned %d tracks, want 3", len(all.Tracks))
+	}
 }
 
 // SkipTotal means "do not run the count", and both implementations must agree
