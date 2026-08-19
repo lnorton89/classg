@@ -244,6 +244,64 @@ class TestFailures:
         # And it says so on the bus before dying.
         assert pub.heartbeats and pub.heartbeats[-1]["healthy"] is False
 
+    def test_a_single_channel_plan_still_notices_a_vanished_adapter(self, monkeypatch):
+        """The regression that let a dead receiver report healthy for 12 hours.
+
+        The unplug check is otherwise only reachable from a FAILED hop, and the
+        dedicated primary receiver runs a one-channel plan that never retunes.
+        On the Pi that produced frames=0, hops=1, healthy=True and an API
+        reporting status ok while the adapter was not even on the USB bus.
+        """
+        monkeypatch.setattr(capture, "RX_STALL_UNHEALTHY_S", 0.0)
+        monkeypatch.setattr(capture, "interface_exists", lambda iface: False)
+        # Hops succeed, so the hop-failure path is never entered.
+        monkeypatch.setattr(capture, "set_channel", lambda iface, ch: True)
+
+        pub = RecordingPublisher()
+        with pytest.raises(capture.CaptureError, match="disappeared mid-capture"):
+            capture.run_capture(
+                iface="wlan-test",
+                hopper=ChannelHopper(
+                    [ChannelSpec(channel=6, freq_mhz=2437, weight=1.0)],
+                    base_dwell_ms=1,
+                ),
+                pipeline=Pipeline(sensor_id="wifi-test"),
+                publisher=pub,
+                heartbeat_s=0.0,
+                socket_factory=lambda _iface: FakeRadio([]),
+            )
+        # Not the last heartbeat -- the shutdown path adds "capture stopped"
+        # after this one. What matters is that the reason reached the bus.
+        vanished = [h for h in pub.heartbeats if "disappeared" in h["detail"].get("reason", "")]
+        assert vanished, "the vanished adapter must be reported on the bus, not just raised"
+        assert all(h["healthy"] is False for h in vanished)
+
+    def test_a_deaf_but_present_radio_reports_unhealthy_without_dying(self, monkeypatch):
+        """An antenna that fell off is not fixed by a restart, so say so instead."""
+        monkeypatch.setattr(capture, "RX_STALL_UNHEALTHY_S", 0.0)
+        monkeypatch.setattr(capture, "interface_exists", lambda iface: True)
+        monkeypatch.setattr(capture, "set_channel", lambda iface, ch: True)
+
+        _, pub, _, _ = run_once(FakeRadio([]))
+
+        stalled = [h for h in pub.heartbeats if "hearing nothing" in h["detail"].get("reason", "")]
+        assert stalled, "a radio hearing nothing must report unhealthy"
+        assert all(h["healthy"] is False for h in stalled)
+
+    def test_a_radio_that_is_hearing_frames_stays_healthy(self, monkeypatch):
+        """Guard against the stall check firing on a working receiver.
+
+        Deliberately leaves RX_STALL_UNHEALTHY_S at its real value: the point is
+        that a receiver delivering frames never approaches the threshold.
+        """
+        monkeypatch.setattr(capture, "set_channel", lambda iface, ch: True)
+
+        _, pub, _, _ = run_once(FakeRadio([drone_frame()]))
+
+        mid = [h for h in pub.heartbeats[:-1]]  # the last one is the shutdown beat
+        assert mid, "expected at least one in-flight heartbeat"
+        assert all(h["healthy"] is True for h in mid)
+
     def test_a_failed_channel_hop_costs_one_dwell_not_the_capture(self, monkeypatch):
         # The interface is still present -- one bad hop must not end the capture.
         # An unbroken run of them is a different case, covered by

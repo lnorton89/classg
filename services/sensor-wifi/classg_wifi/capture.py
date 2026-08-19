@@ -71,6 +71,12 @@ MAX_CONSECUTIVE_CHANNEL_ERRORS = 5
 # healthy sensor with a message blaming the adapter.
 MAX_CONSECUTIVE_READ_ERRORS = 50
 
+# 2.4 GHz is never actually silent: ordinary access points beacon every ~100 ms,
+# so a monitor-mode radio that has heard NOTHING for minutes is broken, not
+# lucky. Set well above one full sweep of the plan so a quiet 5 GHz dwell in the
+# companion receiver's schedule cannot trip it on its own.
+RX_STALL_UNHEALTHY_S = 120.0
+
 
 class CaptureError(RuntimeError):
     """The radio is unusable. Exit non-zero and let the supervisor restart."""
@@ -375,6 +381,8 @@ def run_capture(
         preflight(iface)
     sock = socket_factory(iface)
     last_heartbeat = 0.0
+    last_frame_at = time.monotonic()
+    frames_at_last_check = 0
     consecutive_read_errors = 0
     consecutive_channel_errors = 0
     tuned_channel: int | None = None
@@ -522,8 +530,50 @@ def run_capture(
 
             now = time.monotonic()
             if now - last_heartbeat >= heartbeat_s:
-                _heartbeat(publisher, stats, pipeline, hopper, iface,
-                           surveyor=surveyor)
+                if stats.frames != frames_at_last_check:
+                    frames_at_last_check = stats.frames
+                    last_frame_at = now
+
+                # A receiver that is hearing frames demonstrably still has its
+                # interface, so this costs nothing on the healthy path.
+                #
+                # It matters because the unplug check further up is only
+                # reachable when a channel hop FAILS, and a single-channel plan
+                # -- exactly what the dedicated primary receiver runs -- never
+                # retunes. That branch can go unreached for the whole life of
+                # the process, which is how a sensor whose adapter had been
+                # unplugged for twelve hours kept publishing healthy heartbeats
+                # with frames=0 while the API reported status ok: an empty map
+                # that looked like a quiet sky.
+                stalled_s = now - last_frame_at
+                if stalled_s >= RX_STALL_UNHEALTHY_S:
+                    if not interface_exists(iface):
+                        _heartbeat(publisher, stats, pipeline, hopper, iface,
+                                   healthy=False, surveyor=surveyor,
+                                   reason=f"{iface} disappeared mid-capture")
+                        raise CaptureError(
+                            f"{iface} disappeared mid-capture. The adapter was "
+                            "unplugged, or its USB link dropped -- a brownout "
+                            "will do it. Check  lsusb  and  dmesg  for a USB "
+                            "reset, then re-run."
+                        )
+                    # Still present, still deaf: a wedged radio, monitor mode
+                    # silently dropped, or an antenna that fell off. Reported
+                    # rather than fatal -- a restart does not screw an antenna
+                    # back on, and the operator needs to see which failure it is.
+                    _heartbeat(
+                        publisher, stats, pipeline, hopper, iface,
+                        healthy=False, surveyor=surveyor,
+                        reason=(
+                            f"no frames for {int(stalled_s)}s on {iface}; the "
+                            "radio is up but hearing nothing. Check the antenna "
+                            "and that monitor mode is still set: "
+                            f"iw dev {iface} info"
+                        ),
+                    )
+                else:
+                    _heartbeat(publisher, stats, pipeline, hopper, iface,
+                               surveyor=surveyor)
                 last_heartbeat = now
                 beat.mark()
     finally:
