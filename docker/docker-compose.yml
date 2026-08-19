@@ -82,6 +82,9 @@ services:
       # nginx serves the UI in this layout, so the API serves no static files.
       CLASSG_UI_DIR: "off"
       CLASSG_CAPTURE_DIR: /captures
+      # Operator captures must target the stable primary-radio name. Passing
+      # the .env override also updates an already-seeded settings database.
+      CLASSG_WIFI_INTERFACE: ${CLASSG_WIFI_INTERFACE:-wlan-alfa}
 
     # The agent-state bind mount is shared with host processes running as the
     # operator, and this container runs as its own unprivileged user. Without a
