@@ -7,7 +7,14 @@
 
 set -euo pipefail
 
-REPO_DIR="${CLASSG_REPO_DIR:-$HOME/classg}"
+# Derived from this script's own location, not $HOME. These scripts sudo
+# internally, so they are meant to be run as the operator -- but running them
+# WITH sudo is the obvious thing to try, and then $HOME is /root, REPO_DIR is
+# /root/classg, and the script exits "no checkout" before it writes anything.
+# That failure is silent in a chain: the units install, the sudoers grants
+# quietly do not, and the agents lose the ability to restart a sensor.
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${CLASSG_REPO_DIR:-$(cd "$HERE/.." && pwd)}"
 UNIT_DIR=/etc/systemd/system
 SUDOERS=/etc/sudoers.d/classg-sweep-agent
 SDR_BIN="$REPO_DIR/services/sensor-sdr/target/release/classg-sensor-sdr"
