@@ -329,6 +329,34 @@ else
     fi
 fi
 
+# Unit files are the one thing a deploy cannot install for you: pi-autodeploy
+# rebuilds containers and restarts services, but installing a systemd unit needs
+# root, and the deploy agent's sudo is deliberately narrow enough that it cannot.
+# So a change to deploy/systemd/ sits in the checkout doing nothing, silently,
+# until somebody runs install.sh -- which is how this unit ran an SDR sensor
+# with none of its sandboxing for a day while the template beside it had all of
+# it. Reported, never acted on: this is a "needs hands" by construction.
+check_unit_drift() {
+    local tpl unit rendered runas iface
+    [ -d "$REPO_DIR/deploy/systemd" ] || return 0
+    runas="$(stat -c %U "$REPO_DIR" 2>/dev/null)" || return 0
+    iface="${CLASSG_WIFI_IFACE:-wlan-alfa}"
+    for tpl in "$REPO_DIR"/deploy/systemd/*.service.in; do
+        [ -e "$tpl" ] || continue
+        unit="$(basename "$tpl" .in)"
+        # Only units this box actually has installed; an optional companion
+        # receiver that was never installed is not drift.
+        [ -f "/etc/systemd/system/$unit" ] || continue
+        rendered="$(sed -e "s|@CLASSG_HOME@|$REPO_DIR|g" -e "s|@IFACE@|$iface|g"             -e "s|@RUNAS@|$runas|g" "$tpl" 2>/dev/null)" || continue
+        if ! printf '%s
+' "$rendered" | diff -q - "/etc/systemd/system/$unit" >/dev/null 2>&1; then
+            log "$unit differs from its template; run sudo ./deploy/systemd/install.sh"
+            note_needs_hands "$unit is out of date (run deploy/systemd/install.sh)"
+        fi
+    done
+}
+check_unit_drift
+
 [ "$ACTIONS" -eq 0 ] && [ -z "$NEEDS_HANDS" ] && log "nothing to repair"
 
 # --- publish ----------------------------------------------------------------
