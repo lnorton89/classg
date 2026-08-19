@@ -56,11 +56,55 @@ CLASSG_TURSO_AUTH_TOKEN=<token>
 ```
 
 Then recreate the api container so it sees the new environment — a restart
-is not enough, the environment is fixed at creation:
+is not enough, the environment is fixed at creation, and `--force-recreate`
+because Compose will otherwise reuse the old container's environment even
+while reporting "Recreated":
 
 ```bash
-docker compose --env-file .env -f docker/docker-compose.yml up -d api
+docker compose --env-file .env -f docker/docker-compose.yml up -d --force-recreate api
 ```
+
+### 2a. Seeding a unit that already has data
+
+**A database created before you configured Turso cannot simply become a
+replica.** A replica keeps sidecar metadata next to the database (`classg.db-info`),
+and an ordinary SQLite file has none, so the API reports:
+
+```
+sync error: invalid local state: db file exists but metadata file does not
+```
+
+Skip this section on a fresh unit — there is nothing to preserve, and step 2
+is enough. On a unit that has been running, the existing database holds your
+**operator accounts** as well as the detection history, so do not simply
+delete it: a fresh replica syncing down from an empty Turso database leaves
+you at the first-run setup screen with no way back in.
+
+Seed Turso from the existing database first, then let the replica pull it
+back down. This needs only `sqlite3` and `curl`:
+
+```bash
+# 1. Dump the live database from a copy, so a writer cannot tear the dump.
+docker run --rm -v classg-data:/d -v /tmp:/out alpine sh -c   'apk add --no-cache sqlite >/dev/null && cp /d/classg.db /tmp/s.db &&    sqlite3 /tmp/s.db .dump > /out/classg-dump.sql'
+
+# 2. Push it to Turso over the HTTP pipeline API, in batches. Split the dump
+#    with sqlite3.complete_statement rather than on ";" -- a semicolon inside a
+#    string literal will otherwise cut a statement in half, and the rows that
+#    carry raw frame payloads are exactly the ones that contain them.
+#    scripts/seed-turso.py does this.
+python3 scripts/seed-turso.py /tmp/classg-dump.sql "$HOST" "$TOKEN"
+
+# 3. Back up and clear the volume so the replica can bootstrap clean.
+docker compose --env-file .env -f docker/docker-compose.yml stop api
+docker run --rm -v classg-data:/d -v "$BACKUP":/bk alpine cp -a /d/. /bk/
+docker run --rm -v classg-data:/d alpine sh -c 'rm -f /d/classg.db*'
+
+# 4. Start it. The replica pulls everything back down.
+docker compose --env-file .env -f docker/docker-compose.yml up -d --force-recreate api
+```
+
+Confirm `classg.db-info` now exists in the volume and that your accounts came
+back before deleting the backup.
 
 ### 3. Verify it is actually flowing
 
