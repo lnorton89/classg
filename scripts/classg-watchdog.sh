@@ -345,19 +345,27 @@ fi
 # with none of its sandboxing for a day while the template beside it had all of
 # it. Reported, never acted on: this is a "needs hands" by construction.
 check_unit_drift() {
-    local tpl unit rendered runas iface
+    local tpl unit rendered runas iface installed
     [ -d "$REPO_DIR/deploy/systemd" ] || return 0
     runas="$(stat -c %U "$REPO_DIR" 2>/dev/null)" || return 0
-    iface="${CLASSG_WIFI_IFACE:-wlan-alfa}"
     for tpl in "$REPO_DIR"/deploy/systemd/*.service.in; do
         [ -e "$tpl" ] || continue
         unit="$(basename "$tpl" .in)"
         # Only units this box actually has installed; an optional companion
         # receiver that was never installed is not drift.
-        [ -f "/etc/systemd/system/$unit" ] || continue
-        rendered="$(sed -e "s|@CLASSG_HOME@|$REPO_DIR|g" -e "s|@IFACE@|$iface|g"             -e "s|@RUNAS@|$runas|g" "$tpl" 2>/dev/null)" || continue
+        installed="/etc/systemd/system/$unit"
+        [ -f "$installed" ] || continue
+
+        # The interface is an install-time CHOICE -- install.sh takes it as its
+        # first argument and records it nowhere else -- so it is read back out
+        # of the installed unit rather than guessed. Guessing the default made
+        # any unit installed for a different adapter report drift on every pass,
+        # for ever, which is how a real signal gets trained into noise.
+        iface="$(sed -n 's/.*--iface \([^ ]*\).*/\1/p' "$installed" | head -1)"
+        [ -n "$iface" ] || iface="${CLASSG_WIFI_IFACE:-wlan-alfa}"
+        rendered="$(sed -e "s|@CLASSG_HOME@|$REPO_DIR|g" -e "s|@IFACE@|$iface|g" -e "s|@RUNAS@|$runas|g" "$tpl" 2>/dev/null)" || continue
         if ! printf '%s
-' "$rendered" | diff -q - "/etc/systemd/system/$unit" >/dev/null 2>&1; then
+' "$rendered" | diff -q - "$installed" >/dev/null 2>&1; then
             log "$unit differs from its template; run sudo ./deploy/systemd/install.sh"
             note_needs_hands_only "$unit is out of date (run deploy/systemd/install.sh)"
         fi

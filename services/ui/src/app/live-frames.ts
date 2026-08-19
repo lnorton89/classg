@@ -52,13 +52,18 @@ const MAX_CLOSED_PER_LIST = 500
 function evictExcessClosed(tracks: Track[]): Track[] {
   const closed = tracks.filter((t) => t.state === 'CLOSED')
   if (closed.length <= MAX_CLOSED_PER_LIST) return tracks
-  const cutoff = closed
-    .map((t) => t.last_seen)
-    .sort()
-    .at(closed.length - MAX_CLOSED_PER_LIST - 1)
-  return tracks.filter(
-    (t) => t.state !== 'CLOSED' || cutoff === undefined || t.last_seen > cutoff,
+  // By identity, not by timestamp. Comparing `last_seen > cutoff` evicts every
+  // closed track SHARING the cutoff instant, and fusion closes tracks in
+  // batches on one reap tick -- so a tie there dropped tens of entries where
+  // two were meant to go.
+  const doomed = new Set(
+    closed
+      .slice()
+      .sort((a, b) => (a.last_seen < b.last_seen ? -1 : a.last_seen > b.last_seen ? 1 : 0))
+      .slice(0, closed.length - MAX_CLOSED_PER_LIST)
+      .map((t) => t.track_id),
   )
+  return tracks.filter((t) => !doomed.has(t.track_id))
 }
 
 /** Pure-ish reducer over the cache for one server frame. */
@@ -107,15 +112,31 @@ export function applyFrame(queryClient: QueryClientLike, frame: ServerFrame): vo
       queryClient.setQueryData<Track>(queryKeys.track(frame.track_id), (old) =>
         old ? { ...old, state: 'CLOSED' } : old,
       )
-      queryClient.setQueriesData<TracksResponse>({ queryKey: ['tracks', 'list'] }, (old) => {
-        if (!old) return old
+      // Same filter rule as track.update above: closing a track can move it
+      // out of a query that excludes CLOSED, and leaving it there would show a
+      // reading the server no longer stands behind. getQueriesData, because the
+      // filters live in each entry's own key.
+      for (const [key, old] of queryClient.getQueriesData<TracksResponse>({
+        queryKey: ['tracks', 'list'],
+      })) {
+        if (!old) continue
         const index = old.tracks.findIndex((t) => t.track_id === frame.track_id)
         const existing = index === -1 ? undefined : old.tracks[index]
-        if (!existing || existing.state === 'CLOSED') return old
+        if (!existing || existing.state === 'CLOSED') continue
+        const closed = { ...existing, state: 'CLOSED' as const }
+        const query = (key[2] ?? {}) as TracksQuery
+        if (!matchesQuery(closed, query)) {
+          queryClient.setQueryData<TracksResponse>(key, {
+            ...old,
+            tracks: old.tracks.filter((t) => t.track_id !== frame.track_id),
+            total: Math.max(0, old.total - 1),
+          })
+          continue
+        }
         const tracks = old.tracks.slice()
-        tracks[index] = { ...existing, state: 'CLOSED' }
-        return { ...old, tracks }
-      })
+        tracks[index] = closed
+        queryClient.setQueryData<TracksResponse>(key, { ...old, tracks })
+      }
       break
     }
 

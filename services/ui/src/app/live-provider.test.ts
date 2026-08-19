@@ -131,6 +131,47 @@ describe('applyFrame', () => {
     expect(client.getQueryData<Track>(queryKeys.track('T1'))?.state).toBe('CLOSED')
   })
 
+  it('removes a closing track from a list whose filter excludes CLOSED', () => {
+    // track.update learned to respect each entry's own filters; track.closed
+    // has to as well, or closing a track parks it in a list that asked not to
+    // see closed ones.
+    const client = new QueryClient()
+    const key = queryKeys.tracks({ state: ['TENTATIVE', 'CONFIRMED', 'COASTING'] })
+    client.setQueryData<TracksResponse>(key, {
+      tracks: [track('T1')],
+      next_cursor: null,
+      total: 1,
+    })
+
+    applyFrame(client, { type: 'track.closed', ts: FRAME_TS, track_id: 'T1' })
+
+    expect(client.getQueryData<TracksResponse>(key)).toMatchObject({ tracks: [], total: 0 })
+  })
+
+  it('evicts only the overflow when closed tracks share a last_seen', () => {
+    // Fusion closes tracks in batches on one reap tick, so ties are normal.
+    // Comparing against a cutoff TIMESTAMP dropped every track sharing it --
+    // tens of entries where two were meant to go.
+    const client = new QueryClient()
+    const tied = Array.from({ length: 520 }, (_, i) => ({
+      ...track(`C${i}`),
+      state: 'CLOSED' as const,
+      last_seen: '2026-08-10T00:00:01Z',
+    }))
+    client.setQueryData<TracksResponse>(queryKeys.tracks(), {
+      tracks: tied,
+      next_cursor: null,
+      total: tied.length,
+    })
+
+    // Appending one more track is what triggers eviction.
+    applyFrame(client, { type: 'track.update', ts: FRAME_TS, track: track('NEW') })
+
+    const after = client.getQueryData<TracksResponse>(queryKeys.tracks())
+    const closed = (after?.tracks ?? []).filter((t) => t.state === 'CLOSED')
+    expect(closed).toHaveLength(500)
+  })
+
   it('only caches ADS-B detections from the live stream', () => {
     const client = new QueryClient()
     const query = queryKeys.detections({ class: ['D'], limit: 200 })
