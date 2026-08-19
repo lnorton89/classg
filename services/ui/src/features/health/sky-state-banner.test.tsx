@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { SkyState } from './sky-state'
 import { SkyStateBanner } from './components'
@@ -42,6 +42,13 @@ async function advance(ms: number) {
 }
 
 describe('SkyStateBanner', () => {
+  beforeEach(() => {
+    // Dismissal now persists in sessionStorage precisely so it survives a
+    // remount — see dismissal-store.ts — which means it also survives across
+    // tests unless cleared.
+    window.sessionStorage.clear()
+  })
+
   afterEach(() => {
     vi.useRealTimers()
   })
@@ -81,6 +88,28 @@ describe('SkyStateBanner', () => {
     // Past the exit animation too.
     await advance(200)
     expect(screen.queryByText('Quiet sky')).not.toBeInTheDocument()
+  })
+
+  it('stays dismissed across a remount — dismissing on the Live route and navigating away and back must not bring it back', async () => {
+    vi.useFakeTimers()
+    const { unmount } = render(<SkyStateBanner state={quietSky()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss until the sky state changes' }))
+    await advance(200) // past the exit animation, which is what actually persists the dismissal
+    unmount()
+
+    render(<SkyStateBanner state={quietSky()} />)
+    expect(screen.queryByText('Quiet sky')).not.toBeInTheDocument()
+  })
+
+  it('a persisted quiet-sky dismissal does not leak into hiding a later, different kind', async () => {
+    vi.useFakeTimers()
+    const { unmount } = render(<SkyStateBanner state={quietSky()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss until the sky state changes' }))
+    await advance(200)
+    unmount()
+
+    render(<SkyStateBanner state={sensorDown()} />)
+    expect(screen.getByText('Coverage degraded')).toBeInTheDocument()
   })
 
   it('never auto-dismisses a state where the absence of tracks is not evidence', async () => {

@@ -13,6 +13,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataRow } from '@/components/ui/misc'
 import { Tooltip } from '@/components/ui/tooltip'
 import { useFormat, useTicker } from '@/app/use-format'
+import { createDismissalStore } from '@/features/notifications/dismissal-store'
+import { useDismissal } from '@/features/notifications/use-dismissal'
 import type { SensorHealth } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
@@ -45,6 +47,13 @@ const SWIPE_DISMISS_PX = 88
 /** How long the slide-away plays before the banner actually unmounts. */
 const CLOSE_ANIMATION_MS = 180
 
+/**
+ * This route's own component unmounts on every navigation away from `/`, so
+ * the dismissal has to live outside it — see dismissal-store.ts for why that
+ * used to make "Quiet sky" reappear.
+ */
+const skyStateDismissal = createDismissalStore('classg.dismissed.sky-state')
+
 export function SkyStateBanner({
   state,
   className,
@@ -57,9 +66,9 @@ export function SkyStateBanner({
   // Keyed on the state's KIND, so dismissing "quiet sky" does not also hide
   // the "coverage degraded" that replaces it a minute later. Any change in
   // what the banner says brings it back.
-  const [dismissedKind, setDismissedKind] = useState<string | null>(null)
   const dismissible = state.absenceIsEvidence
-  const dismissed = dismissible && dismissedKind === state.kind
+  const [dismissedForKind, dismiss] = useDismissal(skyStateDismissal, state.kind)
+  const dismissed = dismissible && dismissedForKind
 
   // Swipe and the timer both end here: a short slide-and-fade before the
   // banner actually leaves the tree, so a released swipe or an expired timer
@@ -72,15 +81,17 @@ export function SkyStateBanner({
   function commitDismiss(direction: 1 | -1) {
     if (closing !== null) return
     setClosing(direction)
-    setTimeout(() => setDismissedKind(state.kind), CLOSE_ANIMATION_MS)
+    setTimeout(dismiss, CLOSE_ANIMATION_MS)
   }
 
   useEffect(() => {
-    if (!dismissible) return
+    // Already dismissed (persisted from before this mount) — nothing to
+    // count down to.
+    if (!dismissible || dismissed) return
     const id = setTimeout(() => commitDismiss(1), QUIET_SKY_DISMISS_MS)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- commitDismiss closes over state.kind, which is already this effect's dependency.
-  }, [dismissible, state.kind])
+  }, [dismissible, dismissed, state.kind])
 
   if (dismissed) return null
 
