@@ -33,6 +33,7 @@ import {
 import { useState, type ReactNode } from 'react'
 
 import { Popover } from '@/components/ui/popover'
+import { useMenuKeys } from '@/components/ui/use-menu-keys'
 import { Tooltip } from '@/components/ui/tooltip'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { api } from '@/lib/api/client'
@@ -45,6 +46,7 @@ export function AccountMenu({ onOpenPalette }: { onOpenPalette: () => void }) {
   const queryClient = useQueryClient()
   const me = useAuth()
   const [open, setOpen] = useState(false)
+  const [menuRef, onMenuKeyDown] = useMenuKeys()
 
   const logout = useMutation({
     mutationFn: () => api.logout(),
@@ -103,7 +105,16 @@ export function AccountMenu({ onOpenPalette }: { onOpenPalette: () => void }) {
         </button>
       }
     >
-      <div className="divide-border/60 divide-y">
+      <div
+        ref={menuRef}
+        onKeyDown={onMenuKeyDown}
+        role="menu"
+        aria-label="Account"
+        // A menu owns arrow-key focus, so the container itself must be
+        // focusable to receive the keydown before an item has focus.
+        tabIndex={-1}
+        className="divide-border/60 divide-y"
+      >
         <div className="px-3 py-2.5">
           <p className="truncate text-sm font-medium">{label}</p>
           <p className="text-muted-foreground text-2xs">
@@ -194,7 +205,7 @@ function MenuLink({
   onSelect: () => void
 }) {
   return (
-    <Link to={to} onClick={onSelect} className={ITEM_CLASS}>
+    <Link to={to} role="menuitem" onClick={onSelect} className={ITEM_CLASS}>
       <span className="text-muted-foreground">{icon}</span>
       {children}
     </Link>
@@ -213,7 +224,13 @@ function MenuButton({
   disabled?: boolean
 }) {
   return (
-    <button type="button" onClick={onSelect} disabled={disabled} className={ITEM_CLASS}>
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onSelect}
+      disabled={disabled}
+      className={ITEM_CLASS}
+    >
       <span className="text-muted-foreground">{icon}</span>
       {children}
     </button>

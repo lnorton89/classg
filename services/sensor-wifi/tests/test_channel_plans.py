@@ -14,8 +14,23 @@ def channels(name: str) -> list[int]:
     return [int(entry["channel"]) for entry in doc["channels"]]
 
 
-def test_primary_receiver_stays_on_measured_drone_channel():
-    assert channels("channels-primary.yaml") == [6]
+def test_primary_receiver_leads_on_the_measured_drone_channel():
+    """Weighted toward 6, but not parked on it.
+
+    Parked, the receiver produced zero frames forever and was indistinguishable
+    from a dead one -- channel 6 is empty at this site. It must still visit
+    channels something transmits on, or it has no proof of life.
+    """
+    import yaml
+
+    doc = yaml.safe_load((CONFIG / "channels-primary.yaml").read_text(encoding="utf-8"))
+    weights = {int(e["channel"]): float(e["weight"]) for e in doc["channels"]}
+
+    assert 6 in weights, "the measured Remote ID channel must still be covered"
+    assert len(weights) > 1, "a single-channel plan has no proof of life"
+    assert weights[6] > sum(w for c, w in weights.items() if c != 6), (
+        "channel 6 must still dominate the plan"
+    )
 
 
 def test_companion_plan_never_duplicates_primary_or_us_disabled_channels():

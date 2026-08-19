@@ -25,4 +25,8 @@ RUN cd services/ui && npm run build
 FROM nginx:1.27-alpine
 COPY services/ui/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /src/services/ui/dist /usr/share/nginx/html
+# The build emits hidden source maps so a crash can still be symbolicated from
+# the build stage; nothing references them at runtime and nginx has no business
+# serving them. Dropping them takes ~4.7 MB off the image the Pi has to store.
+RUN find /usr/share/nginx/html -name '*.map' -delete
 EXPOSE 80

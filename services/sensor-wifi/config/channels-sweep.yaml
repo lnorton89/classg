@@ -1,7 +1,7 @@
 # Companion receiver plan for the TP-Link Archer TX20U Plus.
 #
-# Channel 6 is deliberately absent: the primary ALFA receiver covers it
-# continuously. Splitting rather than duplicating the plans increases discovery
+# Channel 6 is deliberately absent: the primary ALFA receiver weights it at
+# ~83% of its dwells and escalates onto it on contact. Splitting rather than duplicating the plans increases discovery
 # coverage for a second aircraft and keeps 5 GHz visible while channel 6 is
 # busy. Channels 12/13 are omitted from this US deployment plan; the vendor
 # rtl8852au driver incorrectly advertises them as usable under the current

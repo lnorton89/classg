@@ -123,7 +123,13 @@ export default defineConfig(({ mode }) => {
 
     build: {
       outDir: 'dist',
-      sourcemap: true,
+      // 'hidden' rather than true: the maps are still produced, so a stack
+      // trace can be symbolicated from a build artifact, but no
+      // sourceMappingURL comment ships -- and the runtime image drops the .map
+      // files entirely (see Dockerfile). They were the largest thing in the
+      // image at ~4.7 MB, served publicly, and they hand a reader the whole
+      // unminified source of a security tool.
+      sourcemap: 'hidden',
       // Vite 8 default target is 'baseline-widely-available'. maplibre-gl v6 needs
       // WebGL2, which implies a browser newer than that baseline anyway.
       rolldownOptions: {

@@ -1,8 +1,30 @@
 # Dedicated primary receiver plan.
 #
-# The ALFA stays on the Mini 5 Pro's measured Remote ID channel instead of
-# paying the retune penalty or abandoning the rest of the band while an
-# adaptive lock is active. The companion TP-Link service owns the sweep plan.
+# Weighted hard toward the Mini 5 Pro's measured Remote ID channel, but NOT
+# parked on it. Parking was the first version of this file and it had two
+# faults, both seen on the real unit:
+#
+#   1. No proof of life. A receiver pinned to a channel nothing else transmits
+#      on produces zero frames, forever, and looks identical whether it is
+#      working or its antenna fell off. On this Pi that meant 0 frames across
+#      116,788 dwells and `tcpdump -i wlan-alfa "type mgt subtype beacon"`
+#      printing nothing at all -- channel 6 is simply empty here. You would find
+#      out the radio was dead on the day a drone flew over and nothing appeared.
+#
+#   2. It hand-rolled a job the hopper already does better. On a detection the
+#      hopper locks to that channel for escalation_hold_s and still scans every
+#      escalation_scan_every dwells (~9% of listening time), so the fast lock is
+#      already there -- without giving up discovery to get it.
+#
+# The weights keep channel 6 dominant (~83% of dwells) so the intent survives:
+# 1 and 11 are the other two non-overlapping 2.4 GHz channels, visited often
+# enough that beacons prove the radio hears, and they cost almost nothing
+# because the companion receiver already sweeps them heavily.
 
 channels:
-  - { channel: 6, freq_mhz: 2437, weight: 1.0 }
+  - { channel: 6, freq_mhz: 2437, weight: 10.0 }
+
+  # Proof-of-life, and the two channels a 2.4 GHz drone is next most likely to
+  # use if it is not on 6.
+  - { channel: 1, freq_mhz: 2412, weight: 1.0 }
+  - { channel: 11, freq_mhz: 2462, weight: 1.0 }
