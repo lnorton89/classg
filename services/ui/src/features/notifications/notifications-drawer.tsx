@@ -22,10 +22,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Tooltip } from '@/components/ui/tooltip'
+import { useSwipeDismiss } from '@/components/ui/use-swipe-dismiss'
 import { logStore } from '@/features/logs/log-store'
 import { tracksQuery } from '@/lib/api/queries'
 import { cn } from '@/lib/cn'
 
+import { clearedNotifications } from './cleared-store'
 import {
   buildFeed,
   countUnread,
@@ -88,8 +90,13 @@ export function NotificationsDrawer() {
     logStore.getSnapshot,
     logStore.getSnapshot,
   )
+  const clearedIds = useSyncExternalStore(
+    clearedNotifications.subscribe,
+    clearedNotifications.getSnapshot,
+    clearedNotifications.getSnapshot,
+  )
 
-  const feed = useMemo(
+  const rawFeed = useMemo(
     () =>
       buildFeed({
         tracks: data?.tracks ?? [],
@@ -99,6 +106,10 @@ export function NotificationsDrawer() {
         limit: RENDER_LIMIT,
       }),
     [data, entries, preferences.notifyCategories, preferences.notifyMinLevel],
+  )
+  const feed = useMemo(
+    () => rawFeed.filter((item) => !clearedIds.has(item.id)),
+    [rawFeed, clearedIds],
   )
 
   const unread = countUnread(feed, lastSeenAt)
@@ -258,7 +269,10 @@ export function NotificationsDrawer() {
 
             <div className="min-h-0 flex-1 overflow-y-auto">
               {feed.length === 0 ? (
-                <EmptyFeed onNavigate={() => setOpen(false)} />
+                <EmptyFeed
+                  onNavigate={() => setOpen(false)}
+                  clearedSomething={rawFeed.length > 0}
+                />
               ) : (
                 <ul className="divide-border divide-y">
                   {feed.map((item) => (
@@ -277,11 +291,19 @@ export function NotificationsDrawer() {
 }
 
 /**
- * Two different empty states in one, because they mean opposite things: an
- * operator who has switched every category off should not be told the sky was
- * quiet.
+ * Three different empty states in one, because they mean three different
+ * things: an operator who switched every category off should not be told the
+ * sky was quiet, and one who cleared everything themselves should not be told
+ * nothing was ever recorded.
  */
-function EmptyFeed({ onNavigate }: { onNavigate: () => void }) {
+function EmptyFeed({
+  onNavigate,
+  clearedSomething,
+}: {
+  onNavigate: () => void
+  /** The feed had rows before clearing/category filtering removed them all. */
+  clearedSomething: boolean
+}) {
   const { preferences } = usePreferences()
   const categories = preferences.notifyCategories
   const allOff = Object.values(categories).every((on) => !on)
@@ -304,6 +326,14 @@ function EmptyFeed({ onNavigate }: { onNavigate: () => void }) {
     )
   }
 
+  if (clearedSomething) {
+    return (
+      <p className="text-muted-foreground p-4 text-sm">
+        Everything here has been cleared. New activity will still appear as it happens.
+      </p>
+    )
+  }
+
   return (
     <p className="text-muted-foreground p-4 text-sm">
       Nothing recorded yet. The receiver records continuously, so an empty list means a quiet
@@ -318,6 +348,16 @@ function NotificationRow({ item, onNavigate }: { item: Notification; onNavigate:
   // drawer on a quiet sky, so it drives its own clock -- slowly, since the
   // ages it shows are coarse anyway.
   useTicker(5000)
+
+  // Removal itself happens one level up: clearing writes to the shared store,
+  // the drawer's feed re-filters, and this row's `<li>` drops out of the list
+  // -- which is what actually unmounts it, `animationMs` after commit. Until
+  // then the row keeps rendering so the slide-and-fade has something to play.
+  const { closing, dragging, style, commit, handlers } = useSwipeDismiss({
+    enabled: true,
+    onDismiss: () => clearedNotifications.clear(item.id),
+  })
+  const exiting = closing !== null
 
   const Icon = CATEGORY_ICON[item.category]
   const body = (
@@ -356,22 +396,55 @@ function NotificationRow({ item, onNavigate }: { item: Notification; onNavigate:
     </>
   )
 
-  if (item.trackId) {
-    return (
-      <Link
-        to="/tracks/$trackId"
-        params={{ trackId: item.trackId }}
-        onClick={onNavigate}
-        className="hover:bg-accent/50 block px-4 py-3"
-      >
-        {body}
-      </Link>
-    )
-  }
-
   // Not every event has somewhere to go. A row that looks clickable and is not
   // is worse than a plain one.
-  return <div className="px-4 py-3">{body}</div>
+  const content = item.trackId ? (
+    <Link
+      to="/tracks/$trackId"
+      params={{ trackId: item.trackId }}
+      onClick={onNavigate}
+      className="hover:bg-accent/50 block min-w-0 flex-1 px-4 py-3"
+    >
+      {body}
+    </Link>
+  ) : (
+    <div className="min-w-0 flex-1 px-4 py-3">{body}</div>
+  )
+
+  return (
+    <div
+      {...handlers}
+      data-notification-id={item.id}
+      className={cn(
+        'group flex touch-pan-y items-stretch',
+        !dragging && 'transition-[transform,opacity] duration-200 ease-out',
+      )}
+      style={style}
+    >
+      {content}
+      <Tooltip content="Clear">
+        <button
+          type="button"
+          onClick={() => commit(1)}
+          // See the matching comment on SkyStateBanner's dismiss button: the
+          // row's own onPointerDown captures the pointer for swiping, and a
+          // browser retargets the resulting click to the capturing element
+          // rather than this button unless the press is stopped here first.
+          onPointerDown={(event) => event.stopPropagation()}
+          disabled={exiting}
+          aria-label={`Clear notification: ${item.title}`}
+          className={cn(
+            'text-muted-foreground hover:text-foreground hover:bg-foreground/10',
+            'my-auto mr-2 shrink-0 rounded-md p-1 opacity-0 transition-colors',
+            'group-hover:opacity-100 group-focus-within:opacity-100',
+            'focus-visible:ring-ring focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-none',
+          )}
+        >
+          <XIcon className="size-3.5" aria-hidden />
+        </button>
+      </Tooltip>
+    </div>
+  )
 }
 
 const STORAGE_KEY = 'classg.notifications.lastSeenAt'
