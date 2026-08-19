@@ -893,7 +893,11 @@ if [ "$HEALTHY" -eq 1 ] && [ "$DEPLOY_OK" -eq 1 ]; then
     # after a SUCCESSFUL deploy, so a rollback still has the layers it needs to
     # rebuild the previous image quickly. --max-used-space rather than a bare
     # prune keeps recent layers, so the next deploy is still a cache hit.
-    docker builder prune -f --max-used-space=3221225472 >/dev/null 2>&1         && log "build cache pruned to 3 GB"         || log "build cache prune failed; not fatal"
+    if docker builder prune -f --max-used-space=3221225472 >/dev/null 2>&1; then
+        log "build cache pruned to 3 GB"
+    else
+        log "build cache prune failed; not fatal"
+    fi
 
     DEPLOY_OK_JSON=true
     write_state "deployed" ""

@@ -105,6 +105,19 @@ produced false "verified" reports:
   line-ending-only changes while the real offenders stay hidden in the noise.
   Trust the filenames in the failing CI log, fix only those, and confirm the
   change is real with `git diff --ignore-cr-at-eol`.
+- **`shellcheck` cannot be run directly on a Windows working tree.** Every line
+  reports `SC1017 (error): Literal carriage return`, which buries any real
+  finding under one error per line. `.gitattributes` normalises on commit so CI
+  only ever sees LF. Strip the CRs into a temp copy and check that instead:
+
+  ```bash
+  mkdir -p /tmp/sc && for f in scripts/*.sh; do tr -d '' < "$f" > "/tmp/sc/$(basename "$f")"; done
+  shellcheck /tmp/sc/*.sh
+  ```
+
+  Skipping it is not an option: the `shell` job is not part of `make lint`, and
+  an `A && B || C` that bash runs happily is an SC2015 failure that turns main
+  red minutes after a green local run.
 - **A piped check reports the pipe's exit status, not the command's.**
   `npm test -- --run | tail` exits 0 however the tests went, because that is
   `tail`'s exit code. Chain those with `&&` and you have a green run that
