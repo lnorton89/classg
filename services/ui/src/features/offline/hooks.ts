@@ -6,13 +6,12 @@
  * `live-provider.tsx`.
  */
 import { useQuery } from '@tanstack/react-query'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 
 import { useLive } from '@/app/live-context'
 import { useNow } from '@/app/use-format'
-import { capturesQuery, healthQuery, spectrumSweepsQuery } from '@/lib/api/queries'
+import { healthQuery } from '@/lib/api/queries'
 
-import { decideAutoApply } from './auto-apply'
 import { computeFreshness, STALE_AFTER_MS, type Freshness } from './freshness'
 import type { AppUpdateWatcher, UpdateStatus } from './app-update'
 import { registerAppServiceWorker } from './register-sw'
@@ -77,24 +76,25 @@ export function useDataFreshness(staleAfterMs: number = STALE_AFTER_MS): Freshne
 
 export interface AppUpdate {
   status: UpdateStatus
-  apply: () => void
-  /** Keep this build; stops the countdown until the next one arrives. */
-  decline: () => void
-  /** Seconds until the update applies itself, or null when it will not. */
-  secondsLeft: number | null
-  /** Why it is waiting, when it is waiting on the unit rather than on you. */
-  holdReason: string | null
 }
 
 /**
- * Whether a newer build is installed and waiting.
+ * Whether a newer build is installed and waiting -- and if one is, it is taken
+ * IMMEDIATELY.
  *
- * Always 'idle' where there is no service worker — dev, an insecure origin, a
- * browser without support — so callers need no separate "is this a PWA" check.
+ * There is deliberately no countdown, no "Keep this one", and no hold while a
+ * sweep or capture runs. Those existed to protect the operator's map view from
+ * a surprise reload, and they bought that at the price of leaving an operator
+ * looking at a stale build in front of a live sky, which is the worse failure
+ * for a detector: what is on screen must be what the unit is actually running.
+ * Sweeps and captures run in the API on the unit, not in this tab, so a reload
+ * never costs a measurement -- only the map's current pan and zoom.
+ *
+ * Always 'idle' where there is no service worker -- dev, an insecure origin, a
+ * browser without support -- so callers need no separate "is this a PWA" check.
  */
 export function useAppUpdate(): AppUpdate {
   const [status, setStatus] = useState<UpdateStatus>('idle')
-  const [declined, setDeclined] = useState(false)
   const watcher = useRef<AppUpdateWatcher | null>(null)
 
   useEffect(() => {
@@ -114,85 +114,11 @@ export function useAppUpdate(): AppUpdate {
     }
   }, [])
 
-  const apply = useCallback(() => {
-    watcher.current?.applyUpdate()
-  }, [])
-
-  // What the unit is busy with, which decides whether a reload is rude.
-  // Polled queries rather than a subscription: this is read once a build is
-  // waiting, which is rare, and both are already in the cache.
-  const sweeps = useQuery(spectrumSweepsQuery())
-  const captures = useQuery(capturesQuery())
-  const sweepRunning = (sweeps.data?.sweeps ?? []).some((s) => s.state === 'running')
-  const captureRunning = (captures.data?.captures ?? []).some((c) => c.state === 'running')
-
-  // Re-decided whenever the tab is hidden or shown: backgrounding the console
-  // is the moment a pending update becomes free to take.
-  const hidden = usePageHidden()
-  const decision =
-    status === 'available'
-      ? decideAutoApply({ hidden, sweepRunning, captureRunning, declined })
-      : null
-  const decisionKind = decision?.kind ?? null
-  const countdownMs = decision?.kind === 'countdown' ? decision.ms : null
-
-  // Both halves of the countdown live in one piece of state, written only
-  // from the interval. A ref cannot be read during render and a synchronous
-  // setState inside an effect cascades, so the timer owns it entirely.
-  const [countdown, setCountdown] = useState<{ deadline: number; now: number } | null>(null)
-
+  // The moment one is waiting, take it. applyUpdate() is a no-op unless the
+  // status is 'available', so this cannot double-apply while one is in flight.
   useEffect(() => {
-    if (decisionKind !== 'countdown' || countdownMs === null) return
-    let deadline = 0
-    const id = setInterval(() => {
-      const now = Date.now()
-      // Set on the first tick rather than in the effect body, so nothing here
-      // reads the clock during a render.
-      if (deadline === 0) deadline = now + countdownMs - 250
-      setCountdown({ deadline, now })
-      if (now >= deadline) {
-        clearInterval(id)
-        watcher.current?.applyUpdate()
-      }
-    }, 250)
-    return () => clearInterval(id)
-  }, [decisionKind, countdownMs])
+    if (status === 'available') watcher.current?.applyUpdate()
+  }, [status])
 
-  useEffect(() => {
-    // Nobody is looking, so there is nothing to count down in front of.
-    if (decisionKind === 'now') watcher.current?.applyUpdate()
-  }, [decisionKind])
-
-  const secondsLeft =
-    decisionKind !== 'countdown' || countdownMs === null
-      ? null
-      : countdown === null
-        ? // Before the first tick, which is what the banner shows on the frame
-          // it appears rather than a blank that fills in a moment later.
-          Math.ceil(countdownMs / 1000)
-        : Math.max(0, Math.ceil((countdown.deadline - countdown.now) / 1000))
-
-  const decline = useCallback(() => setDeclined(true), [])
-
-  return {
-    status,
-    apply,
-    decline,
-    secondsLeft,
-    holdReason: decision?.kind === 'hold' ? decision.reason : null,
-  }
-}
-
-/** document.hidden, as state. */
-function usePageHidden(): boolean {
-  const [hidden, setHidden] = useState(() =>
-    typeof document === 'undefined' ? false : document.hidden,
-  )
-  useEffect(() => {
-    if (typeof document === 'undefined') return
-    const onChange = () => setHidden(document.hidden)
-    document.addEventListener('visibilitychange', onChange)
-    return () => document.removeEventListener('visibilitychange', onChange)
-  }, [])
-  return hidden
+  return { status }
 }

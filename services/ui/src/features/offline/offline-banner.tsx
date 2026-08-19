@@ -1,6 +1,5 @@
-import { CloudDownloadIcon, TriangleAlertIcon, WifiOffIcon } from 'lucide-react'
+import { TriangleAlertIcon, WifiOffIcon } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/cn'
 
 import { useAppUpdate, useDataFreshness } from './hooks'
@@ -68,41 +67,10 @@ export function OfflineBanner() {
  * was paid for. The countdown is the consent, and "Keep this one" is the veto.
  */
 export function AppUpdateBanner() {
-  const { status, apply, decline, secondsLeft, holdReason } = useAppUpdate()
-  if (status === 'idle') return null
-
-  const applying = status === 'applying'
-  const counting = secondsLeft !== null && secondsLeft > 0
-
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      data-update-status={status}
-      data-seconds-left={secondsLeft ?? undefined}
-      className="safe-x border-border bg-card flex items-center gap-3 border-t px-3 py-2 sm:px-4"
-    >
-      <CloudDownloadIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
-      <p className="min-w-0 flex-1 text-xs leading-snug">
-        <span className="text-foreground font-semibold">A newer ClassG build is ready.</span>{' '}
-        <span className="text-muted-foreground">
-          {applying
-            ? 'Reloading now.'
-            : counting
-              ? `Updating in ${secondsLeft}s — this returns the map to its default view.`
-              : holdReason
-                ? `Waiting: ${holdReason}.`
-                : 'Reloading takes a moment and returns the map to its default view.'}
-        </span>
-      </p>
-      {counting ? (
-        <Button variant="ghost" size="sm" onClick={decline}>
-          Keep this one
-        </Button>
-      ) : null}
-      <Button variant="outline" size="sm" onClick={apply} disabled={applying}>
-        {applying ? 'Reloading…' : counting ? 'Now' : 'Reload'}
-      </Button>
-    </div>
-  )
+  // Renders nothing, ever. A waiting build is applied the instant it exists
+  // (see useAppUpdate), so there is no state to announce and nothing to ask
+  // permission for. Kept as a component because the shell mounts it, and
+  // because the hook must run somewhere to do the applying.
+  useAppUpdate()
+  return null
 }

@@ -97,6 +97,34 @@ func TestOfflineByDefault(t *testing.T) {
 	}
 }
 
+// TestAnUnreachableReplicaDegradesRatherThanKillingTheUnit guards the outage
+// this cost us: an expired Turso token made the API crash-loop on startup, so
+// /health, every track and the UI went down while a fully working local
+// database sat on disk. A detector must keep recording when its uplink is
+// broken -- the same rule the initial-sync path already followed.
+func TestAnUnreachableReplicaDegradesRatherThanKillingTheUnit(t *testing.T) {
+	if !libsqlstore.Supported {
+		t.Skip("libSQL is unavailable in this build")
+	}
+	s, err := libsqlstore.Open(context.Background(), libsqlstore.Options{
+		Path: filepath.Join(t.TempDir(), "classg.db"),
+		// Unroutable by RFC 6890, so this cannot depend on the network.
+		SyncURL:   "libsql://192.0.2.1:1",
+		AuthToken: "not-a-real-token",
+	})
+	if err != nil {
+		t.Fatalf("a broken replica must not stop the unit from opening its database: %v", err)
+	}
+	defer s.Close()
+
+	if s.Synced() {
+		t.Fatal("a replica that could not be opened must not claim to be syncing")
+	}
+	if _, err := s.ListTracks(context.Background(), store.TrackQuery{}); err != nil {
+		t.Fatalf("the local database must still be fully functional: %v", err)
+	}
+}
+
 // TestWALIsActuallyEnabled guards the class of bug where a PRAGMA that returns
 // a row is run through Exec: it fails, the failure is logged as a warning, and
 // the database quietly runs without WAL. The warning read as "libSQL declined
