@@ -5,14 +5,17 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from 'lucide-react'
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DataRow } from '@/components/ui/misc'
 import { Tooltip } from '@/components/ui/tooltip'
+import { useSwipeDismiss } from '@/components/ui/use-swipe-dismiss'
 import { useFormat, useTicker } from '@/app/use-format'
+import { createDismissalStore } from '@/features/notifications/dismissal-store'
+import { useDismissal } from '@/features/notifications/use-dismissal'
 import type { SensorHealth } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
@@ -40,10 +43,12 @@ import type { SkyState } from './sky-state'
  */
 const QUIET_SKY_DISMISS_MS = 20_000
 
-/** Past this drag distance, releasing dismisses rather than snapping back. */
-const SWIPE_DISMISS_PX = 88
-/** How long the slide-away plays before the banner actually unmounts. */
-const CLOSE_ANIMATION_MS = 180
+/**
+ * This route's own component unmounts on every navigation away from `/`, so
+ * the dismissal has to live outside it — see dismissal-store.ts for why that
+ * used to make "Quiet sky" reappear.
+ */
+const skyStateDismissal = createDismissalStore('classg.dismissed.sky-state')
 
 export function SkyStateBanner({
   state,
@@ -57,26 +62,28 @@ export function SkyStateBanner({
   // Keyed on the state's KIND, so dismissing "quiet sky" does not also hide
   // the "coverage degraded" that replaces it a minute later. Any change in
   // what the banner says brings it back.
-  const [dismissedKind, setDismissedKind] = useState<string | null>(null)
   const dismissible = state.absenceIsEvidence
-  const dismissed = dismissible && dismissedKind === state.kind
+  const [dismissedForKind, dismiss] = useDismissal(skyStateDismissal, state.kind)
+  const dismissed = dismissible && dismissedForKind
 
   if (dismissed) return null
 
-  // The animation state lives in a CHILD component keyed on the kind, not in
-  // this one. A key on a host element only remounts the DOM node -- hook state
-  // survives it -- so when this component owned `closing`, a dismissed "quiet
-  // sky" left `closing` set forever and the "coverage degraded" that replaced
-  // it rendered already slid off screen: invisible, permanently, on exactly
-  // the state an operator must not miss. Keying the component boundary is what
-  // genuinely resets the hooks.
+  // The swipe and close-animation state lives in a CHILD keyed on the kind,
+  // not here. A key on a host element remounts the DOM node but NOT the hooks
+  // above it, so while this component owned `closing`, a dismissed "quiet sky"
+  // left it set forever and the "coverage degraded" that replaced it rendered
+  // already slid off screen -- invisible, permanently, on exactly the state an
+  // operator must not miss. Keying the component boundary is what actually
+  // resets the hooks. The dismissal stays out here so it still survives the
+  // route unmount that dismissal-store.ts exists for.
   return (
     <SkyStateBannerBody
       key={state.kind}
       state={state}
       className={className}
       action={action}
-      onDismissed={() => setDismissedKind(state.kind)}
+      dismissible={dismissible}
+      onDismiss={dismiss}
     />
   )
 }
@@ -85,69 +92,28 @@ function SkyStateBannerBody({
   state,
   className,
   action,
-  onDismissed,
+  dismissible,
+  onDismiss,
 }: {
   state: SkyState
   className?: string
   action?: ReactNode
-  onDismissed: () => void
+  dismissible: boolean
+  onDismiss: () => void
 }) {
-  const dismissible = state.absenceIsEvidence
-
-  // Swipe and the timer both end here: a short slide-and-fade before the
-  // banner actually leaves the tree, so a released swipe or an expired timer
-  // reads as a dismissal happening rather than a banner disappearing.
-  const [closing, setClosing] = useState<1 | -1 | null>(null)
-  const [dragX, setDragX] = useState(0)
-  const [dragging, setDragging] = useState(false)
-  const dragStartX = useRef<number | null>(null)
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  function commitDismiss(direction: 1 | -1) {
-    if (closing !== null) return
-    setClosing(direction)
-    closeTimer.current = setTimeout(onDismissed, CLOSE_ANIMATION_MS)
-  }
-
-  // The close-animation timeout calls back into the parent; if the state kind
-  // changes mid-animation this body unmounts, and firing onDismissed then
-  // would dismiss the NEW kind sight unseen.
-  useEffect(
-    () => () => {
-      if (closeTimer.current !== null) clearTimeout(closeTimer.current)
-    },
-    [],
-  )
+  const { closing, dragging, style, commit, handlers } = useSwipeDismiss({
+    enabled: dismissible,
+    onDismiss,
+  })
 
   useEffect(() => {
+    // This body only mounts while undismissed -- the parent gates on that --
+    // so there is no already-dismissed case to skip.
     if (!dismissible) return
-    const id = setTimeout(() => commitDismiss(1), QUIET_SKY_DISMISS_MS)
+    const id = setTimeout(() => commit(1), QUIET_SKY_DISMISS_MS)
     return () => clearTimeout(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- commitDismiss is stable for this body's lifetime; the component remounts per state kind.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- commit is a fresh closure every render; including it would reschedule the timer on every render rather than once per mount, and this body remounts per state kind.
   }, [dismissible])
-
-  function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (!dismissible || closing !== null) return
-    dragStartX.current = event.clientX
-    setDragging(true)
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  function onPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
-    if (dragStartX.current === null) return
-    setDragX(event.clientX - dragStartX.current)
-  }
-
-  function onPointerUp() {
-    if (dragStartX.current === null) return
-    dragStartX.current = null
-    setDragging(false)
-    if (Math.abs(dragX) > SWIPE_DISMISS_PX) {
-      commitDismiss(dragX < 0 ? -1 : 1)
-    } else {
-      setDragX(0)
-    }
-  }
 
   // Opaque, with severity carried by a left accent bar rather than a wash.
   // This banner sits ON TOP OF THE MAP on the Live route, and a 12-18% tint
@@ -176,31 +142,15 @@ function SkyStateBannerBody({
   }[state.tone]
 
   const exiting = closing !== null
-  const style = exiting
-    ? { transform: `translateX(${closing * 120}%)`, opacity: 0 }
-    : dragging
-      ? {
-          transform: `translateX(${dragX}px)`,
-          opacity: 1 - Math.min(0.85, Math.abs(dragX) / 260),
-        }
-      : undefined
 
   return (
     <div
-      // No key here: the parent keys this whole component on state.kind, so a
-      // genuinely different message remounts body, hooks and all -- resetting
-      // closing/drag state and replaying the entrance instead of a silent
-      // swap. "Quiet sky" becoming "sensor down" is exactly the change an
-      // operator must not be able to miss.
       // Assertive only when the operator must not trust the screen.
       role={state.absenceIsEvidence ? 'status' : 'alert'}
       aria-live={state.absenceIsEvidence ? 'polite' : 'assertive'}
       data-sky-state={state.kind}
       data-absence-is-evidence={state.absenceIsEvidence}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      {...handlers}
       className={cn(
         'pointer-events-auto flex items-start gap-3 rounded-lg border px-3 py-2 shadow-lg',
         tone,
@@ -220,7 +170,13 @@ function SkyStateBannerBody({
       {dismissible ? (
         <button
           type="button"
-          onClick={() => commitDismiss(1)}
+          onClick={() => commit(1)}
+          // The div's own onPointerDown calls setPointerCapture on itself for
+          // the swipe gesture, and a browser retargets the click that follows
+          // to whichever element holds that capture -- not to whatever was
+          // actually pressed. Stopping the pointerdown here before it bubbles
+          // keeps this button's own click reaching its own handler.
+          onPointerDown={(event) => event.stopPropagation()}
           aria-label="Dismiss until the sky state changes"
           className={cn(
             'text-muted-foreground hover:text-foreground hover:bg-foreground/10',

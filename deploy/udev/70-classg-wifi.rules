@@ -7,4 +7,3 @@ ACTION=="add", SUBSYSTEM=="net", ATTRS{idVendor}=="0e8d", ATTRS{idProduct}=="796
 
 # TP-Link Archer TX20U Plus (Realtek RTL8852AU, after USB mode-switch)
 ACTION=="add", SUBSYSTEM=="net", ATTRS{idVendor}=="2357", ATTRS{idProduct}=="013f", NAME="wlan-tplink"
-

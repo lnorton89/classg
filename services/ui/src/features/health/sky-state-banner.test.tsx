@@ -1,10 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { SkyState } from './sky-state'
 import { SkyStateBanner } from './components'
-
-const QUIET_SKY_DISMISS_MS = 20_000
 
 function quietSky(): SkyState {
   return {
@@ -44,6 +42,13 @@ async function advance(ms: number) {
 }
 
 describe('SkyStateBanner', () => {
+  beforeEach(() => {
+    // Dismissal now persists in sessionStorage precisely so it survives a
+    // remount — see dismissal-store.ts — which means it also survives across
+    // tests unless cleared.
+    window.sessionStorage.clear()
+  })
+
   afterEach(() => {
     vi.useRealTimers()
   })
@@ -85,21 +90,45 @@ describe('SkyStateBanner', () => {
     expect(screen.queryByText('Quiet sky')).not.toBeInTheDocument()
   })
 
+  it('stays dismissed across a remount — dismissing on the Live route and navigating away and back must not bring it back', async () => {
+    vi.useFakeTimers()
+    const { unmount } = render(<SkyStateBanner state={quietSky()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss until the sky state changes' }))
+    await advance(200) // past the exit animation, which is what actually persists the dismissal
+    unmount()
+
+    render(<SkyStateBanner state={quietSky()} />)
+    expect(screen.queryByText('Quiet sky')).not.toBeInTheDocument()
+  })
+
+  it('a persisted quiet-sky dismissal does not leak into hiding a later, different kind', async () => {
+    vi.useFakeTimers()
+    const { unmount } = render(<SkyStateBanner state={quietSky()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss until the sky state changes' }))
+    await advance(200)
+    unmount()
+
+    render(<SkyStateBanner state={sensorDown()} />)
+    expect(screen.getByText('Coverage degraded')).toBeInTheDocument()
+  })
+
   it('shows an escalation at full visibility after a dismissal', async () => {
-    // Regression: closing/drag state used to live in the keyed HOST element,
-    // which a key change remounts without resetting hook state -- so after
-    // "Quiet sky" auto-dismissed, "Coverage degraded" rendered permanently
-    // slid off screen at opacity 0.
+    // Regression: the swipe/close state used to sit in the component above the
+    // keyed host element. A key on a host element remounts the DOM node but not
+    // the hooks, so once "Quiet sky" auto-dismissed, `closing` stayed set and
+    // the "Coverage degraded" that replaced it rendered already slid off screen
+    // -- invisible, on exactly the state an operator must not miss.
     vi.useFakeTimers()
     const { rerender } = render(<SkyStateBanner state={quietSky()} />)
 
-    await advance(QUIET_SKY_DISMISS_MS + 500)
+    // Past the 20s trigger and the 180ms exit animation.
+    await advance(20_500)
     expect(screen.queryByText('Quiet sky')).not.toBeInTheDocument()
 
     rerender(<SkyStateBanner state={sensorDown()} />)
     const banner = screen.getByRole('alert')
     expect(screen.getByText('Coverage degraded')).toBeVisible()
-    // Not carrying the previous banner's exit animation styles.
+    // Crucially, not still wearing the previous banner's exit styles.
     expect(banner.style.transform).toBe('')
     expect(banner.style.opacity).toBe('')
   })

@@ -12,6 +12,11 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
+# Not root: AF_PACKET and `iw` need CAP_NET_RAW and CAP_NET_ADMIN, and nothing
+# else here does. Running as the checkout owner with exactly those two ambient
+# capabilities keeps a parser fed by hostile RF from owning the box, and
+# matches the primary sensor unit -- AmbientCapabilities alongside User=root
+# would grant nothing it did not already have.
 User=@RUNAS@
 AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
