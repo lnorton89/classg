@@ -1,4 +1,28 @@
-# ALFA AWUS036AXML setup
+# ALFA + TP-Link Wi-Fi receiver setup
+
+ClassG uses two independent passive receivers on the Pi:
+
+- `wifi-0` / `wlan-alfa` — ALFA AWUS036AXML, fixed on the Mini 5 Pro's
+  measured channel 6.
+- `wifi-1` / `wlan-tplink` — TP-Link Archer TX20U Plus, sweeping the remaining
+  2.4 and 5 GHz plan.
+
+The stable names come from `deploy/udev/70-classg-wifi.rules`; never key a
+service to `wlan1` or `wlan2`, because probe order changes after a USB reset.
+
+## Pi 4 USB layout and power
+
+Prefer both Wi-Fi adapters in the blue USB 3 ports and the USB 2 RTL-SDR in a
+regular port, but validate the SDR before making that permanent. All ports
+still share the Pi's USB power budget; port colour does not solve an overloaded
+supply. The field unit has three nominally bus-powered receivers, so a powered
+hub is the correct answer if resets appear under simultaneous capture. Keep the
+Wi-Fi antennas on short extension leads away from the Pi and USB 3 connectors
+to reduce 2.4 GHz interference.
+
+After any port change, run `scripts/usb-soak.sh` and watch both USB presence and
+the per-sensor beacon counters. Enumeration alone does not prove that a radio
+is delivering frames.
 
 **Read this before plugging the adapter in.** There are two ways to make this device stop
 working that are easy to trigger and annoying to diagnose.
@@ -8,7 +32,7 @@ working that are easy to trigger and annoying to diagnose.
 ### 1. Never set active monitor mode
 
 ```bash
-sudo iw dev wlan1 set monitor active     # ← DO NOT. Wedges the driver.
+sudo iw dev wlan-alfa set monitor active # ← DO NOT. Wedges the driver.
 ```
 
 Active monitor on `mt7921u` is a known driver bug that stops the adapter dead, usually
@@ -60,20 +84,41 @@ iw dev
 You want `mt7921u` bound and firmware loaded. If the driver loads but the adapter never
 initialises, firmware blobs are missing — that is the usual cause.
 
+### TP-Link driver survival across kernel updates
+
+The Archer TX20U Plus (`2357:013f`) uses the out-of-tree `rtl8852au` driver.
+It must be registered with DKMS, not merely copied into the current kernel's
+module directory. Verify this after installation and after every kernel update:
+
+```bash
+dkms status | grep rtl8852au
+modinfo 8852au | grep -E '^(filename|version|vermagic):'
+```
+
+`dkms status` must list the running `uname -r` as `installed`. ClassG's setup
+script fails with an actionable error if `8852au` is absent; it does not try to
+compile a kernel module while starting a field service.
+
 ### Enter monitor mode
 
 ```bash
 sudo airmon-ng check kill                # stop NetworkManager/wpa_supplicant interference
-sudo ip link set wlan1 down
-sudo iw dev wlan1 set type monitor       # passive — no 'active'
-sudo ip link set wlan1 up
-sudo iw dev wlan1 set channel 6
+sudo ip link set wlan-alfa down
+sudo iw dev wlan-alfa set type monitor   # passive — no 'active'
+sudo ip link set wlan-alfa up
+sudo iw dev wlan-alfa set channel 6
+
+sudo ip link set wlan-tplink down
+sudo iw dev wlan-tplink set type monitor
+sudo ip link set wlan-tplink up
+sudo iw dev wlan-tplink set channel 1
 ```
 
 Verify:
 
 ```bash
-iw dev wlan1 info      # expect: type monitor, channel 6 (2437 MHz)
+iw dev wlan-alfa info     # expect: type monitor, channel 6 (2437 MHz)
+iw dev wlan-tplink info  # expect: type monitor
 ```
 
 ### Persist across reboots
@@ -92,7 +137,7 @@ Capture your DJI powering up. This is Milestone 0's exit criterion and the groun
 everything else is built against.
 
 ```bash
-sudo tcpdump -i wlan1 -w captures/dji-first-flight.pcap "type mgt subtype beacon"
+sudo tcpdump -i wlan-alfa -w captures/dji-first-flight.pcap "type mgt subtype beacon"
 ```
 
 Power on the drone, let it acquire GPS, hover briefly, land. Then inspect in Wireshark:
@@ -109,8 +154,8 @@ Write these into `docs/ops/04-calibration.md`.
 ## Channel behaviour
 
 ```bash
-sudo iw dev wlan1 set channel 6          # 2.4 GHz
-sudo iw dev wlan1 set freq 5180          # 5 GHz by frequency
+sudo iw dev wlan-alfa set channel 6      # 2.4 GHz
+sudo iw dev wlan-tplink set freq 5180    # 5 GHz by frequency
 ```
 
 Measured channel-hop latency on this chipset is around **140 ms**, which is a meaningful
@@ -134,12 +179,16 @@ not broadcast Remote ID there. Not worth the regdb fight.
 | Random disappearance under load | USB power brownout | Powered hub, or better PSU; check `dmesg` for USB resets |
 | Sporadic Wi-Fi crashes | BT/Wi-Fi USB conflict | Disable `btusb` as above |
 | Works alone, fails with the SDR plugged in | USB bandwidth/power contention | Separate USB controllers (Pi 5), or powered hub |
+| TP-Link enumerates but its LED stays dark | Interface is down/idle | Confirm `2357:013f`, then start its monitor service |
+| TP-Link first appears as `0bda:1a2b` | USB storage mode before mode-switch | Wait for udev/usb-modeswitch to expose `2357:013f` |
+| Driver vanishes after a kernel update | Module was copied, not DKMS-built | Check `dkms status`; rebuild `rtl8852au` for `uname -r` |
 | No 6 GHz channels | `NO-IR` in regdb | Expected. Ignore. |
 
 ## Sanity check before blaming your code
 
 ```bash
-sudo tcpdump -i wlan1 -c 20 -e "type mgt subtype beacon"
+sudo tcpdump -i wlan-alfa -c 20 -e "type mgt subtype beacon"
+sudo tcpdump -i wlan-tplink -c 20 -e "type mgt subtype beacon"
 ```
 
 If this shows nothing, the problem is the adapter or monitor mode — not the parser. Always

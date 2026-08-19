@@ -1,5 +1,5 @@
 [Unit]
-Description=ClassG passive Wi-Fi sensor (@IFACE@)
+Description=ClassG primary passive Wi-Fi sensor (@IFACE@)
 Documentation=file://@CLASSG_HOME@/docs/architecture/adr/0003-sensor-process-isolation.md
 After=network-online.target
 Wants=network-online.target
@@ -28,7 +28,7 @@ EnvironmentFile=@CLASSG_HOME@/.env
 # this Pi. Re-established on every start rather than assumed.
 ExecStartPre=@CLASSG_HOME@/scripts/setup-monitor.sh @IFACE@
 
-ExecStart=@CLASSG_HOME@/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli run --iface @IFACE@
+ExecStart=@CLASSG_HOME@/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli --sensor-id wifi-0 run --iface @IFACE@ --channels config/channels-primary.yaml
 
 Restart=always
 RestartSec=5

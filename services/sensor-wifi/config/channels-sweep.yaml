@@ -1,0 +1,31 @@
+# Companion receiver plan for the TP-Link Archer TX20U Plus.
+#
+# Channel 6 is deliberately absent: the primary ALFA receiver covers it
+# continuously. Splitting rather than duplicating the plans increases discovery
+# coverage for a second aircraft and keeps 5 GHz visible while channel 6 is
+# busy. Channels 12/13 are omitted from this US deployment plan; the vendor
+# rtl8852au driver incorrectly advertises them as usable under the current
+# regdomain even though they have no useful local prior.
+
+channels:
+  # Other common 2.4 GHz choices.
+  - { channel: 1,  freq_mhz: 2412, weight: 15.0 }
+  - { channel: 11, freq_mhz: 2462, weight: 15.0 }
+
+  # Broad 2.4 GHz survey, excluding the dedicated channel 6 receiver.
+  - { channel: 2,  freq_mhz: 2417, weight: 1.7 }
+  - { channel: 3,  freq_mhz: 2422, weight: 1.7 }
+  - { channel: 4,  freq_mhz: 2427, weight: 1.7 }
+  - { channel: 5,  freq_mhz: 2432, weight: 1.7 }
+  - { channel: 7,  freq_mhz: 2442, weight: 1.7 }
+  - { channel: 8,  freq_mhz: 2447, weight: 1.7 }
+  - { channel: 9,  freq_mhz: 2452, weight: 1.7 }
+  - { channel: 10, freq_mhz: 2457, weight: 1.7 }
+
+  # Non-DFS 5 GHz subset, including the Wi-Fi NAN social channels.
+  - { channel: 36,  freq_mhz: 5180, weight: 3.0 }
+  - { channel: 40,  freq_mhz: 5200, weight: 2.0 }
+  - { channel: 44,  freq_mhz: 5220, weight: 3.0 }
+  - { channel: 48,  freq_mhz: 5240, weight: 2.0 }
+  - { channel: 149, freq_mhz: 5745, weight: 3.0 }
+  - { channel: 157, freq_mhz: 5785, weight: 2.0 }

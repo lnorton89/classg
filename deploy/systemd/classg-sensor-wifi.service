@@ -1,5 +1,5 @@
 [Unit]
-Description=ClassG passive Wi-Fi sensor (wlan1)
+Description=ClassG primary passive Wi-Fi sensor (wlan-alfa)
 Documentation=file:///home/admin/classg/docs/architecture/adr/0003-sensor-process-isolation.md
 After=network-online.target
 Wants=network-online.target
@@ -26,9 +26,9 @@ EnvironmentFile=/home/admin/classg/.env
 # Monitor mode survives neither a reboot nor a replug, and moving the adapter
 # between USB ports silently drops the interface back to managed -- observed on
 # this Pi. Re-established on every start rather than assumed.
-ExecStartPre=/home/admin/classg/scripts/setup-monitor.sh wlan1
+ExecStartPre=/home/admin/classg/scripts/setup-monitor.sh wlan-alfa
 
-ExecStart=/home/admin/classg/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli run --iface wlan1
+ExecStart=/home/admin/classg/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli --sensor-id wifi-0 run --iface wlan-alfa --channels config/channels-primary.yaml
 
 Restart=always
 RestartSec=5

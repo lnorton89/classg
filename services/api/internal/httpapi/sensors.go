@@ -62,7 +62,7 @@ func (s *Server) handleListSensors(w http.ResponseWriter, r *http.Request) {
 			Capture:                  capture,
 		}
 		if hasOwnUnit(sensor.SensorKind) {
-			cfg.Unit = unitFor(sensor.SensorKind)
+			cfg.Unit = unitFor(sensor.SensorID, sensor.SensorKind)
 			cfg.RestartCommand = restartCommandString(s.cfg.SensorRestartCommand, cfg.Unit)
 		} else {
 			cfg.RestartAvailable = false
@@ -110,5 +110,5 @@ func (s *Server) handleRestartSensor(w http.ResponseWriter, r *http.Request) {
 		fail(w, apierr.SensorUnavailable(err.Error()))
 		return
 	}
-	writeJSON(w, http.StatusAccepted, restartResponse{SensorID: id, Unit: unitFor(kind), Accepted: true})
+	writeJSON(w, http.StatusAccepted, restartResponse{SensorID: id, Unit: unitFor(id, kind), Accepted: true})
 }

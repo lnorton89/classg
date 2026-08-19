@@ -40,6 +40,7 @@ echo "Granting passwordless restart for the two sensor units only"
 sudo tee "$SUDOERS" >/dev/null <<EOF
 $USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart classg-sensor-sdr.service
 $USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart classg-sensor-wifi.service
+$USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart classg-sensor-wifi-tplink.service
 EOF
 sudo chmod 0440 "$SUDOERS"
 sudo visudo -cf "$SUDOERS" >/dev/null || { echo "sudoers file is invalid; removing" >&2; sudo rm -f "$SUDOERS"; exit 1; }

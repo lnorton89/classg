@@ -1,0 +1,8 @@
+# Dedicated primary receiver plan.
+#
+# The ALFA stays on the Mini 5 Pro's measured Remote ID channel instead of
+# paying the retune penalty or abandoning the rest of the band while an
+# adaptive lock is active. The companion TP-Link service owns the sweep plan.
+
+channels:
+  - { channel: 6, freq_mhz: 2437, weight: 1.0 }

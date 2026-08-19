@@ -43,6 +43,7 @@ class HopperStats:
     drone_hits: dict[int, int] = field(default_factory=dict)
     escalations: int = 0
     scan_dwells: int = 0
+    hops: int = 0
 
     def dwell_share(self) -> dict[int, float]:
         total = sum(self.dwell_ms.values())
@@ -206,11 +207,15 @@ class ChannelHopper:
         self.stats.dwells[channel] = self.stats.dwells.get(channel, 0) + 1
         self.stats.dwell_ms[channel] = self.stats.dwell_ms.get(channel, 0.0) + actual_ms
 
+    def record_hop(self) -> None:
+        """Record a hardware retune attempt, distinct from a listening dwell."""
+        self.stats.hops += 1
+
     def efficiency_report(self) -> dict[str, object]:
         """Metrics for tuning. `listening_fraction` is the headline number: the
         share of wall-clock actually spent receiving rather than retuning."""
         total_dwell = sum(self.stats.dwell_ms.values())
-        total_hops = sum(self.stats.dwells.values())
+        total_hops = self.stats.hops
         overhead = total_hops * self.hop_latency_ms
         wall = total_dwell + overhead
         return {

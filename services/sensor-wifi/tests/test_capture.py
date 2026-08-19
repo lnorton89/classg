@@ -173,6 +173,32 @@ class TestDetection:
         assert not hopper.is_escalated
 
 
+def test_single_channel_plan_only_tunes_once(monkeypatch):
+    calls: list[int] = []
+    monkeypatch.setattr(capture, "set_channel", lambda _iface, ch: calls.append(ch) or True)
+    hopper = make_hopper()
+    dwells = {"n": 0}
+    original = hopper.record_dwell
+
+    def counting(channel: int, ms: float) -> None:
+        dwells["n"] += 1
+        original(channel, ms)
+
+    hopper.record_dwell = counting  # type: ignore[method-assign]
+    capture.run_capture(
+        iface="wlan-test",
+        hopper=hopper,
+        pipeline=Pipeline(sensor_id="wifi-test"),
+        publisher=RecordingPublisher(),
+        heartbeat_s=0.0,
+        should_run=lambda: dwells["n"] < 3,
+        socket_factory=lambda _iface: FakeRadio([]),
+    )
+
+    assert calls == [6]
+    assert hopper.efficiency_report()["hops"] == 1
+
+
 class TestHealth:
     def test_heartbeats_even_with_no_detections(self):
         """The whole point of ADR-0003: silence must be distinguishable from death."""
@@ -438,7 +464,11 @@ class TestAdapterDisappears:
         monkeypatch.setattr(capture, "set_channel", flaky)
         monkeypatch.setattr(capture, "interface_exists", lambda iface: True)
 
-        hopper = make_hopper()
+        plans = [
+            ChannelSpec(channel=1, freq_mhz=2412, weight=1.0),
+            ChannelSpec(channel=6, freq_mhz=2437, weight=1.0),
+        ]
+        hopper = ChannelHopper(plans, base_dwell_ms=10)
         pipeline = Pipeline(sensor_id="wifi-test")
         pub = RecordingPublisher()
         dwells = {"n": 0}
@@ -449,6 +479,7 @@ class TestAdapterDisappears:
             original(channel, ms)
 
         hopper.record_dwell = counting  # type: ignore[method-assign]
+        hopper.next_channel = lambda: plans[dwells["n"] % 2]  # type: ignore[method-assign]
 
         stats = capture.run_capture(
             iface="wlan-test",

@@ -844,6 +844,9 @@ if changed_in "services/sensor-wifi"; then
         log "no virtualenv at $wifi_python; skipping the install and restarting"
     fi
     sudo systemctl restart classg-sensor-wifi.service && log "classg-sensor-wifi restarted"
+    if systemctl is-enabled --quiet classg-sensor-wifi-tplink.service 2>/dev/null; then
+        sudo systemctl restart classg-sensor-wifi-tplink.service && log "classg-sensor-wifi-tplink restarted"
+    fi
 fi
 
 # --- did it come back? ------------------------------------------------------

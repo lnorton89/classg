@@ -118,8 +118,8 @@ is somewhere else. On a build host with no radio and no librtlsdr, plain
 ### 4. Systemd units
 
 ```bash
-sudo ./deploy/systemd/install.sh wlan1
-sudo systemctl enable --now classg-sensor-wifi classg-sensor-sdr
+sudo ./deploy/systemd/install.sh wlan-alfa
+sudo systemctl enable --now classg-sensor-wifi classg-sensor-wifi-tplink classg-sensor-sdr
 ```
 
 The installer renders [deploy/systemd](../../deploy/systemd)'s templates
@@ -184,10 +184,10 @@ Then rebuild what the pull touched:
 | Changed | Do |
 |---|---|
 | `services/api`, `services/fusion`, `services/ui` | `docker compose --env-file .env -f docker/docker-compose.yml up -d --build api` (or `fusion`, `ui`; `make compose-up` rebuilds whatever changed across all three) |
-| `services/sensor-wifi` | `cd services/sensor-wifi && .venv/bin/python -m pip install -e '.[replay]'` then `sudo systemctl restart classg-sensor-wifi`. The pip step only matters when dependencies changed — the unit runs the checkout's source directly — but it is cheap and skipping it is how a dependency bump ships untested |
+| `services/sensor-wifi` | `cd services/sensor-wifi && .venv/bin/python -m pip install -e '.[replay]'` then `sudo systemctl restart classg-sensor-wifi classg-sensor-wifi-tplink`. The pip step only matters when dependencies changed — the units run the checkout's source directly — but it is cheap and skipping it is how a dependency bump ships untested |
 | `services/sensor-sdr` | `cd services/sensor-sdr && cargo build --release --features rtlsdr` then `sudo systemctl restart classg-sensor-sdr`. **The feature flag is not optional on a unit with a radio** — without it the binary builds and runs and has no sweep engine, so `bands` and `sweep` are simply absent and the Spectrum page reports the unit as unable to sweep. The unit runs `target/release/`, so an un-rebuilt binary keeps running yesterday's code while the source says otherwise |
 | `tools/pi-dash` | `cd tools/pi-dash && cargo build --release`. It is a submodule: `git pull` moves the *pointer*, and `git submodule update --init --recursive` is what moves the checkout. A pull without it leaves the pin ahead of the files, and the dashboard keeps running the old build |
-| `deploy/systemd/*.service.in` | `sudo ./deploy/systemd/install.sh wlan1 && sudo systemctl restart classg-sensor-wifi classg-sensor-sdr` — the installed units are rendered snapshots |
+| `deploy/systemd/*.service.in` | `sudo ./deploy/systemd/install.sh wlan-alfa && sudo systemctl restart classg-sensor-wifi classg-sensor-wifi-tplink classg-sensor-sdr` — the installed units are rendered snapshots |
 | `schemas/` | All of the above. The schema is the one contract all four languages share; updating one side of the bus and not the other is a silent wire mismatch |
 | `config/defaults.yaml` | Nothing, deliberately: the database is authoritative after first run ([00-configuration.md](00-configuration.md)). Change settings through the API or the UI |
 

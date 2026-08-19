@@ -247,6 +247,7 @@ def run_capture(
     last_heartbeat = 0.0
     consecutive_read_errors = 0
     consecutive_channel_errors = 0
+    tuned_channel: int | None = None
 
     # Shared with the watchdog thread, which cannot read the local above.
     #
@@ -265,7 +266,16 @@ def run_capture(
     try:
         while should_run():
             spec = hopper.next_channel()
-            hop_ok = set_channel(iface, spec.channel)
+            # Weighted selection can pick the same channel twice, and the
+            # dedicated receiver has a one-channel plan. Calling `iw` anyway
+            # creates a blind retune interval with no change in coverage.
+            if tuned_channel == spec.channel:
+                hop_ok = True
+            else:
+                hopper.record_hop()
+                hop_ok = set_channel(iface, spec.channel)
+                if hop_ok:
+                    tuned_channel = spec.channel
             if hop_ok:
                 consecutive_channel_errors = 0
             else:
