@@ -202,7 +202,9 @@ def render_report(result: AnalysisResult) -> str:
             add(f"    => ~{rate:.2f} Hz")
             if rate < 0.8 or rate > 1.5:
                 add(f"    NOTE: the ~1 Hz design assumption looks wrong ({rate:.2f} Hz).")
-                add("          Revisit dwell weights in config/channels.yaml.")
+                add("          Revisit dwell weights in the plan this unit runs:")
+                add("          config/channels.yaml, or channels-primary.yaml and")
+                add("          channels-sweep.yaml on a dual-receiver unit.")
 
         if d.last_odid:
             _render_odid(add, d.last_odid)

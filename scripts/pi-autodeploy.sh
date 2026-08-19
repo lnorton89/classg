@@ -886,6 +886,15 @@ DEPLOY_COMMIT="$REMOTE"
 if [ "$HEALTHY" -eq 1 ] && [ "$DEPLOY_OK" -eq 1 ]; then
     log "deployed ${REMOTE:0:8} and the API is answering"
     echo "$REMOTE" > "$STATE_DIR/last-good-sha"
+
+    # Every deploy builds with --build and buildx keeps every intermediate
+    # layer, so the cache grows without bound on a card that has to last: it
+    # reached 11.6 GB, a tenth of the card, before anyone looked. Pruned only
+    # after a SUCCESSFUL deploy, so a rollback still has the layers it needs to
+    # rebuild the previous image quickly. --max-used-space rather than a bare
+    # prune keeps recent layers, so the next deploy is still a cache hit.
+    docker builder prune -f --max-used-space=3221225472 >/dev/null 2>&1         && log "build cache pruned to 3 GB"         || log "build cache prune failed; not fatal"
+
     DEPLOY_OK_JSON=true
     write_state "deployed" ""
     exit 0
