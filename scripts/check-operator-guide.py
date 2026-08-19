@@ -33,7 +33,6 @@ import re
 import shlex
 import subprocess
 import sys
-import pathlib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -141,7 +140,7 @@ def check_command_line(line: str, where: str) -> None:
 SKIP_MARKERS = ("<", "$(", "...", "|", "&&", "\\")
 
 
-def check_markdown(path: pathlib.Path) -> None:
+def check_markdown(path: Path) -> None:
     """Run the same checks over ```bash fences in a markdown file."""
     where_file = path.relative_to(REPO).as_posix()
     lines = path.read_text(encoding="utf-8").splitlines()
