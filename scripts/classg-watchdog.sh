@@ -254,9 +254,17 @@ repair_web_tier() {
 # --- the pass ---------------------------------------------------------------
 
 NEEDS_HANDS=""
+# For a target that HAS been retried up the ladder and is now out of attempts.
 note_needs_hands() {
     NEEDS_HANDS="$NEEDS_HANDS$1; "
     log "GIVING UP on $1 -- $CEILING attempts made, this needs hands"
+}
+
+# For something that was never retried because retrying is not the fix -- a
+# privileged install step the agent deliberately cannot take. Claiming attempts
+# were made would be a lie, and the caller has already said what is wrong.
+note_needs_hands_only() {
+    NEEDS_HANDS="$NEEDS_HANDS$1; "
 }
 
 repair_wifi() {
@@ -351,11 +359,31 @@ check_unit_drift() {
         if ! printf '%s
 ' "$rendered" | diff -q - "/etc/systemd/system/$unit" >/dev/null 2>&1; then
             log "$unit differs from its template; run sudo ./deploy/systemd/install.sh"
-            note_needs_hands "$unit is out of date (run deploy/systemd/install.sh)"
+            note_needs_hands_only "$unit is out of date (run deploy/systemd/install.sh)"
         fi
     done
 }
 check_unit_drift
+
+# The same class of drift, one directory over. The agents restart sensor units
+# through narrow NOPASSWD grants, and those grants are written by the installers
+# -- so a unit added later (the companion receiver was) has no grant until
+# somebody re-runs them. The deploy then fails on a sudo password prompt it
+# cannot answer, mid-deploy, having already restarted the other sensors.
+# Observed exactly that: "sudo: a password is required" while the tplink
+# receiver went un-restarted and the deploy still reported success.
+check_sudoers_drift() {
+    local grants unit
+    grants="$(sudo -n -l 2>/dev/null)" || return 0
+    for unit in classg-sensor-wifi classg-sensor-sdr classg-sensor-wifi-tplink; do
+        [ -f "/etc/systemd/system/$unit.service" ] || continue
+        if ! printf '%s' "$grants" | grep -q "NOPASSWD.*restart $unit.service"; then
+            log "no passwordless restart grant for $unit.service; the agents cannot restart it"
+            note_needs_hands_only "$unit.service has no sudo grant (re-run scripts/install-watchdog.sh and install-autodeploy.sh)"
+        fi
+    done
+}
+check_sudoers_drift
 
 [ "$ACTIONS" -eq 0 ] && [ -z "$NEEDS_HANDS" ] && log "nothing to repair"
 
