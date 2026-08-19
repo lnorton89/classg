@@ -276,17 +276,45 @@ class TestFailures:
         assert vanished, "the vanished adapter must be reported on the bus, not just raised"
         assert all(h["healthy"] is False for h in vanished)
 
-    def test_a_deaf_but_present_radio_reports_unhealthy_without_dying(self, monkeypatch):
+    def test_a_deaf_but_present_sweeping_radio_reports_unhealthy_without_dying(
+        self, monkeypatch
+    ):
         """An antenna that fell off is not fixed by a restart, so say so instead."""
         monkeypatch.setattr(capture, "RX_STALL_UNHEALTHY_S", 0.0)
         monkeypatch.setattr(capture, "interface_exists", lambda iface: True)
         monkeypatch.setattr(capture, "set_channel", lambda iface, ch: True)
 
-        _, pub, _, _ = run_once(FakeRadio([]))
+        sweeping = ChannelHopper(
+            [
+                ChannelSpec(channel=1, freq_mhz=2412, weight=1.0),
+                ChannelSpec(channel=6, freq_mhz=2437, weight=1.0),
+            ],
+            base_dwell_ms=10,
+        )
+        _, pub, _, _ = run_once(FakeRadio([]), hopper=sweeping)
 
         stalled = [h for h in pub.heartbeats if "hearing nothing" in h["detail"].get("reason", "")]
-        assert stalled, "a radio hearing nothing must report unhealthy"
+        assert stalled, "a sweeping radio hearing nothing must report unhealthy"
         assert all(h["healthy"] is False for h in stalled)
+
+    def test_a_parked_receiver_hearing_nothing_is_not_called_unhealthy(self, monkeypatch):
+        """channels-primary.yaml pins a receiver to the drone's Remote ID channel.
+
+        If no access point beacons there, silence is the correct outcome -- and
+        on the real Pi that receiver logged 0 frames across 116,788 dwells while
+        its radio was fine. Flagging that unhealthy would cry wolf on the one
+        sensor an operator most needs to trust.
+        """
+        monkeypatch.setattr(capture, "RX_STALL_UNHEALTHY_S", 0.0)
+        monkeypatch.setattr(capture, "interface_exists", lambda iface: True)
+        monkeypatch.setattr(capture, "set_channel", lambda iface, ch: True)
+
+        # make_hopper() is a single-channel plan, like the dedicated receiver.
+        _, pub, _, _ = run_once(FakeRadio([]))
+
+        parked = [h for h in pub.heartbeats if "parked on channel" in h["detail"].get("reason", "")]
+        assert parked, "the silence must still be visible to an operator"
+        assert all(h["healthy"] is True for h in parked), "a working radio is not unhealthy"
 
     def test_a_radio_that_is_hearing_frames_stays_healthy(self, monkeypatch):
         """Guard against the stall check firing on a working receiver.

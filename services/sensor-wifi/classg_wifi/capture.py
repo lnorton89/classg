@@ -71,10 +71,17 @@ MAX_CONSECUTIVE_CHANNEL_ERRORS = 5
 # healthy sensor with a message blaming the adapter.
 MAX_CONSECUTIVE_READ_ERRORS = 50
 
-# 2.4 GHz is never actually silent: ordinary access points beacon every ~100 ms,
-# so a monitor-mode radio that has heard NOTHING for minutes is broken, not
-# lucky. Set well above one full sweep of the plan so a quiet 5 GHz dwell in the
-# companion receiver's schedule cannot trip it on its own.
+# A radio SWEEPING 2.4 GHz is never actually silent: ordinary access points
+# beacon every ~100 ms, so a hopping receiver that has heard NOTHING for minutes
+# is broken, not lucky. Set well above one full sweep of the plan so a quiet
+# 5 GHz dwell in the companion receiver's schedule cannot trip it on its own.
+#
+# A receiver PARKED on one channel is a different story and must not use this as
+# a health signal: channels-primary.yaml pins the dedicated receiver to the
+# drone's Remote ID channel, and if no access point in range beacons there,
+# hearing nothing for hours is the correct and expected outcome. Measured on the
+# ClassG Pi, where the parked receiver logged 0 frames across 116,788 dwells
+# while its interface counters showed the radio itself receiving normally.
 RX_STALL_UNHEALTHY_S = 120.0
 
 
@@ -547,6 +554,10 @@ def run_capture(
                 # that looked like a quiet sky.
                 stalled_s = now - last_frame_at
                 if stalled_s >= RX_STALL_UNHEALTHY_S:
+                    # "Gone" is unambiguous whatever the plan looks like, and
+                    # this is the only path that catches it on a parked
+                    # receiver: the unplug check further up needs a FAILED hop,
+                    # and a one-channel plan never retunes.
                     if not interface_exists(iface):
                         _heartbeat(publisher, stats, pipeline, hopper, iface,
                                    healthy=False, surveyor=surveyor,
@@ -557,20 +568,33 @@ def run_capture(
                             "will do it. Check  lsusb  and  dmesg  for a USB "
                             "reset, then re-run."
                         )
-                    # Still present, still deaf: a wedged radio, monitor mode
+                    # Present but deaf. Only a SWEEPING plan proves a fault --
+                    # see RX_STALL_UNHEALTHY_S. A wedged radio, monitor mode
                     # silently dropped, or an antenna that fell off. Reported
-                    # rather than fatal -- a restart does not screw an antenna
-                    # back on, and the operator needs to see which failure it is.
-                    _heartbeat(
-                        publisher, stats, pipeline, hopper, iface,
-                        healthy=False, surveyor=surveyor,
-                        reason=(
-                            f"no frames for {int(stalled_s)}s on {iface}; the "
-                            "radio is up but hearing nothing. Check the antenna "
-                            "and that monitor mode is still set: "
-                            f"iw dev {iface} info"
-                        ),
-                    )
+                    # rather than fatal: a restart does not screw an antenna
+                    # back on, and the operator needs to see which it is.
+                    elif len(hopper.channels) > 1:
+                        _heartbeat(
+                            publisher, stats, pipeline, hopper, iface,
+                            healthy=False, surveyor=surveyor,
+                            reason=(
+                                f"no frames for {int(stalled_s)}s on {iface}; "
+                                "the radio is up but hearing nothing. Check the "
+                                "antenna and that monitor mode is still set: "
+                                f"iw dev {iface} info"
+                            ),
+                        )
+                    # Parked on one channel: silence is the expected outcome
+                    # when nothing else transmits there, so say so without
+                    # calling a working radio unhealthy.
+                    else:
+                        _heartbeat(publisher, stats, pipeline, hopper, iface,
+                                   surveyor=surveyor,
+                                   reason=(
+                                       f"no frames for {int(stalled_s)}s, parked "
+                                       f"on channel {hopper.current.channel}; "
+                                       "expected if nothing else transmits there"
+                                   ))
                 else:
                     _heartbeat(publisher, stats, pipeline, hopper, iface,
                                surveyor=surveyor)
