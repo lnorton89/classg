@@ -173,6 +173,32 @@ class TestDetection:
         assert not hopper.is_escalated
 
 
+def test_single_channel_plan_only_tunes_once(monkeypatch):
+    calls: list[int] = []
+    monkeypatch.setattr(capture, "set_channel", lambda _iface, ch: calls.append(ch) or True)
+    hopper = make_hopper()
+    dwells = {"n": 0}
+    original = hopper.record_dwell
+
+    def counting(channel: int, ms: float) -> None:
+        dwells["n"] += 1
+        original(channel, ms)
+
+    hopper.record_dwell = counting  # type: ignore[method-assign]
+    capture.run_capture(
+        iface="wlan-test",
+        hopper=hopper,
+        pipeline=Pipeline(sensor_id="wifi-test"),
+        publisher=RecordingPublisher(),
+        heartbeat_s=0.0,
+        should_run=lambda: dwells["n"] < 3,
+        socket_factory=lambda _iface: FakeRadio([]),
+    )
+
+    assert calls == [6]
+    assert hopper.efficiency_report()["hops"] == 1
+
+
 class TestHealth:
     def test_heartbeats_even_with_no_detections(self):
         """The whole point of ADR-0003: silence must be distinguishable from death."""
@@ -257,6 +283,40 @@ class TestFailures:
         assert stats.frames == 3
         assert any(d["detection_class"] == "A" for d in pub.published)
 
+    def test_scattered_read_errors_never_abort_a_working_radio(self):
+        """Only an UNBROKEN run of read failures means the adapter is gone.
+
+        The counter used to be overwritten with the lifetime total at the end
+        of every dwell, so ~50 read errors spread across days of good frames
+        raised CaptureError claiming "consecutive read failures" -- and
+        systemd's restart turned that into a mysterious periodic restart of a
+        perfectly healthy sensor.
+        """
+
+        class FlakyRadio(FakeRadio):
+            """Every other read fails; the frames between are fine."""
+
+            def recv_raw(self, x: int = 0xFFFF):
+                self.reads += 1
+                if self.reads % 2:
+                    raise OSError("transient read error")
+                return (None, drone_frame(), 0.0)
+
+        radio = FlakyRadio([])
+        stats = capture.run_capture(
+            iface="wlan-test",
+            hopper=make_hopper(),
+            pipeline=Pipeline(sensor_id="wifi-test"),
+            publisher=RecordingPublisher(),
+            heartbeat_s=0.0,
+            should_run=lambda: radio.reads < 4 * capture.MAX_CONSECUTIVE_READ_ERRORS,
+            socket_factory=lambda _iface: radio,
+        )
+        assert stats.read_errors > capture.MAX_CONSECUTIVE_READ_ERRORS, (
+            "the test never accumulated enough scattered errors to prove anything"
+        )
+        assert stats.frames > capture.MAX_CONSECUTIVE_READ_ERRORS
+
 
 class TestSocketOpen:
     """open_socket was the one path the fake radio never exercised, which is
@@ -330,8 +390,20 @@ class TestPreflight:
             pytest.skip("no geteuid on this platform; the check is skipped there too")
         monkeypatch.setattr(capture.os.path, "exists", lambda p: True)
         monkeypatch.setattr(capture.os, "geteuid", lambda: 1000)
+        monkeypatch.setattr(capture, "_has_packet_capabilities", lambda: False)
         with pytest.raises(capture.CaptureError, match="root"):
             capture.preflight("wlan0")
+
+    def test_ambient_capabilities_satisfy_the_privilege_check(self, monkeypatch):
+        """The hardened systemd unit runs unprivileged with CAP_NET_RAW and
+        CAP_NET_ADMIN. A euid-only check would refuse to start it."""
+        if not hasattr(capture.os, "geteuid"):
+            pytest.skip("no geteuid on this platform; the check is skipped there too")
+        monkeypatch.setattr(capture.os.path, "exists", lambda p: True)
+        monkeypatch.setattr(capture.os, "geteuid", lambda: 1000)
+        monkeypatch.setattr(capture, "_has_packet_capabilities", lambda: True)
+        monkeypatch.setattr(capture, "interface_mode", lambda iface: "monitor")
+        capture.preflight("wlan0")  # must not raise
 
     def test_monitor_mode_passes(self, monkeypatch):
         monkeypatch.setattr(capture.os.path, "exists", lambda p: True)
@@ -438,7 +510,11 @@ class TestAdapterDisappears:
         monkeypatch.setattr(capture, "set_channel", flaky)
         monkeypatch.setattr(capture, "interface_exists", lambda iface: True)
 
-        hopper = make_hopper()
+        plans = [
+            ChannelSpec(channel=1, freq_mhz=2412, weight=1.0),
+            ChannelSpec(channel=6, freq_mhz=2437, weight=1.0),
+        ]
+        hopper = ChannelHopper(plans, base_dwell_ms=10)
         pipeline = Pipeline(sensor_id="wifi-test")
         pub = RecordingPublisher()
         dwells = {"n": 0}
@@ -449,6 +525,7 @@ class TestAdapterDisappears:
             original(channel, ms)
 
         hopper.record_dwell = counting  # type: ignore[method-assign]
+        hopper.next_channel = lambda: plans[dwells["n"] % 2]  # type: ignore[method-assign]
 
         stats = capture.run_capture(
             iface="wlan-test",
@@ -461,6 +538,64 @@ class TestAdapterDisappears:
         )
         assert stats.channel_errors >= 3, "some hops should have failed"
         assert stats.dwells >= 12, "but the capture must keep going"
+
+
+class TestChannelPlanPruning:
+    """channels.yaml keeps channels that are legal in other regdomains (12 and
+    13), so what this adapter may tune to is a runtime question. Unpruned,
+    every visit to a forbidden channel failed the hop and burned a dwell on
+    the previous channel -- 4,247 warnings in 24 h on a US regdomain -- and a
+    five-in-a-row draw of forbidden channels aborted a healthy capture."""
+
+    # The shape `iw phy phy0 channels` really prints. "(disabled)" appears on
+    # the channel line itself; "No IR" and radar notes are indented under it,
+    # and no-IR only restricts transmitting, which this sensor never does.
+    PHY_CHANNELS = """\
+Band 1:
+        * 2412 MHz [1]
+          Maximum TX power: 30.0 dBm
+          Channel widths: 20MHz HT40+
+        * 2437 MHz [6]
+          Maximum TX power: 30.0 dBm
+        * 2462 MHz [11]
+          Maximum TX power: 30.0 dBm
+        * 2467 MHz [12] (disabled)
+        * 2472 MHz [13] (disabled)
+Band 2:
+        * 5180 MHz [36]
+          Maximum TX power: 23.0 dBm
+        * 5260 MHz [52]
+          No IR
+          Radar detection
+        * 5745 MHz [149]
+          Maximum TX power: 30.0 dBm
+"""
+
+    def test_disabled_channels_are_dropped_and_no_ir_kept(self):
+        permitted = capture.parse_phy_channels(self.PHY_CHANNELS)
+        assert permitted == {1, 6, 11, 36, 52, 149}
+
+    def test_forbidden_channels_leave_the_plan(self, monkeypatch):
+        monkeypatch.setattr(capture, "permitted_channels", lambda iface: {1, 6, 11})
+        plan = [
+            ChannelSpec(channel=6, freq_mhz=2437, weight=40.0),
+            ChannelSpec(channel=12, freq_mhz=2467, weight=1.05),
+            ChannelSpec(channel=13, freq_mhz=2472, weight=1.05),
+        ]
+        pruned = capture.prune_channel_plan(plan, "wlan-test")
+        assert [spec.channel for spec in pruned] == [6]
+
+    def test_an_unreadable_regdomain_keeps_the_plan(self, monkeypatch):
+        # No `iw`, no phy: hopping and occasionally failing beats not starting.
+        monkeypatch.setattr(capture, "permitted_channels", lambda iface: None)
+        plan = [ChannelSpec(channel=12, freq_mhz=2467, weight=1.0)]
+        assert capture.prune_channel_plan(plan, "wlan-test") == plan
+
+    def test_a_plan_with_no_usable_channel_fails_loudly(self, monkeypatch):
+        monkeypatch.setattr(capture, "permitted_channels", lambda iface: {36})
+        plan = [ChannelSpec(channel=12, freq_mhz=2467, weight=1.0)]
+        with pytest.raises(capture.CaptureError, match="regdomain"):
+            capture.prune_channel_plan(plan, "wlan-test")
 
 
 class TestWatchdog:

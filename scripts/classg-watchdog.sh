@@ -34,6 +34,17 @@
 set -uo pipefail
 
 REPO_DIR="${CLASSG_REPO_DIR:-$HOME/classg}"
+
+# Compose only reads the .env in its own project directory (docker/), so a
+# repair that recreated containers without these would quietly strip every
+# Tier 1 secret the repo-root .env supplies -- Turso credentials, the OIDC
+# client secret, the SMTP password -- and "repair" the stack into a
+# less-configured state than it was in before. Root last, because a later
+# --env-file wins and CLASSG_AGENT_STATE_GID lives only in docker/.env. Each
+# is included only if present; compose errors on a missing --env-file.
+COMPOSE_ENV_ARGS=()
+[ -f "$REPO_DIR/docker/.env" ] && COMPOSE_ENV_ARGS+=(--env-file "$REPO_DIR/docker/.env")
+[ -f "$REPO_DIR/.env" ] && COMPOSE_ENV_ARGS+=(--env-file "$REPO_DIR/.env")
 API="${CLASSG_PI_API:-http://127.0.0.1:8081}"
 # Defaults INSIDE the repo, and that is deliberate. Compose runs from docker/
 # and reads docker/.env, not the repo-root .env the systemd units use -- so a
@@ -185,12 +196,13 @@ busy_reason() {
 
 # wifi_adapter_present asks the kernel, not the sensor. An adapter that is not
 # on the bus is not a software fault and restarting a process cannot help.
-wifi_adapter_present() { [ -d /sys/class/net/"${CLASSG_WIFI_IFACE:-wlan1}" ]; }
+wifi_adapter_present() { [ -d /sys/class/net/"$1" ]; }
 
 sdr_present() { lsusb 2>/dev/null | grep -qiE "rtl2838|realtek.*2838|0bda:2838"; }
 
 unit_failed() { systemctl is-failed --quiet "$1" 2>/dev/null; }
 unit_active() { systemctl is-active --quiet "$1" 2>/dev/null; }
+unit_enabled() { systemctl is-enabled --quiet "$1" 2>/dev/null; }
 
 # --- repairs ----------------------------------------------------------------
 
@@ -235,7 +247,7 @@ repair_web_tier() {
     log "the API is not answering; restarting the web tier -- attempt $n of $CEILING"
     record_attempt "web-tier"
     ACTIONS=$((ACTIONS + 1))
-    (cd "$REPO_DIR/docker" && docker compose up -d 2>&1 | tail -5 |
+    (cd "$REPO_DIR/docker" && docker compose ${COMPOSE_ENV_ARGS[@]+"${COMPOSE_ENV_ARGS[@]}"} up -d 2>&1 | tail -5 |
         while read -r l; do log "  $l"; done)
 }
 
@@ -245,6 +257,27 @@ NEEDS_HANDS=""
 note_needs_hands() {
     NEEDS_HANDS="$NEEDS_HANDS$1; "
     log "GIVING UP on $1 -- $CEILING attempts made, this needs hands"
+}
+
+repair_wifi() {
+    local unit="$1" iface="$2"
+    if ! wifi_adapter_present "$iface"; then
+        log "$iface is not on the bus; this is hardware, not software -- not restarting $unit"
+    elif unit_failed "$unit"; then
+        if may_try "$unit"; then
+            repair_unit "$unit" "the unit is in failed state"
+        elif [ "$(attempts_of "$unit")" -ge "$CEILING" ]; then
+            note_needs_hands "$unit"
+        else
+            log "$unit is failed; waiting out the backoff"
+        fi
+    elif ! unit_active "$unit"; then
+        if may_try "$unit"; then
+            repair_unit "$unit" "the unit is not running"
+        fi
+    else
+        clear_target "$unit"
+    fi
 }
 
 # The API first. Everything else is diagnosed through it, and a dead API makes
@@ -265,24 +298,11 @@ BUSY=$(busy_reason)
 if [ -n "$BUSY" ]; then
     log "postponing sensor repairs: $BUSY"
 else
-    # Wi-Fi. An absent adapter is reported and costs no attempt.
-    WIFI_UNIT=classg-sensor-wifi.service
-    if ! wifi_adapter_present; then
-        log "${CLASSG_WIFI_IFACE:-wlan1} is not on the bus; this is hardware, not software -- not restarting anything"
-    elif unit_failed "$WIFI_UNIT"; then
-        if may_try "$WIFI_UNIT"; then
-            repair_unit "$WIFI_UNIT" "the unit is in failed state"
-        elif [ "$(attempts_of "$WIFI_UNIT")" -ge "$CEILING" ]; then
-            note_needs_hands "$WIFI_UNIT"
-        else
-            log "$WIFI_UNIT is failed; waiting out the backoff"
-        fi
-    elif ! unit_active "$WIFI_UNIT"; then
-        if may_try "$WIFI_UNIT"; then
-            repair_unit "$WIFI_UNIT" "the unit is not running"
-        fi
-    else
-        clear_target "$WIFI_UNIT"
+    # Wi-Fi. The primary Alfa is required. The TP-Link sweep receiver is only
+    # watched when its unit is enabled, so deployments without it stay quiet.
+    repair_wifi classg-sensor-wifi.service "${CLASSG_WIFI_IFACE:-wlan-alfa}"
+    if unit_enabled classg-sensor-wifi-tplink.service; then
+        repair_wifi classg-sensor-wifi-tplink.service "${CLASSG_WIFI_TPLINK_IFACE:-wlan-tplink}"
     fi
 
     # SDR. dump1090 owns the radio, so an absent dongle is dump1090's problem
@@ -319,7 +339,8 @@ fi
     printf '  "actions_taken": %s,\n' "$ACTIONS"
     printf '  "needs_hands": "%s",\n' "$(json_escape "${NEEDS_HANDS%%; }")"
     printf '  "api_healthy": %s,\n' "$(api_ok && echo true || echo false)"
-    printf '  "wifi_adapter_present": %s,\n' "$(wifi_adapter_present && echo true || echo false)"
+    printf '  "wifi_adapter_present": %s,\n' "$(wifi_adapter_present "${CLASSG_WIFI_IFACE:-wlan-alfa}" && echo true || echo false)"
+    printf '  "wifi_tplink_adapter_present": %s,\n' "$(wifi_adapter_present "${CLASSG_WIFI_TPLINK_IFACE:-wlan-tplink}" && echo true || echo false)"
     printf '  "sdr_present": %s,\n' "$(sdr_present && echo true || echo false)"
     printf '  "log": %s\n' "$(json_log_array)"
     printf '}\n'

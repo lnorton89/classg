@@ -22,7 +22,7 @@ from typing import cast
 from dotenv import find_dotenv, load_dotenv
 
 from .bus import DEFAULT_ENDPOINT, DetectionPublisher
-from .capture import CaptureError, run_capture
+from .capture import CaptureError, prune_channel_plan, run_capture, set_channel
 from .fingerprint import FingerprintMatcher
 from .help_docs import render_cli_help, render_cli_topic, topic_ids
 from .hopper import ChannelHopper, load_channels
@@ -150,6 +150,20 @@ def cmd_capture(args: argparse.Namespace) -> int:
     better at this, and Milestone 0 wants a plain PCAP that Wireshark can open."""
     import subprocess
 
+    # Retune first: tcpdump records whatever channel the interface was left
+    # on, and a capture silently taken on the wrong channel looks like a drone
+    # that never broadcast. `iw dev set channel` on a monitor interface is
+    # passive -- it transmits nothing. Failing loudly beats capturing the
+    # wrong channel; the flag existed for a while without doing anything, and
+    # nothing in the resulting PCAP said so.
+    if not set_channel(args.iface, args.channel):
+        log.error(
+            "could not set %s to channel %d. The interface must be up and in "
+            "monitor mode first: sudo ./scripts/setup-monitor.sh %s",
+            args.iface, args.channel, args.iface,
+        )
+        return 1
+
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "tcpdump", "-i", args.iface, "-w", args.out,
@@ -184,11 +198,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     import yaml
 
     channels = load_channels(yaml.safe_load(Path(args.channels).read_text()))
-    hopper = ChannelHopper(
-        channels,
-        base_dwell_ms=args.dwell_ms,
-        escalation_scan_every=args.escalation_scan_every,
-    )
     matcher = FingerprintMatcher.from_yaml(
         args.fingerprints, OUIRegistry.load_if_present(args.oui_registry)
     )
@@ -202,11 +211,20 @@ def cmd_run(args: argparse.Namespace) -> int:
         socket_mode=args.socket_mode,
     )
 
-    log.info(
-        "sensor %s: %s, %d channels, %d ms base dwell",
-        args.sensor_id, args.iface, len(channels), args.dwell_ms,
-    )
     try:
+        # The plan keeps channels that are legal in other regdomains; what this
+        # adapter may actually tune to is a runtime question. See
+        # capture.prune_channel_plan for the cost of skipping this.
+        channels = prune_channel_plan(channels, args.iface)
+        hopper = ChannelHopper(
+            channels,
+            base_dwell_ms=args.dwell_ms,
+            escalation_scan_every=args.escalation_scan_every,
+        )
+        log.info(
+            "sensor %s: %s, %d channels, %d ms base dwell",
+            args.sensor_id, args.iface, len(channels), args.dwell_ms,
+        )
         run_capture(
             iface=args.iface,
             hopper=hopper,

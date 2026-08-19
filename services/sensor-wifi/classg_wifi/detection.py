@@ -20,6 +20,18 @@ from .parsers.odid import OdidPayload
 
 SCHEMA_VERSION = "1.0"
 
+# identity.id_type values the schema enum admits. The ODID parser can also
+# report "unknown" for the reserved codes 5-15 -- a value a hostile beacon can
+# put on the air at will -- and the schema's spelling for "not one of the
+# defined types" is null, not a new string.
+_WIRE_ID_TYPES = frozenset(
+    {"none", "serial_ansi_cta_2063", "caa_registration", "utm_uuid", "specific_session"}
+)
+
+# identity.self_id and friends are capped by the schema; the DJI 0x11 flight
+# description can carry ~230 bytes on the wire.
+_MAX_IDENTITY_STRING = 64
+
 _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
@@ -57,6 +69,17 @@ def _base(
     raw: bytes,
     parser: str,
 ) -> dict[str, Any]:
+    rf: dict[str, Any] = {
+        "channel": _freq_to_channel(beacon.freq_mhz),
+        "rssi_dbm": beacon.rssi_dbm,
+        "bandwidth_hz": 20_000_000,
+    }
+    # A radiotap header without a channel field yields no frequency. The schema
+    # types freq_hz as a non-nullable integer and does not require it, so the
+    # honest encoding for "not reported" is to omit the key -- null fails
+    # validation downstream.
+    if beacon.freq_mhz:
+        rf["freq_hz"] = beacon.freq_mhz * 1_000_000
     return {
         "schema_version": SCHEMA_VERSION,
         "detection_id": _ulid(rand),
@@ -64,12 +87,7 @@ def _base(
         "sensor_id": sensor_id,
         "sensor_kind": "wifi",
         "detection_class": detection_class,
-        "rf": {
-            "freq_hz": beacon.freq_mhz * 1_000_000 if beacon.freq_mhz else None,
-            "channel": _freq_to_channel(beacon.freq_mhz),
-            "rssi_dbm": beacon.rssi_dbm,
-            "bandwidth_hz": 20_000_000,
-        },
+        "rf": rf,
         "raw": {
             "encoding": "base64",
             "bytes": base64.b64encode(raw).decode("ascii"),
@@ -98,7 +116,13 @@ def from_odid(sensor_id: str, beacon: Beacon, payload: OdidPayload,
     identity: dict[str, Any] = {"mac": beacon.transmitter}
     if payload.basic_id:
         identity["serial"] = payload.basic_id.uas_id
-        identity["id_type"] = payload.basic_id.id_type
+        # Reserved id_type codes decode as "unknown", which is not in the
+        # schema enum; null is its spelling for that.
+        identity["id_type"] = (
+            payload.basic_id.id_type
+            if payload.basic_id.id_type in _WIRE_ID_TYPES
+            else None
+        )
         identity["ua_type"] = payload.basic_id.ua_type
         # Vendor from the CTA-2063-A manufacturer code. Stronger than an OUI
         # match: it comes from the Remote ID payload, so MAC randomisation
@@ -142,10 +166,14 @@ def from_dji(sensor_id: str, beacon: Beacon,
     """Class B - DJI Wi-Fi DroneID."""
     if isinstance(payload, DjiFlightPurpose):
         d = _base(sensor_id, "B", beacon, rand, raw, "dji/0x11")
+        # The wire allows ~230 bytes of operator-entered description; the
+        # schema caps self_id at 64. Truncated rather than dropped -- the head
+        # of the string is the useful part, and the full bytes survive in raw.
+        purpose = payload.purpose[:_MAX_IDENTITY_STRING] if payload.purpose else None
         d["identity"] = {
             "mac": beacon.transmitter,
             "serial": payload.serial,
-            "self_id": payload.purpose,
+            "self_id": purpose,
             "vendor_hint": "dji",
         }
         return d

@@ -233,7 +233,13 @@ instead of reporting a false success.
   `degraded` forever on a build with no SDR, without hiding the failure of one
   that is fitted: once a sensor has heartbeated, going quiet degrades health
   whether it was declared optional or not.
-- Keep the ZMQ endpoints bound to loopback or a trusted private network.
+- Keep the ZMQ endpoints bound to loopback or a trusted private network. The
+  Compose files publish fusion's ingest port as `127.0.0.1:5556` by default —
+  the bus has no authentication, so a LAN-reachable 5556 lets any device on
+  the network publish fabricated detections. `CLASSG_BUS_BIND=0.0.0.0` in
+  `.env` re-exposes it, for the networked-sensor case
+  ([ADR-0009](../architecture/adr/0009-networked-sensor-array.md)) on a
+  network you trust, ideally behind a firewall rule.
 - **Know the way back in before you need it.** A unit whose only administrator
   account is lost, disabled or forgotten has no console recovery and no default
   password. `classg-api user` is the way back — it is a subcommand of the server

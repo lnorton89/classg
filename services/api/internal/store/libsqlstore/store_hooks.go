@@ -72,6 +72,25 @@ func (s *Store) ListHookRules(ctx context.Context) ([]hooks.Rule, error) {
 	return out, nil
 }
 
+// MarkHookRuleFired is the dispatcher's write path -- see the query's comment
+// for why it is a targeted json_set rather than PutHookRule with a copy.
+// last_fired_at is formatted the way encoding/json formats a time.Time, so
+// GetHookRule's decode of the doc sees exactly what a full marshal would have
+// written.
+func (s *Store) MarkHookRuleFired(ctx context.Context, id string, at time.Time) error {
+	n, err := s.q.MarkHookRuleFired(ctx, sqlcgen.MarkHookRuleFiredParams{
+		LastFiredAt: at.UTC().Format(time.RFC3339Nano),
+		RuleID:      id,
+	})
+	if err != nil {
+		return fmt.Errorf("mark hook rule fired: %w", err)
+	}
+	if n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
 func (s *Store) DeleteHookRule(ctx context.Context, id string) error {
 	n, err := s.q.DeleteHookRule(ctx, id)
 	if err != nil {

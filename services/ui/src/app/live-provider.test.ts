@@ -62,6 +62,57 @@ describe('applyFrame', () => {
     ).toMatchObject({ confidence: 0.8 })
   })
 
+  it('respects each list cache’s own filters when inserting an unseen track', () => {
+    const client = new QueryClient()
+    const empty: TracksResponse = { tracks: [], next_cursor: null, total: 0 }
+    // The notifications drawer's query: TENTATIVE is deliberately excluded.
+    client.setQueryData(
+      queryKeys.tracks({ state: ['CONFIRMED', 'COASTING', 'CLOSED'], limit: 100 }),
+      empty,
+    )
+    // The timeline's since-window query.
+    client.setQueryData(queryKeys.tracks({ since: '2026-08-11T00:00:00Z', limit: 1000 }), empty)
+    client.setQueryData(queryKeys.tracks(), empty)
+
+    const tentative = { ...track('T1'), state: 'TENTATIVE' as const }
+    applyFrame(client, { type: 'track.update', ts: FRAME_TS, track: tentative })
+
+    // Unfiltered list gains it; the filtered ones stay untouched, totals included.
+    expect(client.getQueryData<TracksResponse>(queryKeys.tracks())).toMatchObject({
+      tracks: [{ track_id: 'T1' }],
+      total: 1,
+    })
+    expect(
+      client.getQueryData<TracksResponse>(
+        queryKeys.tracks({ state: ['CONFIRMED', 'COASTING', 'CLOSED'], limit: 100 }),
+      ),
+    ).toMatchObject({ tracks: [], total: 0 })
+    expect(
+      client.getQueryData<TracksResponse>(
+        queryKeys.tracks({ since: '2026-08-11T00:00:00Z', limit: 1000 }),
+      ),
+    ).toMatchObject({ tracks: [], total: 0 })
+  })
+
+  it('removes a track from a filtered list when an update moves it outside the filter', () => {
+    const client = new QueryClient()
+    const key = queryKeys.tracks({ state: ['TENTATIVE'] })
+    const tentative = { ...track('T1'), state: 'TENTATIVE' as const }
+    client.setQueryData<TracksResponse>(key, {
+      tracks: [tentative],
+      next_cursor: null,
+      total: 1,
+    })
+
+    applyFrame(client, {
+      type: 'track.update',
+      ts: FRAME_TS,
+      track: { ...tentative, state: 'CONFIRMED' },
+    })
+
+    expect(client.getQueryData<TracksResponse>(key)).toMatchObject({ tracks: [], total: 0 })
+  })
+
   it('archives closed tracks in list and detail caches without changing totals', () => {
     const client = new QueryClient()
     client.setQueryData(queryKeys.track('T1'), track('T1'))

@@ -220,6 +220,12 @@ export interface TracksTableProps {
   emptyTitle?: string
   emptyDescription?: string
   showStateFilter?: boolean
+  /**
+   * States to leave out of the filter dropdown. The Active table is fed an
+   * already-partitioned list, so offering CLOSED there always produced an
+   * empty table whose copy blamed the search box.
+   */
+  excludeStates?: TrackState[]
 }
 
 export function TracksTable({
@@ -228,6 +234,7 @@ export function TracksTable({
   emptyTitle = 'No tracks',
   emptyDescription = 'Check the sensor health banner before concluding the sky is empty.',
   showStateFilter = true,
+  excludeStates,
 }: TracksTableProps) {
   const format = useFormat()
   // Ages in this table must keep moving even when no frame arrives. Five
@@ -281,7 +288,9 @@ export function TracksTable({
           <Select
             aria-label="Filter tracks by state"
             value={stateFilter}
-            options={STATE_OPTIONS}
+            options={STATE_OPTIONS.filter(
+              (option) => option.value === 'ALL' || !excludeStates?.includes(option.value),
+            )}
             onValueChange={(value) =>
               setColumnFilters((old) => [
                 ...old.filter((f) => f.id !== 'state'),

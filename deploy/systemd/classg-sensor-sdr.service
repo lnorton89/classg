@@ -23,6 +23,23 @@ User=admin
 WorkingDirectory=/home/admin/classg/services/sensor-sdr
 EnvironmentFile=/home/admin/classg/.env
 
+# Everything this process legitimately does is: read a TCP stream from
+# dump1090, publish on the bus, write the journal. So it keeps no
+# capabilities, cannot gain privileges, sees a read-only filesystem with a
+# private /tmp, and can only open network and local sockets (AF_NETLINK stays
+# in the list because glibc's resolver uses it to enumerate interfaces).
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+# Backstop against memory growth thrashing the SD card into swap. The binary's
+# steady state is a few MB; hitting this means a leak, and an OOM-kill plus
+# restart is the recovery ADR-0003 already prescribes.
+MemoryMax=256M
+
 # The web tier publishes fusion's 5556 on the host and fusion listens there, so
 # both sensors connect outward. Two publishers cannot bind the same endpoint,
 # which is what makes connect the right default rather than a workaround.

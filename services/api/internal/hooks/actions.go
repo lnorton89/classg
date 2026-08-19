@@ -55,30 +55,38 @@ func (w Webhook) Validate(rule Rule) error {
 	if raw == "" {
 		return fmt.Errorf("%w: a webhook needs a url", ErrBadConfig)
 	}
-	return w.checkURL(raw)
+	_, err := w.vet(raw)
+	return err
 }
 
-// checkURL is the SSRF guard.
+// vet is the SSRF guard.
 //
 // An admin who can point a hook at http://169.254.169.254/ can read a cloud
 // metadata service through this box, and one pointed at 127.0.0.1:8081 can
 // drive the API as whatever the API trusts. "Only admins can configure hooks"
 // is not an answer -- the whole point of the admin/operator split is that admin
 // is a role, not a person who can be assumed careful.
-func (w Webhook) checkURL(raw string) error {
+//
+// It returns the addresses that passed so delivery can PIN one. Checking here
+// and letting http.Client resolve again on its own was a time-of-check gap:
+// an attacker-controlled zone can answer with a public address for the check
+// and 127.0.0.1 for the dial (DNS rebinding). The connection must go to an
+// address this function actually saw. nil addresses mean "no pin" -- either
+// AllowPrivate is set, or the caller only wanted validation.
+func (w Webhook) vet(raw string) ([]net.IP, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("%w: %s is not a URL", ErrBadConfig, raw)
+		return nil, fmt.Errorf("%w: %s is not a URL", ErrBadConfig, raw)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("%w: webhook URLs must be http or https, not %q", ErrBadConfig, u.Scheme)
+		return nil, fmt.Errorf("%w: webhook URLs must be http or https, not %q", ErrBadConfig, u.Scheme)
 	}
 	host := u.Hostname()
 	if host == "" {
-		return fmt.Errorf("%w: no host in %s", ErrBadConfig, raw)
+		return nil, fmt.Errorf("%w: no host in %s", ErrBadConfig, raw)
 	}
 	if w.AllowPrivate {
-		return nil
+		return nil, nil
 	}
 
 	// Resolve rather than pattern-match the string: "localhost", "127.1", and a
@@ -86,17 +94,40 @@ func (w Webhook) checkURL(raw string) error {
 	// first two look like it.
 	ips, err := net.LookupIP(host)
 	if err != nil {
-		return fmt.Errorf("%w: cannot resolve %s", ErrBadConfig, host)
+		return nil, fmt.Errorf("%w: cannot resolve %s", ErrBadConfig, host)
 	}
 	for _, ip := range ips {
 		if isBlockedIP(ip) {
-			return fmt.Errorf(
+			return nil, fmt.Errorf(
 				"%w: %s resolves to %s, which is a loopback, link-local or private address. "+
 					"Set hooks.allow_private_targets if that is deliberate",
 				ErrBadConfig, host, ip)
 		}
 	}
-	return nil
+	return ips, nil
+}
+
+// pinnedClient dials the vetted address instead of resolving the hostname a
+// second time. Only the TCP dial is redirected: the request URL keeps its
+// hostname, so TLS SNI and certificate verification still run against the
+// name, and the Host header is unchanged.
+func (w Webhook) pinnedClient(ip net.IP) *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errors.New("webhook targets may not redirect")
+		},
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				_, port, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				return dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+			},
+		},
+	}
 }
 
 func isBlockedIP(ip net.IP) bool {
@@ -107,9 +138,11 @@ func isBlockedIP(ip net.IP) bool {
 
 func (w Webhook) Deliver(ctx context.Context, rule Rule, e Event) (int, error) {
 	raw := rule.ConfigString("url")
-	if err := w.checkURL(raw); err != nil {
-		// Re-checked at delivery, not only at configuration: DNS can change
-		// under a name that was public when the rule was written.
+	// Re-vetted at delivery, not only at configuration: DNS can change under
+	// a name that was public when the rule was written. The addresses that
+	// pass are pinned below, so what gets dialled is what got checked.
+	ips, err := w.vet(raw)
+	if err != nil {
 		return 0, err
 	}
 
@@ -129,7 +162,11 @@ func (w Webhook) Deliver(ctx context.Context, rule Rule, e Event) (int, error) {
 		req.Header.Set("Authorization", auth)
 	}
 
-	resp, err := w.client().Do(req)
+	client := w.client()
+	if w.Client == nil && len(ips) > 0 {
+		client = w.pinnedClient(ips[0])
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err
 	}

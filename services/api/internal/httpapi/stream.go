@@ -6,11 +6,35 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/classg/api/internal/hub"
 	"github.com/coder/websocket"
 )
+
+func hasSessionCookie(r *http.Request) bool {
+	_, err := r.Cookie(SessionCookie)
+	return err == nil
+}
+
+// streamOriginAllowed accepts the request's own host and any localhost
+// origin. See handleStream for why localhost gets a pass.
+func streamOriginAllowed(origin, host string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if strings.EqualFold(u.Host, host) {
+		return true
+	}
+	switch strings.ToLower(u.Hostname()) {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
+}
 
 // pingInterval is fixed by the contract: "Server sends {"type":"ping"} every
 // 30 s; clients reply {"type":"pong"}".
@@ -28,11 +52,24 @@ type clientMessage struct {
 }
 
 func (s *Server) handleStream(w http.ResponseWriter, r *http.Request) {
+	// When a session cookie authenticated this handshake, a cross-site page
+	// must not be able to ride it: a browser sends the cookie automatically,
+	// and before this check the only thing stopping evil.example from opening
+	// an authenticated stream was SameSite=Lax -- an accident of the cookie
+	// settings, not a designed boundary. The CLI is unaffected (it sends no
+	// Origin at all, like every non-browser client), and so is the served app
+	// (same origin by definition). Localhost origins are allowed through for
+	// the Vite dev server, whose proxy rewrites Host (changeOrigin) so a
+	// strict equality check would break `make dev` -- pages on the operator's
+	// own machine are outside the cross-site threat this guards against.
+	if origin := r.Header.Get("Origin"); origin != "" && hasSessionCookie(r) && !streamOriginAllowed(origin, r.Host) {
+		http.Error(w, "cross-origin WebSocket with a session cookie is refused", http.StatusForbidden)
+		return
+	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// v1 has no authentication and is documented as localhost/trusted-LAN
-		// only (api-contract.md#auth). An origin allowlist here would imply a
-		// security boundary that does not exist, and would break the CLI,
-		// which sends no Origin at all.
+		// The cookie-authenticated case was already vetted above; everything
+		// else (no cookie, or no Origin) keeps the open pattern so the CLI
+		// and token-less trusted-LAN deployments keep working.
 		OriginPatterns: []string{"*"},
 	})
 	if err != nil {

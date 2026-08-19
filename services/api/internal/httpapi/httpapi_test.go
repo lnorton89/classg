@@ -536,6 +536,44 @@ func TestSensorsAndRestart(t *testing.T) {
 	}
 }
 
+func TestSecondWiFiSensorUsesCompanionUnit(t *testing.T) {
+	h := newHarness(t, nil)
+	h.reg.Heartbeat(health.Heartbeat{SensorID: "wifi-1", SensorKind: "wifi", Healthy: true, TS: time.Now()})
+
+	w := h.do(t, "GET", "/api/v1/sensors", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	var resp struct {
+		Sensors []struct {
+			SensorID string `json:"sensor_id"`
+			Config   struct {
+				Unit string `json:"unit"`
+			} `json:"config"`
+		} `json:"sensors"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Sensors) != 1 || resp.Sensors[0].Config.Unit != "classg-sensor-wifi-tplink.service" {
+		t.Fatalf("sensors: %+v", resp.Sensors)
+	}
+
+	w = h.do(t, "POST", "/api/v1/sensors/wifi-1/restart", "")
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("restart: got %d want 202 (%s)", w.Code, w.Body.String())
+	}
+	var restart struct {
+		Unit string `json:"unit"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &restart); err != nil {
+		t.Fatal(err)
+	}
+	if restart.Unit != "classg-sensor-wifi-tplink.service" {
+		t.Fatalf("unit: got %q", restart.Unit)
+	}
+}
+
 func TestCaptureInterfaceMustMatchEnvironment(t *testing.T) {
 	h := newHarness(t, map[string]string{"CLASSG_WIFI_INTERFACE": "wlan-test"})
 	w := h.do(t, "POST", "/api/v1/captures", `{"iface":"wlan0","channel":6,"duration_s":5}`)

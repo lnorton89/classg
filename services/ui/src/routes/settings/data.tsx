@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert } from '@/components/ui/misc'
 import { SettingsGroup } from '@/features/settings/setting-fields'
 import { settingsQuery } from '@/lib/api/queries'
-import type { ReceiverPosition } from '@/lib/api/types'
+import { asReceiverPosition } from '@/lib/api/types'
 
 export const Route = createFileRoute('/settings/data')({
   component: ExternalDataSettings,
@@ -54,7 +54,7 @@ function ExternalDataSettings() {
  */
 function NetworkADSBCard() {
   const { data } = useQuery(settingsQuery())
-  const position = data?.settings['map.receiver_position']?.value as ReceiverPosition | null
+  const position = asReceiverPosition(data?.settings['map.receiver_position']?.value)
 
   return (
     <Card>

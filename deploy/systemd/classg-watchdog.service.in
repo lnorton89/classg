@@ -6,9 +6,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=admin
-WorkingDirectory=/home/admin/classg
-ExecStart=/home/admin/classg/scripts/classg-watchdog.sh
+User=@RUNAS@
+WorkingDirectory=@CLASSG_HOME@
+ExecStart=@CLASSG_HOME@/scripts/classg-watchdog.sh
 
 # Bounded hard. A watchdog that hangs is worse than no watchdog: it stops
 # noticing anything while looking like it is still running.

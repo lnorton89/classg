@@ -126,29 +126,36 @@ func (s *Store) GetTrack(ctx context.Context, id string) (model.Track, error) {
 
 func (s *Store) ListTracks(ctx context.Context, q store.TrackQuery) (store.TrackPage, error) {
 	var (
-		since         = nullTime(q.Since)
-		minConfidence = nullFloat(q.MinConfidence, q.MinConfidence > 0)
-		states        = jsonSet(q.States)
+		since          = nullTime(q.Since)
+		lastSeenBefore = nullTime(q.LastSeenBefore)
+		minConfidence  = nullFloat(q.MinConfidence, q.MinConfidence > 0)
+		states         = jsonSet(q.States)
 	)
 
-	total, err := s.q.CountTracks(ctx, sqlcgen.CountTracksParams{
-		Since:         since,
-		MinConfidence: minConfidence,
-		States:        states,
-	})
-	if err != nil {
-		return store.TrackPage{}, fmt.Errorf("list tracks: count: %w", err)
+	var total int64
+	if !q.SkipTotal {
+		var err error
+		total, err = s.q.CountTracks(ctx, sqlcgen.CountTracksParams{
+			Since:          since,
+			LastSeenBefore: lastSeenBefore,
+			MinConfidence:  minConfidence,
+			States:         states,
+		})
+		if err != nil {
+			return store.TrackPage{}, fmt.Errorf("list tracks: count: %w", err)
+		}
 	}
 
 	limit, fetch := pageLimit(q.Limit)
 	cursorTS, cursorID := cursorParams(q.Cursor)
 	rows, err := s.q.ListTracks(ctx, sqlcgen.ListTracksParams{
-		Since:         since,
-		MinConfidence: minConfidence,
-		States:        states,
-		CursorTs:      cursorTS,
-		CursorID:      cursorID,
-		Limit:         fetch,
+		Since:          since,
+		LastSeenBefore: lastSeenBefore,
+		MinConfidence:  minConfidence,
+		States:         states,
+		CursorTs:       cursorTS,
+		CursorID:       cursorID,
+		Limit:          fetch,
 	})
 	if err != nil {
 		return store.TrackPage{}, fmt.Errorf("list tracks: %w", err)
@@ -247,14 +254,18 @@ func (s *Store) ListTrackDetections(ctx context.Context, q store.TrackDetectionQ
 		to     = nullTime(q.To)
 	)
 
-	total, err := s.q.CountTrackDetections(ctx, sqlcgen.CountTrackDetectionsParams{
-		Serial: serial,
-		Macs:   macs,
-		FromTs: from,
-		ToTs:   to,
-	})
-	if err != nil {
-		return store.DetectionPage{}, fmt.Errorf("list track detections: count: %w", err)
+	var total int64
+	if !q.SkipTotal {
+		var err error
+		total, err = s.q.CountTrackDetections(ctx, sqlcgen.CountTrackDetectionsParams{
+			Serial: serial,
+			Macs:   macs,
+			FromTs: from,
+			ToTs:   to,
+		})
+		if err != nil {
+			return store.DetectionPage{}, fmt.Errorf("list track detections: count: %w", err)
+		}
 	}
 
 	limit, fetch := pageLimit(q.Limit)
@@ -482,8 +493,33 @@ func (s *Store) PutConfig(ctx context.Context, key string, value json.RawMessage
 
 // --- retention -------------------------------------------------------------
 
+// purgeBatch bounds one DELETE. Small enough that a batch clears in tens of
+// milliseconds on a Pi's SD card, large enough that a week's backlog is a few
+// dozen rounds rather than thousands.
+const purgeBatch = 5000
+
+// PurgeDetections deletes in batches, releasing the single pooled connection
+// between rounds. The first sweep after a long power-off can owe hundreds of
+// thousands of rows; one unbounded DELETE held the sole writer for seconds
+// while ZMQ ingest callbacks queued behind it.
 func (s *Store) PurgeDetections(ctx context.Context, before time.Time) (int64, error) {
-	return s.q.PurgeDetections(ctx, toDB(before))
+	var total int64
+	for {
+		n, err := s.q.PurgeDetections(ctx, sqlcgen.PurgeDetectionsParams{
+			Before: toDB(before),
+			Batch:  purgeBatch,
+		})
+		total += n
+		if err != nil {
+			return total, err
+		}
+		if n < purgeBatch {
+			return total, nil
+		}
+		if err := ctx.Err(); err != nil {
+			return total, err
+		}
+	}
 }
 
 func (s *Store) PurgeTracks(ctx context.Context, before time.Time) (int64, error) {

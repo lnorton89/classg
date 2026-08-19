@@ -44,6 +44,20 @@ func (s *Store) ListHookRules(_ context.Context) ([]hooks.Rule, error) {
 	return out, nil
 }
 
+func (s *Store) MarkHookRuleFired(_ context.Context, id string, at time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, ok := s.hookRules[id]
+	if !ok {
+		return store.ErrNotFound
+	}
+	r.FireCount++
+	t := at
+	r.LastFiredAt = &t
+	s.hookRules[id] = r
+	return nil
+}
+
 func (s *Store) DeleteHookRule(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

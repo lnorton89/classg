@@ -73,7 +73,7 @@ export function ContactsPanel({
       <section aria-labelledby="contacts-drones" className="min-h-0 flex-1 overflow-y-auto">
         <h2
           id="contacts-drones"
-          className="text-muted-foreground bg-card/95 sticky top-0 z-10 px-3 py-2 text-xs font-semibold tracking-wide uppercase backdrop-blur"
+          className="label-caps bg-card/95 sticky top-0 z-10 px-3 py-2 backdrop-blur"
         >
           Active drone tracks ({tracks.length})
         </h2>
@@ -104,10 +104,7 @@ export function ContactsPanel({
           aria-labelledby="contacts-unidentified"
           className="border-border flex max-h-64 min-h-0 flex-col border-t"
         >
-          <h2
-            id="contacts-unidentified"
-            className="text-muted-foreground shrink-0 px-3 py-2 text-xs font-semibold tracking-wide uppercase"
-          >
+          <h2 id="contacts-unidentified" className="label-caps shrink-0 px-3 py-2">
             Unidentified RF ({unidentifiedTracks.length})
           </h2>
           {/*
@@ -134,10 +131,7 @@ export function ContactsPanel({
           aria-labelledby="contacts-closed"
           className="border-border flex max-h-64 min-h-0 flex-col border-t"
         >
-          <h2
-            id="contacts-closed"
-            className="text-muted-foreground shrink-0 px-3 py-2 text-xs font-semibold tracking-wide uppercase"
-          >
+          <h2 id="contacts-closed" className="label-caps shrink-0 px-3 py-2">
             Closed tracks ({closedTracks.length})
           </h2>
           {closedTracks.length === 0 ? (
@@ -166,10 +160,7 @@ export function ContactsPanel({
         aria-labelledby="contacts-manned"
         className="border-border flex max-h-64 min-h-0 flex-col border-t"
       >
-        <h2
-          id="contacts-manned"
-          className="text-muted-foreground shrink-0 px-3 py-2 text-xs font-semibold tracking-wide uppercase"
-        >
+        <h2 id="contacts-manned" className="label-caps shrink-0 px-3 py-2">
           Manned traffic ({adsb.length})
         </h2>
         {adsb.length === 0 ? (

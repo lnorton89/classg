@@ -2,6 +2,7 @@ import { createFileRoute, Link, Outlet } from '@tanstack/react-router'
 import { RotateCcwIcon, SettingsIcon } from 'lucide-react'
 
 import { usePreferences } from '@/app/preferences-context'
+import { PageContainer } from '@/components/layout/page-container'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/toast-primitives'
@@ -29,7 +30,7 @@ const SCOPE_ORDER: SettingsScope[] = ['browser', 'receiver']
  */
 function SettingsLayout() {
   return (
-    <div className="mx-auto flex w-full max-w-384 flex-col gap-4 p-3 sm:p-4 lg:p-6">
+    <PageContainer>
       <PageHeader
         icon={SettingsIcon}
         title="Settings"
@@ -45,7 +46,7 @@ function SettingsLayout() {
           <Outlet />
         </div>
       </div>
-    </div>
+    </PageContainer>
   )
 }
 

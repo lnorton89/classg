@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -35,6 +37,20 @@ func (m *memStore) PutHookRule(_ context.Context, r Rule) error {
 	}
 	m.rules = append(m.rules, r)
 	return nil
+}
+
+func (m *memStore) MarkHookRuleFired(_ context.Context, id string, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i := range m.rules {
+		if m.rules[i].RuleID == id {
+			m.rules[i].FireCount++
+			t := at
+			m.rules[i].LastFiredAt = &t
+			return nil
+		}
+	}
+	return errors.New("no such rule")
 }
 
 func (m *memStore) PutHookDelivery(_ context.Context, d Delivery) error {
@@ -562,5 +578,137 @@ func TestSMTPValidationRefusesJunk(t *testing.T) {
 	err := unset.Validate(Rule{Config: map[string]any{"to": "a@example.com"}})
 	if err == nil || !errors.Is(err, ErrBadConfig) {
 		t.Errorf("an unconfigured SMTP server accepted a rule: %v", err)
+	}
+}
+
+// A webhook that was down for the ~14 s the retries took must not buy itself
+// the full cooldown of silence: the failure releases the slot, and the next
+// event for the same subject alerts as soon as the target recovers.
+func TestFailedDeliveryDoesNotArmTheCooldown(t *testing.T) {
+	var healthy atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if healthy.Load() {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	store := &memStore{rules: []Rule{webhookRule(srv.URL)}}
+	clock := newClock(base)
+	d, cancel := newDispatcher(t, store, clock)
+	defer cancel()
+
+	d.Fire(trackEvent("track-1", base))
+	waitFor(t, "the delivery to fail", func() bool { return store.byStatus(DeliveryFailed) == 1 })
+
+	// The target recovers. Well inside the 300 s cooldown, the same subject
+	// fires again -- and must be DELIVERED, not suppressed.
+	healthy.Store(true)
+	clock.advance(30 * time.Second)
+	d.Fire(trackEvent("track-1", clock.now()))
+	waitFor(t, "the retry after recovery to deliver", func() bool { return len(store.delivered()) == 1 })
+	if got := store.byStatus(DeliverySuppressed); got != 0 {
+		t.Fatalf("%d events were suppressed behind a FAILED delivery", got)
+	}
+}
+
+// Events Fire already accepted are delivered during shutdown rather than
+// dropped on the floor -- a drop at exactly the moment of a restart is the
+// silent-failure shape this package exists to avoid.
+func TestQueuedAlertsAreDrainedAtShutdown(t *testing.T) {
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	store := &memStore{rules: []Rule{webhookRule(srv.URL)}}
+	var n atomic.Int64
+	d := &Dispatcher{
+		Store:    store,
+		Webhook:  Webhook{AllowPrivate: true},
+		Now:      newClock(base).now,
+		NewID:    func() string { return fmt.Sprintf("d%d", n.Add(1)) },
+		Attempts: 1,
+	}
+	d.init()
+	// Queue directly, then run with an already-cancelled context: everything
+	// must flow through the drain path, not the workers.
+	d.queue <- trackEvent("track-1", base)
+	d.queue <- trackEvent("track-2", base)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan struct{})
+	go func() { d.Run(ctx); close(done) }()
+
+	select {
+	case <-done:
+	case <-time.After(4 * time.Second):
+		t.Fatal("Run did not return; the drain deadline is not working")
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("drain delivered %d of 2 queued alerts", calls.Load())
+	}
+}
+
+// The rule cache must not outlive an admin edit: InvalidateRules makes the
+// next event see the change immediately rather than after rulesTTL.
+func TestInvalidateRulesTakesEffectImmediately(t *testing.T) {
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	store := &memStore{rules: []Rule{webhookRule(srv.URL)}}
+	clock := newClock(base)
+	d, cancel := newDispatcher(t, store, clock)
+	defer cancel()
+
+	d.Fire(trackEvent("track-1", base))
+	waitFor(t, "the first alert", func() bool { return calls.Load() == 1 })
+
+	// The admin disables the rule. Without invalidation the cached copy would
+	// keep firing for up to rulesTTL.
+	store.mu.Lock()
+	store.rules[0].Enabled = false
+	store.mu.Unlock()
+	d.InvalidateRules()
+
+	d.Fire(trackEvent("track-2", base))
+	// Deliveries are asynchronous, so "nothing happened" needs a moment to be
+	// observable rather than merely unobserved.
+	time.Sleep(150 * time.Millisecond)
+	if calls.Load() != 1 {
+		t.Fatalf("a disabled rule fired %d extra times through a stale cache", calls.Load()-1)
+	}
+}
+
+// The transport really dials the vetted address: a URL whose hostname cannot
+// resolve at all still reaches the server the pin points at. This is the
+// mechanism that closes the DNS-rebinding gap -- what is dialled is what was
+// checked, whatever the zone answers the second time.
+func TestPinnedClientDialsTheVettedIP(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client := Webhook{}.pinnedClient(net.ParseIP("127.0.0.1"))
+	resp, err := client.Get("http://pinned-target.invalid:" + u.Port() + "/")
+	if err != nil {
+		t.Fatalf("pinned dial failed: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
 	}
 }

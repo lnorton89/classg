@@ -12,6 +12,15 @@
 # The API writes spectrum-request.json; this writes spectrum-result-<id>.json
 # back. Nothing else crosses the boundary.
 #
+# Trust: a request file is taken at face value. Anyone who can write to the
+# state directory -- its group, per agent-state-setup.sh: the operator and the
+# API container -- can make this agent stop dump1090 for the length of a sweep.
+# That group IS the permission to sweep; keep it tight. The blast radius is
+# bounded on purpose: the sudoers drop-in grants exactly stop/start of
+# dump1090, the id and band are validated below before either touches a path
+# or a command line, and repeated requests are rate-limited so a wedged or
+# hostile writer degrades ADS-B rather than removing it.
+#
 # It yields the radio, and that is the part worth understanding. dump1090 owns
 # the dongle on a working unit (ADR-0008) and a sweep cannot share it, so a
 # sweep stops dump1090, measures, and starts it again -- ADS-B is blind for the
@@ -29,6 +38,8 @@ STATE_DIR="${CLASSG_DEPLOY_STATE:-$REPO_DIR/.agent-state}"
 SDR_BIN="${CLASSG_SDR_BIN:-$REPO_DIR/services/sensor-sdr/target/release/classg-sensor-sdr}"
 DUMP1090_UNIT="${CLASSG_DUMP1090_UNIT:-dump1090-mutability.service}"
 POLL_S="${CLASSG_SWEEP_POLL_S:-2}"
+MIN_SWEEP_INTERVAL_S="${CLASSG_SWEEP_MIN_INTERVAL_S:-15}"
+LAST_SWEEP_EPOCH=0
 LOG_TAG="classg-sweep-agent"
 
 REQUEST="$STATE_DIR/spectrum-request.json"
@@ -107,6 +118,16 @@ write_result() {
 # not on a stock Pi OS.
 json_field() {
     sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" <<< "$1" | head -1
+}
+
+# The id names a result file and the band lands on a command line, so both are
+# held to one boringly safe shape rather than escaped. An id of "../x" writing
+# outside the state directory is the failure this exists to prevent.
+valid_token() {
+    case "$1" in
+        "" | *[!A-Za-z0-9._-]* | .* ) return 1 ;;
+    esac
+    [ "${#1}" -le 64 ]
 }
 
 run_sweep() {
@@ -188,6 +209,24 @@ handle_request() {
         log "ignoring a malformed sweep request (${#body} bytes, id='${id}', band='${band}')"
         return 0
     fi
+    if ! valid_token "$id" || ! valid_token "$band"; then
+        # No result file: an id that failed validation is exactly the id not to
+        # build a path from.
+        log "rejecting a sweep request with an unsafe id or band (id='${id}', band='${band}')"
+        return 0
+    fi
+
+    # Rate limit. A sweep costs an ADS-B outage, so whatever writes requests --
+    # the API, or anything else that got into the state directory's group --
+    # cannot keep the radio away from dump1090 by asking in a loop.
+    local now
+    now=$(date +%s)
+    if [ $((now - LAST_SWEEP_EPOCH)) -lt "$MIN_SWEEP_INTERVAL_S" ]; then
+        write_result "$id" error "rate limited: a sweep ran $((now - LAST_SWEEP_EPOCH))s ago; the minimum interval is ${MIN_SWEEP_INTERVAL_S}s"
+        log "rate limited sweep $id ($((now - LAST_SWEEP_EPOCH))s since the last one)"
+        return 0
+    fi
+    LAST_SWEEP_EPOCH=$now
     run_sweep "$id" "$band"
 }
 

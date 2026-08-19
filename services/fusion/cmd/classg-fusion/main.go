@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -22,7 +22,6 @@ import (
 type busMessage struct {
 	topic string
 	body  []byte
-	err   error
 }
 
 func main() {
@@ -48,28 +47,38 @@ func main() {
 		os.Exit(2)
 	}
 
-	sub := zmq4.NewSub(ctx)
-	defer sub.Close()
-	var busErr error
-	switch detectionSocketMode {
-	case "dial":
-		busErr = sub.Dial(detectionEndpoint)
-	case "listen":
-		busErr = sub.Listen(detectionEndpoint)
-	default:
+	if detectionSocketMode != "dial" && detectionSocketMode != "listen" {
 		slog.Error("invalid detection socket mode", "mode", detectionSocketMode)
 		os.Exit(2)
 	}
-	if busErr != nil {
-		slog.Error("open detection bus", "endpoint", detectionEndpoint, "mode", detectionSocketMode, "err", busErr)
-		os.Exit(1)
+	// connect is also the reconnect path: on a mid-flight Recv failure in dial
+	// mode, receive() rebuilds the socket through this rather than exiting.
+	connect := func() (zmq4.Socket, error) {
+		sub := zmq4.NewSub(ctx)
+		var busErr error
+		if detectionSocketMode == "dial" {
+			busErr = sub.Dial(detectionEndpoint)
+		} else {
+			busErr = sub.Listen(detectionEndpoint)
+		}
+		if busErr != nil {
+			sub.Close()
+			return nil, fmt.Errorf("open detection bus %s (%s): %w", detectionEndpoint, detectionSocketMode, busErr)
+		}
+		for _, topic := range []string{detectionTopic, heartbeatTopic} {
+			if err := sub.SetOption(zmq4.OptionSubscribe, topic); err != nil {
+				sub.Close()
+				return nil, fmt.Errorf("subscribe %q: %w", topic, err)
+			}
+		}
+		return sub, nil
 	}
-	if err := sub.SetOption(zmq4.OptionSubscribe, detectionTopic); err != nil {
-		slog.Error("subscribe detection bus", "topic", detectionTopic, "err", err)
-		os.Exit(1)
-	}
-	if err := sub.SetOption(zmq4.OptionSubscribe, heartbeatTopic); err != nil {
-		slog.Error("subscribe heartbeat bus", "topic", heartbeatTopic, "err", err)
+	// The first connect stays fatal: a bad endpoint or mode is configuration,
+	// and configuration errors should fail at startup with a clear message
+	// rather than retry forever against a typo.
+	sub, err := connect()
+	if err != nil {
+		slog.Error("open detection bus", "err", err)
 		os.Exit(1)
 	}
 
@@ -84,7 +93,7 @@ func main() {
 	contacts := fusion.NewContactStore()
 	contacts.UseAircraftDB(loadAircraftDB())
 	messages := make(chan busMessage)
-	go receive(ctx, sub, messages, detectionSocketMode == "listen")
+	go receive(ctx, sub, messages, detectionSocketMode == "listen", connect)
 	startNetADSB(ctx, messages, detectionTopic, heartbeatTopic)
 	terrain := startTerrain(ctx)
 	if terrain != nil {
@@ -100,13 +109,6 @@ func main() {
 			slog.Info("fusion stopped")
 			return
 		case msg := <-messages:
-			if msg.err != nil {
-				if !errors.Is(msg.err, context.Canceled) && ctx.Err() == nil {
-					slog.Error("detection bus disconnected", "err", msg.err)
-					os.Exit(1)
-				}
-				return
-			}
 			// Fusion is also the ingress relay. The API subscribes to this same
 			// internal endpoint for raw detections and sensor heartbeats.
 			if err := pub.Send(zmq4.NewMsgFrom([]byte(msg.topic), msg.body)); err != nil {
@@ -164,15 +166,53 @@ func main() {
 					slog.Error("publish track lifecycle", "track_id", track.TrackID, "err", err)
 				}
 			}
+			// After both reaps, so an expired contact releases its track on the
+			// same tick rather than suppressing it for one more.
+			for _, track := range store.CorrelateContacts(contacts.Active()) {
+				if track.ADSBCorrelated {
+					slog.Info("track correlated with adsb contact; treating as manned traffic", "track_id", track.TrackID)
+				} else {
+					slog.Info("track no longer correlated with any adsb contact", "track_id", track.TrackID)
+				}
+				if err := publish(pub, trackTopic+"update", track); err != nil {
+					slog.Error("publish track correlation", "track_id", track.TrackID, "err", err)
+				}
+			}
 		}
 	}
 }
 
-func receive(ctx context.Context, sub zmq4.Socket, out chan<- busMessage, keepListening bool) {
+// Reconnect bounds. They mirror internal/bus in the api service, jitter
+// included, and for the same reason: several subscribers recovering from a
+// shared outage must not retry in lockstep.
+const (
+	minReconnectBackoff = 500 * time.Millisecond
+	maxReconnectBackoff = 30 * time.Second
+)
+
+// receive pumps bus messages into out until ctx is cancelled, and owns the
+// socket for its whole life.
+//
+// A Recv failure is never fatal. In listen mode the bound socket stays usable
+// and the read is simply retried; in dial mode -- the default, and the
+// dev/systemd layout -- the socket is torn down and re-dialled with capped,
+// jittered backoff. This process holds every in-memory track, so exiting on a
+// bus hiccup (as it used to) threw away state that takes minutes to rebuild
+// and dropped the track.closed events for it. "Sensors degrade, they don't
+// crash the system" applies to fusion too.
+func receive(ctx context.Context, sub zmq4.Socket, out chan<- busMessage, keepListening bool, reconnect func() (zmq4.Socket, error)) {
+	defer func() {
+		if sub != nil {
+			sub.Close()
+		}
+	}()
 	for {
 		msg, err := sub.Recv()
 		if err != nil {
-			if keepListening && ctx.Err() == nil {
+			if ctx.Err() != nil {
+				return
+			}
+			if keepListening {
 				slog.Info("sensor publisher disconnected; ingress remains available")
 				select {
 				case <-time.After(100 * time.Millisecond):
@@ -181,11 +221,32 @@ func receive(ctx context.Context, sub zmq4.Socket, out chan<- busMessage, keepLi
 					return
 				}
 			}
-			select {
-			case out <- busMessage{err: err}:
-			case <-ctx.Done():
+			sub.Close()
+			sub = nil
+			backoff := minReconnectBackoff
+			for sub == nil {
+				sleep := backoff + time.Duration(rand.Int63n(int64(backoff/2+1)))
+				slog.Warn("detection bus disconnected, reconnecting", "err", err, "retry_in", sleep)
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(sleep):
+				}
+				if backoff < maxReconnectBackoff {
+					backoff *= 2
+					if backoff > maxReconnectBackoff {
+						backoff = maxReconnectBackoff
+					}
+				}
+				next, rerr := reconnect()
+				if rerr != nil {
+					err = rerr
+					continue
+				}
+				sub = next
 			}
-			return
+			slog.Info("detection bus reconnected")
+			continue
 		}
 		if len(msg.Frames) < 2 {
 			continue

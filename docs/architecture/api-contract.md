@@ -1,15 +1,17 @@
 # API contract v1
 
-**This document is normative.** The Go `api` service, the `classgctl` CLI, and the web app are
-all built against it. It exists so those three can be developed independently without
-inventing incompatible interfaces.
+**This document is normative.** The Go `api` service and the web app are both built against
+it, and anything else that talks to the API — `curl`, scripts, a future CLI — holds it to
+the same contract. It exists so clients and server can be developed independently without
+inventing incompatible interfaces. (There is no `classgctl` binary today; earlier drafts
+named one, and this document is written so that building it needs no API changes.)
 
 Base URL: `http://<host>:8081/api/v1`
 
 ## Principles
 
-1. **The web app and the CLI are peers.** Both are pure clients of this API. Neither depends
-   on the other, and anything one can do, the other can do.
+1. **Every client is a peer.** The web app is a pure client of this API, and so is any
+   script or CLI. Nothing depends on another client, and anything one can do, another can.
 2. **The API is the only writer.** Clients never touch the ZMQ bus, the database, or config
    files directly.
 3. **Operator location exposure is controlled in one place** — included by default for this

@@ -244,7 +244,9 @@ function NavLink({ item }: { item: NavItem }) {
         // whatever width there is and every destination stays reachable down
         // to 320px, whatever the item count.
         'flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-md px-0.5 py-1.5',
-        'text-[10px] leading-tight font-medium tracking-tight transition-colors',
+        // text-2xs, not a px literal: 12px is the documented floor, and rem
+        // sizes are what let the --ui-scale text-size preference reach it.
+        'text-2xs leading-tight font-medium tracking-tight transition-colors',
         // Stacked in the bottom bar, inline in the header. lg because that is
         // where the one becomes the other -- and there it sizes to its label
         // rather than sharing the row equally.

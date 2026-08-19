@@ -12,7 +12,7 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { usePreferences } from '@/app/preferences-context'
-import { Button } from '@/components/ui/button'
+import { Segmented } from '@/components/ui/segmented'
 import { Panel, ResizableSplit, ResizeHandle } from '@/components/ui/resizable'
 import { LG_QUERY, useMediaQuery } from '@/lib/use-media-query'
 import { StatTile } from '@/components/ui/stat'
@@ -95,41 +95,34 @@ function LiveView() {
         coverageBroken={!skyState.absenceIsEvidence}
       />
 
-      {/*
-          The banner sits over the map rather than beside it. What an empty map
-          means has to be readable in the same glance as the map itself.
-        */}
-      <div className="pointer-events-none absolute inset-x-2 top-2 z-20 flex flex-col gap-2 sm:inset-x-3 sm:top-3">
-        <SkyStateBanner state={skyState} className="max-w-2xl" />
-      </div>
-
       {preferences.mapLegend ? (
         <MapLegend className="absolute bottom-3 left-3 z-20 hidden sm:block" />
       ) : null}
     </>
   )
 
+  // Placed by ResponsiveSplit rather than inside the map fragment: on a phone
+  // the map pane can be hidden behind the Contacts toggle, and "you are no
+  // longer watching the airspace" must not be hidden with it.
+  const banner = <SkyStateBanner state={skyState} className="max-w-2xl" />
+
   // Only rendered in the narrow layout; the wide one has both panes at once.
   const toggle = (
-    <div className="border-border bg-card sticky top-14 z-30 flex gap-1 border-b p-2">
-      <Button
-        variant={mobilePane === 'map' ? 'secondary' : 'ghost'}
-        size="sm"
-        className="flex-1"
-        aria-pressed={mobilePane === 'map'}
-        onClick={() => setMobilePane('map')}
-      >
-        <MapIcon aria-hidden /> Map
-      </Button>
-      <Button
-        variant={mobilePane === 'list' ? 'secondary' : 'ghost'}
-        size="sm"
-        className="flex-1"
-        aria-pressed={mobilePane === 'list'}
-        onClick={() => setMobilePane('list')}
-      >
-        <ListIcon aria-hidden /> Contacts ({contactCount})
-      </Button>
+    <div className="border-border bg-card sticky top-14 z-30 border-b p-2">
+      <Segmented
+        aria-label="Show the map or the contact list"
+        value={mobilePane}
+        onValueChange={setMobilePane}
+        options={[
+          { value: 'map', label: 'Map', icon: <MapIcon aria-hidden /> },
+          {
+            value: 'list',
+            label: `Contacts (${contactCount})`,
+            icon: <ListIcon aria-hidden />,
+          },
+        ]}
+        className="flex w-full"
+      />
     </div>
   )
 
@@ -186,7 +179,13 @@ function LiveView() {
   )
 
   return (
-    <ResponsiveSplit map={map} toggle={toggle} contacts={contacts} mobilePane={mobilePane} />
+    <ResponsiveSplit
+      map={map}
+      banner={banner}
+      toggle={toggle}
+      contacts={contacts}
+      mobilePane={mobilePane}
+    />
   )
 }
 
@@ -210,11 +209,13 @@ function LiveView() {
  */
 function ResponsiveSplit({
   map,
+  banner,
   toggle,
   contacts,
   mobilePane,
 }: {
   map: ReactNode
+  banner: ReactNode
   toggle: ReactNode
   contacts: ReactNode
   mobilePane: 'map' | 'list'
@@ -229,6 +230,13 @@ function ResponsiveSplit({
             back, and a map at 10% is not a map. */}
         <Panel defaultSize="70%" minSize="35%" className="relative min-h-0">
           {map}
+          {/*
+              The banner sits over the map rather than beside it. What an empty
+              map means has to be readable in the same glance as the map itself.
+            */}
+          <div className="pointer-events-none absolute inset-x-2 top-2 z-20 flex flex-col gap-2 sm:inset-x-3 sm:top-3">
+            {banner}
+          </div>
         </Panel>
         <ResizeHandle />
         <Panel
@@ -246,6 +254,11 @@ function ResponsiveSplit({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {/* In flow above both panes, not overlaid on the map: the map pane is
+          `hidden` while the list is showing, and the coverage banner must
+          survive that. empty:hidden swallows the wrapper when the banner has
+          dismissed itself. */}
+      <div className="px-2 pt-2 empty:hidden">{banner}</div>
       <div className={cn('relative min-h-[55dvh] flex-1', mobilePane === 'list' && 'hidden')}>
         {map}
       </div>

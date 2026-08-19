@@ -27,6 +27,13 @@ export function CopyButton({ value, label, className }: CopyButtonProps) {
     return () => clearTimeout(id)
   }, [copied])
 
+  // navigator.clipboard is undefined on insecure origins. The deployments that
+  // matter are HTTPS (Tailscale), but on a plain-http fallback a copy button
+  // that silently does nothing is worse than no button — so it is hidden
+  // rather than left to no-op.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the types say clipboard is always there; on an insecure origin it is not.
+  if (!navigator.clipboard) return null
+
   return (
     <button
       type="button"
@@ -39,12 +46,8 @@ export function CopyButton({ value, label, className }: CopyButtonProps) {
         className,
       )}
       onClick={() => {
-        // navigator.clipboard is undefined on insecure origins -- which is how
-        // this is served on a Pi reached over plain http on a LAN address. The
-        // types say it is always there; on the deployment that matters it is not.
         void navigator.clipboard
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-          ?.writeText(value)
+          .writeText(value)
           .then(() => setCopied(true))
           .catch(() => setCopied(false))
       }}

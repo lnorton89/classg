@@ -18,6 +18,7 @@ import {
   ClockIcon,
   CornerDownLeftIcon,
   GaugeIcon,
+  HistoryIcon,
   MapIcon,
   MoonIcon,
   RadarIcon,
@@ -25,6 +26,7 @@ import {
   ScrollTextIcon,
   SearchIcon,
   SettingsIcon,
+  ShieldCheckIcon,
   SlidersHorizontalIcon,
   SunIcon,
 } from 'lucide-react'
@@ -34,6 +36,7 @@ import type { RefObject } from 'react'
 
 import { usePreferences } from '@/app/preferences-context'
 import { useTheme } from '@/app/theme-context'
+import { useHasRole } from '@/features/auth/use-auth'
 import { Kbd } from '@/components/ui/kbd'
 import { log } from '@/features/logs/log-store'
 import type { TracksResponse } from '@/lib/api/types'
@@ -96,6 +99,7 @@ function PaletteBody({
   const queryClient = useQueryClient()
   const { preferences, setPreference } = usePreferences()
   const { preference: theme, setPreference: setTheme } = useTheme()
+  const isAdmin = useHasRole('admin')
 
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -142,6 +146,13 @@ function PaletteBody({
         run: go('/tracks'),
       },
       {
+        id: 'nav-timeline',
+        label: 'Timeline — what happened while you were away',
+        icon: HistoryIcon,
+        group: 'Go to',
+        run: go('/timeline'),
+      },
+      {
         id: 'nav-sensors',
         label: 'Sensors, spectrum and captures',
         icon: SlidersHorizontalIcon,
@@ -177,6 +188,19 @@ function PaletteBody({
         group: 'Go to',
         run: go('/settings/calibration'),
       },
+      // Gated the same way the account menu's link is: offering a viewer a
+      // destination that renders "you need the administrator role" is noise.
+      ...(isAdmin
+        ? [
+            {
+              id: 'nav-admin',
+              label: 'Administration — accounts, hooks, deployment',
+              icon: ShieldCheckIcon,
+              group: 'Go to',
+              run: go('/admin'),
+            },
+          ]
+        : []),
     ]
 
     const quick: Command[] = [
@@ -227,6 +251,7 @@ function PaletteBody({
     preferences.timeZone,
     setPreference,
     tracks,
+    isAdmin,
   ])
 
   const filtered = useMemo(() => {

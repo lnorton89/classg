@@ -82,8 +82,13 @@ sudo systemctl restart dump1090-mutability
 ```
 
 The Debian package installs a service that starts on boot and owns the radio;
-there is no bare `dump1090` binary to run by hand, and starting a second one
-would only fight the first for the device.
+on a Pi set up this way there is no bare `dump1090` binary to run by hand —
+the package ships only the service — and starting a second decoder would only
+fight the first for the device. (On a dev machine without the package, a
+hand-run `dump1090 --net` fills the same role; that is the setup
+[services/sensor-sdr/README.md](../../services/sensor-sdr/README.md)
+describes. Both are right for their machine — the sensor only cares that
+SBS-1 output appears on port 30003.)
 
 **It runs as its own `dump1090` user, which is not in `plugdev`.** The rtl-sdr
 udev rule grants `MODE="0660" GROUP="plugdev"`, so out of the box the service

@@ -17,6 +17,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PlayIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { useState } from 'react'
 
+import { usePreferences } from '@/app/preferences-context'
 import { useFormat } from '@/app/use-format'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -173,8 +174,12 @@ function RuleCard({
 }) {
   const queryClient = useQueryClient()
   const format = useFormat()
+  const { preferences } = usePreferences()
   const [editing, setEditing] = useState(false)
   const [testResult, setTestResult] = useState<TestHookResponse | null>(null)
+  // Deleting a rule silently ends its alerts, so it takes the same second
+  // click a sensor restart does.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.hookRules })
 
@@ -228,14 +233,36 @@ function RuleCard({
           <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
             Edit
           </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => remove.mutate()}
-            disabled={remove.isPending}
-          >
-            <Trash2Icon className="size-3.5" aria-hidden />
-          </Button>
+          {confirmingDelete ? (
+            <>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  setConfirmingDelete(false)
+                  remove.mutate()
+                }}
+                disabled={remove.isPending}
+              >
+                Confirm delete — stops its alerts
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmingDelete(false)}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                preferences.confirmDestructive ? setConfirmingDelete(true) : remove.mutate()
+              }
+              disabled={remove.isPending}
+              aria-label={`Delete ${rule.name}`}
+            >
+              <Trash2Icon className="size-3.5" aria-hidden />
+            </Button>
+          )}
         </div>
       </div>
 

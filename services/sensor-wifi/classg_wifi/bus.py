@@ -10,7 +10,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import time
+from datetime import UTC, datetime
 from typing import Any
 
 import zmq
@@ -19,6 +19,34 @@ log = logging.getLogger(__name__)
 
 DEFAULT_ENDPOINT = "tcp://127.0.0.1:5556"
 DEFAULT_HWM = 1000
+
+
+def heartbeat_message(
+    sensor_id: str,
+    healthy: bool,
+    published: int,
+    dropped: int,
+    detail: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """One heartbeat, in the shape schemas/heartbeat.schema.json pins down.
+
+    `ts` is RFC3339 like everything else on the bus. It used to be an epoch
+    float, which the SDR sensor did not copy and the API's FlexTime had to
+    paper over -- exactly the cross-sensor divergence the schema now forbids.
+
+    A module-level function rather than a method so the conformance tests can
+    validate the shape without opening a socket.
+    """
+    return {
+        "schema_version": "1.0",
+        "ts": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "sensor_id": sensor_id,
+        "sensor_kind": "wifi",
+        "healthy": healthy,
+        "published": published,
+        "dropped": dropped,
+        "detail": detail or {},
+    }
 
 
 class DetectionPublisher:
@@ -37,7 +65,9 @@ class DetectionPublisher:
         self._ctx: zmq.Context[zmq.Socket[bytes]] = zmq.Context.instance()
         self._sock: zmq.Socket[bytes] = self._ctx.socket(zmq.PUB)
         self._sock.setsockopt(zmq.SNDHWM, hwm)
-        # Drop immediately rather than blocking when the HWM is reached.
+        # LINGER=0 makes close() discard queued messages instead of waiting for
+        # a peer to drain them, so shutdown is bounded. Not blocking when the
+        # HWM is reached is NOBLOCK's job, on every send below.
         self._sock.setsockopt(zmq.LINGER, 0)
         if socket_mode == "bind":
             self._sock.bind(endpoint)
@@ -73,16 +103,9 @@ class DetectionPublisher:
         This is what lets the system distinguish 'no drones present' from 'sensor
         wedged' - the single most important operational property (ADR-0003).
         """
-        msg = {
-            "schema_version": "1.0",
-            "ts": time.time(),
-            "sensor_id": self.sensor_id,
-            "sensor_kind": "wifi",
-            "healthy": healthy,
-            "published": self.published,
-            "dropped": self.dropped,
-            "detail": detail or {},
-        }
+        msg = heartbeat_message(
+            self.sensor_id, healthy, self.published, self.dropped, detail
+        )
         with contextlib.suppress(zmq.Again):
             self._sock.send_multipart(
                 [

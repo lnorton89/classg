@@ -39,6 +39,13 @@ CLASSG_DETECTION_ENDPOINT=tcp://127.0.0.1:5556
 CLASSG_WIFI_SOCKET_MODE=connect
 ```
 
+Compose publishes that port on loopback only (`127.0.0.1:5556`). The bus has
+no authentication — anything that can reach the port can publish fabricated
+detections into fusion — and the on-host sensors dial `127.0.0.1`, so nothing
+on the LAN needs it. Remote sensors on another machine
+([ADR-0009](../architecture/adr/0009-networked-sensor-array.md)) are the one
+reason to set `CLASSG_BUS_BIND=0.0.0.0` in `.env`, on a network you trust.
+
 The SDR sensor already defaults to `connect` (and its unit file says so
 again); fusion's listen side is set inside `docker-compose.yml`. Only the
 Wi-Fi sensor's mode has to be set in `.env`, which is why it is the one to
@@ -59,7 +66,7 @@ reasoning is in [docker/README.md](../../docker/README.md#crossing-the-container
 From a provisioned Pi ([01-pi-setup.md](01-pi-setup.md) — including Docker):
 
 ```bash
-cd ~ && git clone https://github.com/lnorton89/classg && cd classg
+cd ~ && git clone --recursive https://github.com/lnorton89/classg && cd classg
 make env                      # then edit .env: CLASSG_WIFI_SOCKET_MODE=connect
                               # (the committed default is bind -- see above)
 ```
@@ -118,8 +125,8 @@ is somewhere else. On a build host with no radio and no librtlsdr, plain
 ### 4. Systemd units
 
 ```bash
-sudo ./deploy/systemd/install.sh wlan1
-sudo systemctl enable --now classg-sensor-wifi classg-sensor-sdr
+sudo ./deploy/systemd/install.sh wlan-alfa
+sudo systemctl enable --now classg-sensor-wifi classg-sensor-wifi-tplink classg-sensor-sdr
 ```
 
 The installer renders [deploy/systemd](../../deploy/systemd)'s templates
@@ -132,8 +139,22 @@ consequence for later: the installed units are snapshots, so a change to a
 Both units read `.env` via `EnvironmentFile=`, restart with bounded backoff
 (five failures in five minutes, then they stop in `failed` where
 `systemctl status` shows it — [roadmap, Milestone 5](../planning/roadmap.md#milestone-5--operational-hardening)),
-and the Wi-Fi unit runs as root because AF_PACKET on a monitor interface
-requires it.
+and both run as the checkout's owner, not root: the Wi-Fi unit gets AF_PACKET
+through `AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN`, and its
+`ExecStartPre=+` prefix keeps `setup-monitor.sh` privileged.
+
+> **The hardened units have not yet been proven on real hardware.** The
+> capability-based Wi-Fi unit and the sandboxing around both sensors were
+> written and tested against the unit files only, not a live Pi. After running
+> `install.sh`, watch `systemctl status classg-sensor-wifi classg-sensor-wifi-tplink classg-sensor-sdr`
+> and the first minutes of both Wi-Fi service journals before trusting
+> the deploy — a capability the sandbox dropped shows up there, not in the
+> installer's output.
+
+The installer also renders the watchdog, sweep and deploy agents' units, but
+does not enable them — each of those has its own installer
+(`scripts/install-watchdog.sh`, `install-sweep-agent.sh`,
+`install-autodeploy.sh`) that adds the sudoers grant and timer it needs.
 
 ### 5. Verify
 
@@ -184,10 +205,10 @@ Then rebuild what the pull touched:
 | Changed | Do |
 |---|---|
 | `services/api`, `services/fusion`, `services/ui` | `docker compose --env-file .env -f docker/docker-compose.yml up -d --build api` (or `fusion`, `ui`; `make compose-up` rebuilds whatever changed across all three) |
-| `services/sensor-wifi` | `cd services/sensor-wifi && .venv/bin/python -m pip install -e '.[replay]'` then `sudo systemctl restart classg-sensor-wifi`. The pip step only matters when dependencies changed — the unit runs the checkout's source directly — but it is cheap and skipping it is how a dependency bump ships untested |
+| `services/sensor-wifi` | `cd services/sensor-wifi && .venv/bin/python -m pip install -e '.[replay]'` then `sudo systemctl restart classg-sensor-wifi classg-sensor-wifi-tplink`. The pip step only matters when dependencies changed — the units run the checkout's source directly — but it is cheap and skipping it is how a dependency bump ships untested |
 | `services/sensor-sdr` | `cd services/sensor-sdr && cargo build --release --features rtlsdr` then `sudo systemctl restart classg-sensor-sdr`. **The feature flag is not optional on a unit with a radio** — without it the binary builds and runs and has no sweep engine, so `bands` and `sweep` are simply absent and the Spectrum page reports the unit as unable to sweep. The unit runs `target/release/`, so an un-rebuilt binary keeps running yesterday's code while the source says otherwise |
 | `tools/pi-dash` | `cd tools/pi-dash && cargo build --release`. It is a submodule: `git pull` moves the *pointer*, and `git submodule update --init --recursive` is what moves the checkout. A pull without it leaves the pin ahead of the files, and the dashboard keeps running the old build |
-| `deploy/systemd/*.service.in` | `sudo ./deploy/systemd/install.sh wlan1 && sudo systemctl restart classg-sensor-wifi classg-sensor-sdr` — the installed units are rendered snapshots |
+| `deploy/systemd/*.service.in` | `sudo ./deploy/systemd/install.sh wlan-alfa && sudo systemctl restart classg-sensor-wifi classg-sensor-wifi-tplink classg-sensor-sdr` — the installed units are rendered snapshots |
 | `schemas/` | All of the above. The schema is the one contract all four languages share; updating one side of the bus and not the other is a silent wire mismatch |
 | `config/defaults.yaml` | Nothing, deliberately: the database is authoritative after first run ([00-configuration.md](00-configuration.md)). Change settings through the API or the UI |
 

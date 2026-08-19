@@ -12,12 +12,8 @@ import { Alert } from '@/components/ui/misc'
 import { Tooltip } from '@/components/ui/tooltip'
 import { ApiError, api } from '@/lib/api/client'
 import { channelPlanQuery, queryKeys, settingsQuery, weightsQuery } from '@/lib/api/queries'
-import type {
-  ChannelPlan,
-  DetectionClass,
-  FusionWeights,
-  ReceiverPosition,
-} from '@/lib/api/types'
+import { asReceiverPosition } from '@/lib/api/types'
+import type { ChannelPlan, DetectionClass, FusionWeights } from '@/lib/api/types'
 import { DETECTION_CLASS_ORDER, detectionClassInfo, noisyOr } from '@/lib/detection-classes'
 
 export const Route = createFileRoute('/settings/calibration')({
@@ -139,7 +135,7 @@ export function ReceiverPositionEditor() {
   const queryClient = useQueryClient()
   const { data } = useQuery(settingsQuery())
   const setting = data?.settings['map.receiver_position']
-  const current = (setting?.value ?? null) as ReceiverPosition | null
+  const current = asReceiverPosition(setting?.value)
   const locked = setting?.source === 'env'
 
   const [draft, setDraft] = useState<{ lat: string; lon: string } | null>(null)

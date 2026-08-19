@@ -25,12 +25,12 @@ import { useFormat } from '@/app/use-format'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, EmptyState, Skeleton } from '@/components/ui/misc'
+import { Segmented } from '@/components/ui/segmented'
 import { computeSkyState } from '@/features/health/sky-state'
 import { TracksTable } from '@/features/tracks/tracks-table'
 import { healthQuery, monitoringQuery, settingsQuery, tracksQuery } from '@/lib/api/queries'
 import { cn } from '@/lib/cn'
 import { formatGoDuration } from '@/lib/format'
-import type { Track } from '@/lib/api/types'
 
 import { EventTimeline } from './event-timeline'
 import { packLanes } from './lanes'
@@ -66,7 +66,10 @@ export function TimelinePanel() {
   const navigate = useNavigate()
 
   const [windowId, setWindowId] = useState(DEFAULT_WINDOW.id)
-  const [selected, setSelected] = useState<Track | null>(null)
+  // The id, not the Track object: a stored object freezes at click time while
+  // the socket keeps updating the list, so the "Selected event" card showed
+  // whatever was true when it was clicked. Looked up at render instead.
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const choice = WINDOWS.find((w) => w.id === windowId) ?? DEFAULT_WINDOW
 
@@ -94,6 +97,9 @@ export function TimelinePanel() {
   const retention = settings.data?.settings['retention.tracks']?.value
   const skyState = computeSkyState(health.data, list.length)
   const recording = monitoring.data?.enabled ?? true
+  const selected = selectedId
+    ? (list.find((track) => track.track_id === selectedId) ?? null)
+    : null
 
   // The API caps a page at 1000. More tracks than that in one window means the
   // band is not the whole story, and saying so beats quietly drawing a subset.
@@ -122,21 +128,16 @@ export function TimelinePanel() {
           {/* One wrapping group, not two. `ml-auto` on the last button pushed
               it to the far right of whatever row it landed on, so at phone
               width it sat alone on its own line looking like a stray. */}
-          <div role="group" aria-label="Time window" className="flex flex-wrap gap-1.5">
-            {WINDOWS.map((w) => (
-              <Button
-                key={w.id}
-                size="sm"
-                variant={w.id === windowId ? 'default' : 'outline'}
-                aria-pressed={w.id === windowId}
-                onClick={() => {
-                  setWindowId(w.id)
-                  setAnchorMs(Date.now())
-                }}
-              >
-                {w.label}
-              </Button>
-            ))}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Segmented
+              aria-label="Time window"
+              value={windowId}
+              onValueChange={(id) => {
+                setWindowId(id)
+                setAnchorMs(Date.now())
+              }}
+              options={WINDOWS.map((w) => ({ value: w.id, label: w.label }))}
+            />
             <Button size="sm" variant="ghost" onClick={() => setAnchorMs(Date.now())}>
               Jump to now
             </Button>
@@ -176,8 +177,8 @@ export function TimelinePanel() {
             <EventTimeline
               events={events}
               window={window}
-              selectedId={selected?.track_id ?? null}
-              onSelect={setSelected}
+              selectedId={selectedId}
+              onSelect={(track) => setSelectedId(track.track_id)}
               formatTime={format.clockBrief}
             />
           )}

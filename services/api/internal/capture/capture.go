@@ -95,6 +95,11 @@ type Manager struct {
 
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
+	// busy is claimed by Start before any I/O and released when the capture's
+	// goroutine finishes, so two Starts cannot interleave. running alone is
+	// not enough: the id is only inserted after preflight, and that window is
+	// exactly where a second Start used to slip in.
+	busy bool
 }
 
 func NewManager(st store.Store, opts Options) *Manager {
@@ -103,6 +108,17 @@ func NewManager(st store.Store, opts Options) *Manager {
 
 // ErrPrivileges means the machine cannot capture, not that the request was bad.
 var ErrPrivileges = errors.New("privileges required")
+
+// ErrBusy means a capture is already running. The monitor interface is a
+// single exclusive resource: a second capture would retune the shared radio
+// under the first AND under the wifi sensor's channel hopper. Sweeps grew an
+// ErrBusy gate for exactly this collision; captures get the same one.
+var ErrBusy = errors.New("a capture is already running")
+
+// commandTimeout bounds the iw invocations. A wedged mt7921u can hang iw
+// inside the kernel, and without a deadline that pinned the handler goroutine
+// (preflight) or leaked the capture goroutine (channel set) forever.
+const commandTimeout = 10 * time.Second
 
 // ValidationError is a bad request body; Field names the offending member.
 type ValidationError struct {
@@ -167,11 +183,28 @@ func (m *Manager) Start(ctx context.Context, req Request) (model.Capture, error)
 	if err != nil {
 		return model.Capture{}, err
 	}
-	if err := m.preflight(ctx, req.Iface); err != nil {
+
+	// Claim the radio before any I/O. Released by fail() below on every error
+	// path, or by run()'s defer once the capture ends.
+	m.mu.Lock()
+	if m.busy {
+		m.mu.Unlock()
+		return model.Capture{}, ErrBusy
+	}
+	m.busy = true
+	m.mu.Unlock()
+	fail := func(err error) (model.Capture, error) {
+		m.mu.Lock()
+		m.busy = false
+		m.mu.Unlock()
 		return model.Capture{}, err
 	}
+
+	if err := m.preflight(ctx, req.Iface); err != nil {
+		return fail(err)
+	}
 	if err := os.MkdirAll(m.opts.Dir, 0o755); err != nil {
-		return model.Capture{}, fmt.Errorf("capture directory: %w", err)
+		return fail(fmt.Errorf("capture directory: %w", err))
 	}
 
 	now := time.Now().UTC()
@@ -190,7 +223,7 @@ func (m *Manager) Start(ctx context.Context, req Request) (model.Capture, error)
 		Label:     req.Label,
 	}
 	if err := m.store.PutCapture(ctx, c); err != nil {
-		return model.Capture{}, err
+		return fail(err)
 	}
 
 	// Detached from the request context: the capture outlives the HTTP call
@@ -222,7 +255,12 @@ func (m *Manager) preflight(ctx context.Context, iface string) error {
 	// monitor mode itself: that is a persistent change to host network state,
 	// and scripts/setup-monitor.sh already owns it along with the mt7921u
 	// landmines documented in docs/ops/02-wifi-adapter.md.
-	out, err := exec.CommandContext(ctx, "iw", "dev", iface, "info").CombinedOutput()
+	//
+	// Bounded, because the request context carries no deadline of its own and
+	// iw against a wedged adapter can hang in the kernel.
+	iwCtx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+	out, err := exec.CommandContext(iwCtx, "iw", "dev", iface, "info").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: cannot read %s (%v)", ErrPrivileges, iface, err)
 	}
@@ -237,6 +275,7 @@ func (m *Manager) run(ctx context.Context, c model.Capture) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.running, c.CaptureID)
+		m.busy = false
 		m.mu.Unlock()
 	}()
 
@@ -244,9 +283,12 @@ func (m *Manager) run(ctx context.Context, c model.Capture) {
 
 	// Setting the receive channel is the only mutation this package performs,
 	// and it is receive-side tuning: it changes what the radio listens to, not
-	// what it emits.
-	if out, err := exec.CommandContext(ctx, "iw", "dev", c.Iface, "set", "channel",
-		fmt.Sprint(c.Channel)).CombinedOutput(); err != nil {
+	// what it emits. Bounded like preflight's iw call, and for the same wedge.
+	tuneCtx, cancelTune := context.WithTimeout(ctx, commandTimeout)
+	out, err := exec.CommandContext(tuneCtx, "iw", "dev", c.Iface, "set", "channel",
+		fmt.Sprint(c.Channel)).CombinedOutput()
+	cancelTune()
+	if err != nil {
 		m.finish(c, model.CaptureFailed, fmt.Sprintf("setting channel %d: %v: %s", c.Channel, err, strings.TrimSpace(string(out))))
 		return
 	}
@@ -268,7 +310,7 @@ func (m *Manager) run(ctx context.Context, c model.Capture) {
 		m.finish(c, model.CaptureFailed, fmt.Sprintf("starting tcpdump: %v", err))
 		return
 	}
-	err := cmd.Wait()
+	err = cmd.Wait()
 
 	// tcpdump killed by its deadline or by an explicit stop is the normal way
 	// a capture ends, not a failure.

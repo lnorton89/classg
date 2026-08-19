@@ -1,6 +1,7 @@
 package fusion
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -194,5 +195,91 @@ func TestZeroPositionRejected(t *testing.T) {
 	}
 	if d.Position != nil {
 		t.Fatal("0,0 position should be rejected as 'no GPS fix'")
+	}
+}
+
+// The health registry learned this for heartbeats; tracks had the identical
+// exposure. A sensor clock running ahead must not produce a track whose
+// LastSeen sits in the future, because such a track never coasts, never
+// closes, and the API-side StaleTrackCloser cannot close it either -- a
+// phantom CONFIRMED drone on the map forever.
+func TestFutureStampedDetectionCannotPinATrackOpen(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+
+	tr := s.Ingest(det("A", "SER1", "aa:bb:cc:dd:ee:ff", now.Add(2*time.Hour)), now)
+	if tr.LastSeen.After(now) {
+		t.Fatalf("LastSeen %v is ahead of the ingest clock %v", tr.LastSeen, now)
+	}
+	if tr.FirstSeen.After(now) {
+		t.Fatalf("FirstSeen %v is ahead of the ingest clock %v", tr.FirstSeen, now)
+	}
+
+	// With nothing more arriving, the ordinary lifecycle closes it.
+	s.Reap(now.Add(CloseAfter + time.Second))
+	if len(s.Active()) != 0 {
+		t.Fatal("future-stamped track survived a full CloseAfter of silence")
+	}
+}
+
+// An out-of-order detection must not drag LastSeen backwards into a premature
+// coast -- the same guard ContactStore has always had.
+func TestOutOfOrderDetectionDoesNotRegressLastSeen(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+
+	s.Ingest(det("A", "SER1", "", now), now)
+	tr := s.Ingest(det("A", "SER1", "", now.Add(-time.Minute)), now)
+	if tr.LastSeen.Before(now) {
+		t.Fatalf("LastSeen regressed to %v", tr.LastSeen)
+	}
+}
+
+// track.schema.json declares evidence as an ARRAY. The in-memory map used to
+// marshal as an object keyed by class, which only worked because the API's
+// decoder tolerates both shapes.
+func TestTrackMarshalsEvidenceAsSchemaArray(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+	s.Ingest(det("B", "SER1", "", now), now)
+	tr := s.Ingest(det("A", "SER1", "", now), now)
+
+	body, err := json.Marshal(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Evidence []Evidence `json:"evidence"`
+	}
+	if err := json.Unmarshal(body, &wire); err != nil {
+		t.Fatalf("evidence did not decode as an array: %v\n%s", err, body)
+	}
+	if len(wire.Evidence) != 2 {
+		t.Fatalf("evidence = %+v, want 2 entries", wire.Evidence)
+	}
+	// Sorted by class, so the same track serialises identically twice.
+	if wire.Evidence[0].Class != "A" || wire.Evidence[1].Class != "B" {
+		t.Fatalf("evidence order = %s, %s; want A, B", wire.Evidence[0].Class, wire.Evidence[1].Class)
+	}
+}
+
+// speed_mps and track_deg are defined on the schema's position; a detection
+// that reports kinematics must not serve them as null forever.
+func TestPositionCarriesKinematics(t *testing.T) {
+	d := positioned(t, "1596F3BBBBBBBBBBBBBB",
+		`{"lat":51.5,"lon":-0.1,"alt_geodetic_m":120}`)
+	d.Kinematics = &struct {
+		SpeedMPS         *float64 `json:"speed_mps"`
+		TrackDeg         *float64 `json:"track_deg"`
+		VerticalSpeedMPS *float64 `json:"vertical_speed_mps"`
+	}{SpeedMPS: fptr(14.5), TrackDeg: fptr(271)}
+
+	s := newTestStore()
+	tr := s.Ingest(d, time.Now())
+	if tr.Current == nil || tr.Current.SpeedMPS == nil || tr.Current.TrackDeg == nil {
+		t.Fatalf("kinematics were dropped from the fix: %+v", tr.Current)
+	}
+	if *tr.Current.SpeedMPS != 14.5 || *tr.Current.TrackDeg != 271 {
+		t.Fatalf("speed/track = %v/%v", *tr.Current.SpeedMPS, *tr.Current.TrackDeg)
 	}
 }

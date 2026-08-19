@@ -127,7 +127,11 @@ impl NoiseFloor {
             return None;
         }
         let mut sorted = self.samples.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        // total_cmp, not partial_cmp().unwrap(): a single NaN power bin -- one
+        // bad FFT frame from a live radio -- panicked the sweep binary in
+        // production. total_cmp orders NaN after every real value, so a stray
+        // one lands at the end and leaves the median untouched.
+        sorted.sort_by(f32::total_cmp);
         Some(sorted[sorted.len() / 2])
     }
 
@@ -155,6 +159,19 @@ mod tests {
     fn ism_433_fits_a_single_tune() {
         let band = BAND_PLANS.iter().find(|b| b.name == "ism_433").unwrap();
         assert_eq!(plan_sweep(band, 0.2).len(), 1);
+    }
+
+    /// A NaN power bin must not panic the sweep binary. partial_cmp().unwrap()
+    /// did exactly that, against the live radio.
+    #[test]
+    fn a_nan_bin_does_not_panic_or_move_the_floor() {
+        let mut nf = NoiseFloor::new(16);
+        for _ in 0..15 {
+            nf.push(-100.0);
+        }
+        nf.push(f32::NAN);
+        let median = nf.median().unwrap();
+        assert_eq!(median, -100.0, "NaN sorts last and leaves the median alone");
     }
 
     #[test]

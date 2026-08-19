@@ -119,8 +119,11 @@ wrong trade for identifying a landing site and the right one for a unit with no 
 
 The sensors stay on the host, so the detection bus has to cross into Compose.
 The direction is chosen, not incidental: fusion **listens** on 5556 and Compose
-publishes that port, and the host sensor **connects** outward to it. Fusion then
-relays detections and heartbeats to the API over the private Compose network.
+publishes that port **on loopback only** (`127.0.0.1:5556` — the bus has no
+authentication, and the host sensors dial loopback; `CLASSG_BUS_BIND=0.0.0.0`
+re-exposes it for remote sensors on a trusted network). The host sensor
+**connects** outward to it. Fusion then relays detections and heartbeats to
+the API over the private Compose network.
 
 That is the reverse of the all-native layout, where the sensor binds and fusion
 dials. It has to be, because a container's loopback is not the host's: a sensor
@@ -134,16 +137,23 @@ Validate the files without starting containers:
 make compose-config
 ```
 
-Start the web tier first, then replay a captured flight. Replay publishes by
-default:
+Start the web tier first, then replay a flight. Replay publishes by default.
+A fresh clone has no captures — the corpus is gitignored — so generate the
+synthetic one (see the README's "Prove the pipeline without hardware"):
 
 ```bash
 make compose-up
+services/sensor-wifi/.venv/bin/python scripts/make-demo-capture.py
 cd services/sensor-wifi
-.venv/bin/python -m classg_wifi.cli replay \
-  ../../captures/20260810-141223-dji-first-flight.pcap
-curl http://localhost:8081/api/v1/detections
+.venv/bin/python -m classg_wifi.cli replay ../../captures/demo-hover.pcap \
+  --endpoint tcp://127.0.0.1:5556 --socket-mode connect
+curl -s http://localhost:8081/api/v1/health
 ```
+
+`/health` answers without a session and should show `wifi-0` healthy with 500
+detections. `/api/v1/detections` shows the detections themselves once you have
+a session (or `CLASSG_AUTH_MODE=off` on a dev box). A capture of your own
+replays the same way.
 
 Use `--no-publish --print` when you only want the old parser-only console
 output.

@@ -25,7 +25,10 @@ func (c *StaleTrackCloser) Run(ctx context.Context) {
 	}
 	interval := c.Interval
 	if interval <= 0 {
-		interval = 5 * time.Second
+		// 30s against a TTL measured in minutes. The old 5s default ran the
+		// sweep 60 times per TTL for no extra freshness -- this is a repair
+		// job for fusion restarts, not a lifecycle owner.
+		interval = 30 * time.Second
 	}
 	c.Sweep(ctx, time.Now().UTC())
 	ticker := time.NewTicker(interval)
@@ -40,29 +43,55 @@ func (c *StaleTrackCloser) Run(ctx context.Context) {
 	}
 }
 
-// Sweep closes stored tracks whose last update is older than fusion's TTL.
+// Sweep closes stored tracks whose last update is older than fusion's TTL --
+// and, symmetrically, tracks stamped more than a TTL into the FUTURE. fusion
+// clamps sensor timestamps to its own clock now (fusion/track.go), but a doc
+// written before that fix, or by anything else with a fast clock, would
+// otherwise sit CONFIRMED on the map forever: a future last_seen never gets
+// past the cutoff.
+//
+// Both bounds are decided in SQL on the indexed last_seen column. The sweep
+// used to fetch and JSON-decode every open track once per tick just to
+// compare timestamps in Go, which on the shared connection was most of its
+// cost.
 func (c *StaleTrackCloser) Sweep(ctx context.Context, now time.Time) {
 	if c.TTL <= 0 {
 		return
 	}
-	page, err := c.Store.ListTracks(ctx, store.TrackQuery{
-		States: []string{"TENTATIVE", "CONFIRMED", "COASTING"},
-		Limit:  store.MaxLimit,
+	cutoff := now.Add(-c.TTL)
+	c.closeMatching(ctx, store.TrackQuery{
+		States:         []string{"TENTATIVE", "CONFIRMED", "COASTING"},
+		LastSeenBefore: cutoff,
+		SkipTotal:      true,
+		Limit:          store.MaxLimit,
+	}, func(lastSeen time.Time) bool {
+		return !lastSeen.IsZero() && lastSeen.Before(cutoff)
 	})
+
+	horizon := now.Add(c.TTL)
+	c.closeMatching(ctx, store.TrackQuery{
+		States:    []string{"TENTATIVE", "CONFIRMED", "COASTING"},
+		Since:     horizon, // Since is last_seen >= bound: only clock artifacts land here
+		SkipTotal: true,
+		Limit:     store.MaxLimit,
+	}, func(lastSeen time.Time) bool {
+		return !lastSeen.Before(horizon)
+	})
+}
+
+// closeMatching archives every track the query returns, re-checking stillStale
+// against a fresh read first: a concurrent fusion update must not be
+// overwritten by the sweep's older snapshot.
+func (c *StaleTrackCloser) closeMatching(ctx context.Context, q store.TrackQuery, stillStale func(lastSeen time.Time) bool) {
+	page, err := c.Store.ListTracks(ctx, q)
 	if err != nil {
 		slog.Error("listing stale tracks failed", "err", err)
 		return
 	}
-	cutoff := now.Add(-c.TTL)
 	for _, candidate := range page.Tracks {
-		if candidate.LastSeen.IsZero() || !candidate.LastSeen.Before(cutoff) {
-			continue
-		}
-		// Re-read before writing so a concurrent fusion update cannot be
-		// overwritten by the sweep's older snapshot.
 		current, err := c.Store.GetTrack(ctx, candidate.TrackID)
 		if err != nil || current.State == "CLOSED" || current.LastSeen.IsZero() ||
-			!current.LastSeen.Before(cutoff) {
+			!stillStale(current.LastSeen) {
 			continue
 		}
 		current.State = "CLOSED"

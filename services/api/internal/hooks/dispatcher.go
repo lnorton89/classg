@@ -14,7 +14,11 @@ import (
 // a wrapper type whose only job was renaming three methods.
 type Store interface {
 	ListHookRules(ctx context.Context) ([]Rule, error)
-	PutHookRule(ctx context.Context, r Rule) error
+	// MarkHookRuleFired bumps fire_count and stamps last_fired_at as a
+	// targeted update, not a document rewrite. Dispatch workers call it
+	// concurrently with each other and with admin edits; writing back a whole
+	// rule read at handle time lost increments and clobbered edits.
+	MarkHookRuleFired(ctx context.Context, ruleID string, at time.Time) error
 	PutHookDelivery(ctx context.Context, d Delivery) error
 }
 
@@ -51,6 +55,16 @@ type Dispatcher struct {
 	mu       sync.Mutex
 	cooldown map[string]time.Time
 
+	// rules caches the rule list. handle() runs for every event -- several a
+	// second during a busy pass -- and re-reading meant a SELECT plus a JSON
+	// decode of every rule per event on the single shared connection, for a
+	// list that changes only when an admin edits it. Invalidated by the admin
+	// write path (InvalidateRules) and refreshed on a short TTL as
+	// belt-and-braces against a missed invalidation.
+	rulesMu       sync.Mutex
+	rules         []Rule
+	rulesLoadedAt time.Time
+
 	// Dropped counts events discarded because the queue was full. Exposed on
 	// /metrics: a silent drop in an alerting system is the worst possible
 	// failure, because it looks exactly like nothing happening.
@@ -68,6 +82,13 @@ const (
 	// handful of endpoints, and more would mostly be a way to hammer someone
 	// else's webhook.
 	workers = 4
+	// rulesTTL bounds how stale the cached rule list can get if an
+	// invalidation is ever missed. Thirty seconds of a deleted rule still
+	// firing is tolerable; per-event re-reads were not.
+	rulesTTL = 30 * time.Second
+	// drainTimeout bounds how long shutdown spends delivering alerts that were
+	// already queued when the context was cancelled.
+	drainTimeout = 5 * time.Second
 )
 
 func (d *Dispatcher) now() time.Time {
@@ -84,7 +105,8 @@ func (d *Dispatcher) attempts() int {
 	return 3
 }
 
-// Run starts the workers and blocks until ctx is done.
+// Run starts the workers and blocks until ctx is done, then drains what was
+// already queued.
 func (d *Dispatcher) Run(ctx context.Context) {
 	d.init()
 	for i := 0; i < workers; i++ {
@@ -93,6 +115,53 @@ func (d *Dispatcher) Run(ctx context.Context) {
 	}
 	<-ctx.Done()
 	d.wg.Wait()
+	d.drain()
+}
+
+// drain delivers events that Fire had already accepted when shutdown began.
+// An alert this system took responsibility for and then dropped because
+// systemd got there first is a silent drop -- the failure /metrics exists to
+// make loud. The deadline is short: a restart must not hang behind a webhook
+// that stopped answering. (One in-flight attempt can still run to its own
+// 30 s bound; the deadline stops retries and further events, not the socket.)
+func (d *Dispatcher) drain() {
+	ctx, cancel := context.WithTimeout(context.Background(), drainTimeout)
+	defer cancel()
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		select {
+		case e := <-d.queue:
+			d.handle(ctx, e)
+		default:
+			return
+		}
+	}
+}
+
+// InvalidateRules drops the cached rule list. The admin write path calls this
+// after every create, update or delete so a changed rule takes effect on the
+// next event rather than after rulesTTL.
+func (d *Dispatcher) InvalidateRules() {
+	d.rulesMu.Lock()
+	d.rulesLoadedAt = time.Time{}
+	d.rulesMu.Unlock()
+}
+
+func (d *Dispatcher) loadRules(ctx context.Context) ([]Rule, error) {
+	d.rulesMu.Lock()
+	defer d.rulesMu.Unlock()
+	if !d.rulesLoadedAt.IsZero() && d.now().Sub(d.rulesLoadedAt) < rulesTTL {
+		return d.rules, nil
+	}
+	rules, err := d.Store.ListHookRules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d.rules = rules
+	d.rulesLoadedAt = d.now()
+	return rules, nil
 }
 
 func (d *Dispatcher) init() {
@@ -144,7 +213,7 @@ func (d *Dispatcher) worker(ctx context.Context) {
 }
 
 func (d *Dispatcher) handle(ctx context.Context, e Event) {
-	rules, err := d.Store.ListHookRules(ctx)
+	rules, err := d.loadRules(ctx)
 	if err != nil {
 		slog.Error("reading hook rules failed", "err", err)
 		return
@@ -172,10 +241,15 @@ func (d *Dispatcher) handle(ctx context.Context, e Event) {
 	}
 }
 
-// suppressed reports whether this rule already fired for this subject recently,
-// and marks it as fired if not.
+// suppressed reports whether this rule already fired for this subject
+// recently, and claims the cooldown slot if not. Claiming here rather than
+// after delivery is what stops two workers holding the same subject from
+// alerting twice -- but the claim is provisional: a delivery that FAILS
+// releases it (see deliver), because three failed attempts against a webhook
+// that was down for ~14 s must not buy the full cooldown of silence for a
+// drone that is still overhead.
 func (d *Dispatcher) suppressed(rule Rule, e Event) bool {
-	key := rule.RuleID + "\x00" + e.Subject
+	key := cooldownKey(rule, e)
 	now := d.now()
 
 	d.mu.Lock()
@@ -199,6 +273,19 @@ func (d *Dispatcher) suppressed(rule Rule, e Event) bool {
 	return false
 }
 
+func cooldownKey(rule Rule, e Event) string {
+	return rule.RuleID + "\x00" + e.Subject
+}
+
+// release gives back the cooldown slot suppressed() claimed. Called only on a
+// failed delivery: no re-arm race is possible, because any other event for
+// this (rule, subject) was suppressed by the very claim being released.
+func (d *Dispatcher) release(rule Rule, e Event) {
+	d.mu.Lock()
+	delete(d.cooldown, cooldownKey(rule, e))
+	d.mu.Unlock()
+}
+
 func (d *Dispatcher) deliver(ctx context.Context, rule Rule, e Event) {
 	del := Delivery{
 		DeliveryID: d.newID(),
@@ -219,6 +306,7 @@ func (d *Dispatcher) deliver(ctx context.Context, rule Rule, e Event) {
 	default:
 		del.Status, del.Error = DeliveryFailed, "unknown action "+rule.Action
 		d.record(ctx, del)
+		d.release(rule, e)
 		return
 	}
 
@@ -262,6 +350,11 @@ func (d *Dispatcher) deliver(ctx context.Context, rule Rule, e Event) {
 	slog.Warn("hook delivery failed",
 		"rule", rule.Name, "event", e.Name, "attempts", del.Attempts, "err", lastErr)
 	d.record(ctx, del)
+	// Failure must not arm the cooldown: a webhook that was down for the ~14 s
+	// the retries took used to buy itself the full cooldown of guaranteed
+	// silence for this subject -- a transient blip converted into a missed
+	// drone. The next event for this subject gets to try again.
+	d.release(rule, e)
 }
 
 // backoff is 2s, 4s, 8s. Deliberately short: an alert delivered twenty minutes
@@ -272,10 +365,7 @@ func backoff(attempt int) time.Duration {
 }
 
 func (d *Dispatcher) markFired(ctx context.Context, rule Rule, at time.Time) {
-	rule.LastFiredAt = &at
-	rule.FireCount++
-	rule.UpdatedAt = at
-	if err := d.Store.PutHookRule(ctx, rule); err != nil {
+	if err := d.Store.MarkHookRuleFired(ctx, rule.RuleID, at); err != nil {
 		// Bookkeeping. The alert was delivered; failing loudly here would
 		// misreport a success.
 		slog.Warn("recording a hook firing failed", "rule", rule.Name, "err", err)

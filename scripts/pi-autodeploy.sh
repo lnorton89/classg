@@ -28,11 +28,28 @@ REPO_DIR="${CLASSG_REPO_DIR:-$HOME/classg}"
 BRANCH="${CLASSG_DEPLOY_BRANCH:-main}"
 API="${CLASSG_PI_API:-http://127.0.0.1:8081}"
 GH_REPO="${CLASSG_GH_REPO:-lnorton89/classg}"
-# See the same constant in classg-watchdog.sh: compose cannot read the repo-root
-# .env, so both sides default to one repo-relative path and agree by
-# construction rather than by configuration.
+# See the same constant in classg-watchdog.sh: both sides default to one
+# repo-relative path and agree by construction rather than by configuration.
 STATE_DIR="${CLASSG_DEPLOY_STATE:-$REPO_DIR/.agent-state}"
 LOG_TAG="classg-autodeploy"
+
+# Compose only reads the .env in its own project directory (docker/), so every
+# Tier 1 setting in the repo-root .env -- which is exactly where ADR-0007 puts
+# them -- was silently ignored on every deploy. CLASSG_TURSO_URL and
+# CLASSG_TURSO_AUTH_TOKEN, CLASSG_OIDC_CLIENT_SECRET, the CLASSG_SMTP_*
+# credentials and CLASSG_AUTH_MODE all fell back to their `${VAR:-default}`
+# defaults with nothing logged. It stayed invisible because the values this
+# unit happened to set matched the defaults; the first one that differed just
+# would not take effect. `make compose-up` always passed --env-file and this
+# path did not, so the two disagreed about what a deploy even means.
+#
+# Both files are passed, root last, because compose lets a later --env-file win
+# and CLASSG_AGENT_STATE_GID lives only in docker/.env. Each is included only
+# if it exists -- compose errors on a missing --env-file, and a fresh clone has
+# neither until `make env` runs.
+COMPOSE_ENV_ARGS=()
+[ -f "$REPO_DIR/docker/.env" ] && COMPOSE_ENV_ARGS+=(--env-file "$REPO_DIR/docker/.env")
+[ -f "$REPO_DIR/.env" ] && COMPOSE_ENV_ARGS+=(--env-file "$REPO_DIR/.env")
 
 # rustup installs into ~/.cargo/bin, which is on an interactive shell's PATH via
 # a line in .bashrc and on a systemd unit's PATH via nothing at all. Without
@@ -778,7 +795,7 @@ fi
 # registry, and for one Pi there does not need to be.
 if changed_in "services/api" || changed_in "services/fusion" || changed_in "services/ui" || changed_in "docker"; then
     log "rebuilding the web tier"
-    if ! run_logged "$REPO_DIR/docker" 20 -- docker compose up -d --build; then
+    if ! run_logged "$REPO_DIR/docker" 20 -- docker compose ${COMPOSE_ENV_ARGS[@]+"${COMPOSE_ENV_ARGS[@]}"} up -d --build; then
         DEPLOY_OK=0
         fail_step "docker compose could not build or start the web tier"
     fi
@@ -844,6 +861,9 @@ if changed_in "services/sensor-wifi"; then
         log "no virtualenv at $wifi_python; skipping the install and restarting"
     fi
     sudo systemctl restart classg-sensor-wifi.service && log "classg-sensor-wifi restarted"
+    if systemctl is-enabled --quiet classg-sensor-wifi-tplink.service 2>/dev/null; then
+        sudo systemctl restart classg-sensor-wifi-tplink.service && log "classg-sensor-wifi-tplink restarted"
+    fi
 fi
 
 # --- did it come back? ------------------------------------------------------
@@ -883,7 +903,7 @@ ROLLBACK_REASON="${FAILED_STEP:-the unit did not come back healthy}"
 log "$ROLLBACK_REASON; rolling back to ${LOCAL:0:8}"
 git checkout --quiet "$LOCAL" || die "rollback checkout failed -- this unit needs hands"
 if changed_in "services/api" || changed_in "services/fusion" || changed_in "services/ui" || changed_in "docker"; then
-    run_logged "$REPO_DIR/docker" 5 -- docker compose up -d --build || true
+    run_logged "$REPO_DIR/docker" 5 -- docker compose ${COMPOSE_ENV_ARGS[@]+"${COMPOSE_ENV_ARGS[@]}"} up -d --build || true
 fi
 log "rolled back. This unit stays on ${LOCAL:0:8} until someone looks at ${REMOTE:0:8}."
 DEPLOY_OK_JSON=false

@@ -32,7 +32,11 @@ SUPPORTED_VERSIONS = (0, 1, 2)
 # Sentinel values that mean "not available", per the standard.
 INVALID_SPEED_H = 255
 INVALID_SPEED_V = 63
-INVALID_DIRECTION = 181  # encoded values above 179 are not valid headings
+# Valid encoded headings are 0-179; the E/W segment bit adds 180. The
+# standard's explicit "unknown" sentinel is 181, but the cutoff must be 180: a
+# raw 180 with the E/W bit set would decode to exactly 360.0, which the schema
+# excludes (track_deg is [0, 360)).
+INVALID_DIRECTION = 180
 INVALID_TIMESTAMP = 0xFFFF
 ALTITUDE_OFFSET_M = -1000.0
 

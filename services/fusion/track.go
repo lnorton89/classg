@@ -6,7 +6,9 @@
 package fusion
 
 import (
+	"encoding/json"
 	"math"
+	"sort"
 	"sync"
 	"time"
 )
@@ -87,8 +89,14 @@ type Position struct {
 	HeightAGLM   *float64 `json:"height_agl_m,omitempty"`
 	// Set only when fusion derived HeightAGLM from a terrain model. Its
 	// presence is the provenance marker for HeightAGLM -- see track.schema.json.
-	TerrainElevationM *float64  `json:"terrain_elevation_m,omitempty"`
-	At                time.Time `json:"at"`
+	TerrainElevationM *float64 `json:"terrain_elevation_m,omitempty"`
+	// Speed and course come from the detection's kinematics block, folded into
+	// the fix they arrived with. track.schema.json declares both on position;
+	// until they were carried here, every track position served them as null
+	// however fast the aircraft was moving.
+	SpeedMPS *float64  `json:"speed_mps,omitempty"`
+	TrackDeg *float64  `json:"track_deg,omitempty"`
+	At       time.Time `json:"at"`
 }
 
 type Evidence struct {
@@ -97,6 +105,28 @@ type Evidence struct {
 	Weight     float64   `json:"weight"`
 	Count      int       `json:"count"`
 	LastSeen   time.Time `json:"last_seen"`
+}
+
+// EvidenceMap is the in-memory evidence index, keyed by class for O(1) update
+// on every detection.
+type EvidenceMap map[string]*Evidence
+
+// MarshalJSON emits the schema shape. track.schema.json declares `evidence` as
+// an array; the naive marshalling of the map published an object keyed by
+// class, which the API happened to tolerate (model.DecodeTrack accepts both)
+// but any schema-validating consumer did not. Sorted by class so the same
+// track serialises identically twice.
+func (m EvidenceMap) MarshalJSON() ([]byte, error) {
+	classes := make([]string, 0, len(m))
+	for class := range m {
+		classes = append(classes, class)
+	}
+	sort.Strings(classes)
+	out := make([]*Evidence, 0, len(m))
+	for _, class := range classes {
+		out = append(out, m[class])
+	}
+	return json.Marshal(out)
 }
 
 type Identity struct {
@@ -115,9 +145,9 @@ type Track struct {
 	LastSeen       time.Time  `json:"last_seen"`
 	DetectionCount int        `json:"detection_count"`
 
-	Identity   Identity             `json:"identity"`
-	Confidence float64              `json:"confidence"`
-	Evidence   map[string]*Evidence `json:"evidence"`
+	Identity   Identity    `json:"identity"`
+	Confidence float64     `json:"confidence"`
+	Evidence   EvidenceMap `json:"evidence"`
 
 	Current  *Position  `json:"current,omitempty"`
 	History  []Position `json:"history,omitempty"`
@@ -278,6 +308,18 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Lifecycle time is clamped to our own clock. health.Registry learned this
+	// the hard way for heartbeats: a sensor running ahead used to stamp them in
+	// the future and stay "fresh" long after it died. Tracks had the identical
+	// exposure -- a future-stamped detection made a track that never coasted
+	// and never closed, a phantom CONFIRMED drone on the map forever. d.TS is
+	// still what positions and evidence display; `seen` is what state
+	// transitions and expiry are measured against.
+	seen := d.TS
+	if seen.After(now) {
+		seen = now
+	}
+
 	serial := d.Identity.Serial
 	mac := d.Identity.MAC
 
@@ -295,8 +337,8 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 			SchemaVersion: "1.0",
 			TrackID:       s.newID(),
 			State:         StateTentative,
-			FirstSeen:     d.TS,
-			Evidence:      make(map[string]*Evidence),
+			FirstSeen:     seen,
+			Evidence:      make(EvidenceMap),
 			Identity:      Identity{Serial: serial, Vendor: d.Identity.VendorHint},
 		}
 		s.all[t.TrackID] = t
@@ -321,7 +363,12 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 		t.Identity.UAType = d.Identity.UAType
 	}
 
-	t.LastSeen = d.TS
+	// Guarded like ContactStore's LastSeen: detections can be delivered out of
+	// order, and an older one must not drag the track backwards into a
+	// premature coast.
+	if seen.After(t.LastSeen) {
+		t.LastSeen = seen
+	}
 	t.DetectionCount++
 	t.addEvidence(d.DetectionClass, d.SensorKind, s.weights[d.DetectionClass], d.TS)
 
@@ -331,6 +378,10 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 			AltGeodeticM: d.Position.AltGeodeticM,
 			HeightAGLM:   d.Position.HeightAGLM,
 			At:           d.TS,
+		}
+		if d.Kinematics != nil {
+			p.SpeedMPS = d.Kinematics.SpeedMPS
+			p.TrackDeg = d.Kinematics.TrackDeg
 		}
 		// Only when the aircraft did not say. A height the aircraft reported is
 		// measured against its own take-off point or barometer and is the more

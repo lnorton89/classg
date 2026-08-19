@@ -352,6 +352,19 @@ export interface ReceiverPosition {
   lon: number
 }
 
+/**
+ * The settings store is stringly typed, and this value feeds `map.jumpTo` —
+ * so it is checked rather than cast. Returns null for anything that is not a
+ * `{lat, lon}` pair of numbers.
+ */
+export function asReceiverPosition(value: unknown): ReceiverPosition | null {
+  if (typeof value !== 'object' || value === null) return null
+  const position = value as { lat?: unknown; lon?: unknown }
+  return typeof position.lat === 'number' && typeof position.lon === 'number'
+    ? (value as ReceiverPosition)
+    : null
+}
+
 // ---------------------------------------------------------------------------
 // Errors
 // ---------------------------------------------------------------------------

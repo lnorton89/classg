@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://classg.local/schemas/heartbeat.schema.json",
+  "title": "Heartbeat",
+  "description": "Periodic sensor liveness report, emitted unconditionally so 'no drones present' and 'sensor wedged' stay distinguishable (ADR-0003). Every emitter -- sensor-wifi, sensor-sdr, and fusion's network ADS-B feed -- sends this exact shape on the heartbeat.<kind> topic.",
+  "type": "object",
+  "required": ["schema_version", "ts", "sensor_id", "sensor_kind", "healthy", "published", "dropped", "detail"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0" },
+    "ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC3339 UTC. Historically sensor-wifi sent an epoch float here and the API's FlexTime papered over the divergence; RFC3339 is now the contract, matching the detection schema."
+    },
+    "sensor_id": { "type": "string", "minLength": 1, "examples": ["wifi-0", "sdr-0", "net-adsb-0"] },
+    "sensor_kind": { "enum": ["wifi", "sdr", "ble", "net"] },
+    "healthy": {
+      "type": "boolean",
+      "description": "The state of the sensor's own machinery, never of the sky. An empty sky is healthy; an unreachable radio or decoder is not."
+    },
+    "published": { "type": "integer", "minimum": 0, "description": "Messages put on the bus since the process started." },
+    "dropped": { "type": "integer", "minimum": 0, "description": "Messages refused by the bus (backpressure) since the process started." },
+    "detail": {
+      "type": "object",
+      "description": "Sensor-specific diagnostics. Deliberately free-form: each sensor kind reports different machinery, and consumers must tolerate unknown keys here."
+    }
+  }
+}

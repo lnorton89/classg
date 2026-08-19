@@ -3,7 +3,12 @@
  * same cache keys the views read from. `queryOptions()` carries the data type on
  * the key, which is what makes `setQueryData` type-safe.
  */
-import { keepPreviousData, queryOptions, type QueryClient } from '@tanstack/react-query'
+import {
+  infiniteQueryOptions,
+  keepPreviousData,
+  queryOptions,
+  type QueryClient,
+} from '@tanstack/react-query'
 
 import { api } from './client'
 import { trackWithDetections } from './graphql'
@@ -16,6 +21,7 @@ export const queryKeys = {
   monitoring: ['monitoring'] as const,
   telemetry: (window: string) => ['telemetry', window] as const,
   tracks: (query: TracksQuery = {}) => ['tracks', 'list', query] as const,
+  trackHistory: ['tracks', 'history'] as const,
   track: (trackId: string) => ['tracks', 'detail', trackId] as const,
   trackDetections: (trackId: string) => ['tracks', 'detections', trackId] as const,
   detections: (query: DetectionsQuery = {}) => ['detections', query] as const,
@@ -112,6 +118,27 @@ export const tracksQuery = (query: TracksQuery = {}) =>
     queryKey: queryKeys.tracks(query),
     queryFn: () => api.tracks(query),
     staleTime: Infinity,
+  })
+
+/**
+ * Closed-track history, paged on the API's `next_cursor`.
+ *
+ * Deliberately NOT keyed under `['tracks', 'list']`: the live socket writes
+ * `TracksResponse` objects into every key under that prefix, and an infinite
+ * query's cache entry is `{ pages, pageParams }` -- sharing the prefix would
+ * let the first pushed frame corrupt it. History is what fusion has already
+ * stopped monitoring, so nothing is lost by leaving it out of the live path.
+ */
+const HISTORY_PAGE_SIZE = 100
+
+export const closedTracksHistoryQuery = () =>
+  infiniteQueryOptions({
+    queryKey: queryKeys.trackHistory,
+    queryFn: ({ pageParam }) =>
+      api.tracks({ state: ['CLOSED'], limit: HISTORY_PAGE_SIZE, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
+    staleTime: 30_000,
   })
 
 /**

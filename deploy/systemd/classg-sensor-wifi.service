@@ -1,5 +1,5 @@
 [Unit]
-Description=ClassG passive Wi-Fi sensor (wlan1)
+Description=ClassG primary passive Wi-Fi sensor (wlan-alfa)
 Documentation=file:///home/admin/classg/docs/architecture/adr/0003-sensor-process-isolation.md
 After=network-online.target
 Wants=network-online.target
@@ -17,18 +17,43 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-# AF_PACKET on a monitor-mode interface needs root. ClassG is receive-only --
-# this buys packet capture, never transmission.
-User=root
+# Not root. AF_PACKET needs CAP_NET_RAW and retuning needs CAP_NET_ADMIN --
+# nothing in the capture path needs the rest of root, and this process parses
+# hostile RF input all day. The ambient set is inherited by the `iw` child
+# processes the hopper spawns, and capture.preflight accepts these capabilities
+# in place of euid 0. ClassG is receive-only -- these buy packet capture,
+# never transmission.
+User=admin
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+NoNewPrivileges=yes
+
+# The sensor writes nothing but the journal and the bus: the filesystem is
+# read-only to it, /home included (the venv and config only need reading), and
+# its /tmp is private. A parser bug fed crafted frames should end at a restart,
+# not at the deploy tree.
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+
+# Backstop against memory growth thrashing the SD card into swap. Steady-state
+# is tens of MB; hitting this limit means a leak, and an OOM-kill plus restart
+# is the recovery ADR-0003 already prescribes.
+MemoryMax=512M
+
 WorkingDirectory=/home/admin/classg/services/sensor-wifi
 EnvironmentFile=/home/admin/classg/.env
 
 # Monitor mode survives neither a reboot nor a replug, and moving the adapter
 # between USB ports silently drops the interface back to managed -- observed on
 # this Pi. Re-established on every start rather than assumed.
-ExecStartPre=/home/admin/classg/scripts/setup-monitor.sh wlan1
+#
+# The "+" runs this one command with full privileges, outside the sandbox
+# above: it loads the driver (modprobe) and negotiates with NetworkManager,
+# which the capability-limited sensor user cannot and should not do.
+ExecStartPre=+/home/admin/classg/scripts/setup-monitor.sh wlan-alfa
 
-ExecStart=/home/admin/classg/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli run --iface wlan1
+ExecStart=/home/admin/classg/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli --sensor-id wifi-0 run --iface wlan-alfa --channels config/channels-primary.yaml
 
 Restart=always
 RestartSec=5

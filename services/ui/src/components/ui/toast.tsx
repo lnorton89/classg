@@ -43,9 +43,11 @@ export function Toaster() {
       <Toast.Viewport
         className={cn(
           'fixed right-2 bottom-20 z-50 mx-auto flex w-[min(22rem,calc(100vw-1rem))]',
-          // bottom-20 on mobile clears the fixed bottom nav; on desktop the nav
-          // lives in the header, so the toast can sit at the true bottom.
-          'md:bottom-3',
+          // bottom-20 clears the fixed bottom nav, which app-shell hides at lg
+          // -- the same breakpoint, or a tablet between md and lg gets toasts
+          // stacked over the nav. From lg the nav lives in the header, so the
+          // toast can sit at the true bottom.
+          'lg:bottom-3',
         )}
       >
         {toasts.map((toast) => {

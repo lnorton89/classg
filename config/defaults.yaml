@@ -45,6 +45,9 @@ sensors:
   expected:
     - id: wifi-0
       kind: wifi
+    - id: wifi-1
+      kind: wifi
+      optional: true
     # - id: sdr-0
     #   kind: sdr
     #   optional: true
@@ -121,7 +124,7 @@ telemetry:
 # Defaults for operator-initiated captures. The interface is deliberately not
 # settable from the browser.
 capture:
-  wifi_interface: wlan1
+  wifi_interface: wlan-alfa
   # Measured: the DJI Mini 5 Pro beacons on channel 6 at ~4.17 Hz.
   # See docs/ops/04-calibration.md.
   wifi_channel: 6

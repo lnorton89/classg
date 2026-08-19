@@ -168,12 +168,17 @@ class _Reader:
         return s or None
 
 
-def _angle(raw: int | None) -> float | None:
-    """radians*1e7 -> degrees. 0 means no fix, not the Gulf of Guinea."""
+def _angle(raw: int | None, limit_deg: float = 180.0) -> float | None:
+    """radians*1e7 -> degrees. 0 means no fix, not the Gulf of Guinea.
+
+    limit_deg must be 90 for latitudes: a single +/-180 bound admits a crafted
+    raw latitude of ~170 degrees, which the schema caps at +/-90 -- and this
+    payload arrives over the air from whoever cares to transmit it.
+    """
     if raw is None or raw == 0:
         return None
     deg = raw / RAD_SCALE
-    return deg if -180.0 <= deg <= 180.0 else None
+    return deg if -limit_deg <= deg <= limit_deg else None
 
 
 def _scaled(raw: int | None, key: str) -> float | None:
@@ -205,7 +210,7 @@ def _parse_telemetry(r: _Reader) -> DjiTelemetry:
     uuid_len = r.u8()
     uuid = r.text(uuid_len) if uuid_len else None
 
-    lat, lon = _angle(raw_lat), _angle(raw_lon)
+    lat, lon = _angle(raw_lat, 90.0), _angle(raw_lon)
     if lat is None or lon is None:
         lat = lon = None
 
@@ -224,9 +229,9 @@ def _parse_telemetry(r: _Reader) -> DjiTelemetry:
         pitch_deg=_scaled(pitch, "attitude_deg"),
         roll_deg=_scaled(roll, "attitude_deg"),
         yaw_deg=_scaled(yaw, "attitude_deg"),
-        operator_lat=_angle(raw_op_lat),
+        operator_lat=_angle(raw_op_lat, 90.0),
         operator_lon=_angle(raw_op_lon),
-        home_lat=_angle(raw_home_lat),
+        home_lat=_angle(raw_home_lat, 90.0),
         home_lon=_angle(raw_home_lon),
         product_type=product_type,
         uuid=uuid,

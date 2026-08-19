@@ -80,3 +80,7 @@ build-errors.log
 # Host-agent state: the deploy agent and watchdog write here and the API reads
 # it through a bind mount. Runtime state, never committed.
 .agent-state/
+
+# Git worktrees created by coding agents (codex, etc). The work belongs on a
+# branch, not inside the primary checkout.
+.codex-worktrees/

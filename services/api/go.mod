@@ -8,6 +8,7 @@ require (
 	github.com/go-zeromq/zmq4 v0.17.0
 	github.com/graphql-go/graphql v0.8.1
 	github.com/joho/godotenv v1.5.1
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/tursodatabase/go-libsql v0.0.0-20260424063416-3051e37e6e04
 	golang.org/x/crypto v0.55.0
 	golang.org/x/oauth2 v0.36.0

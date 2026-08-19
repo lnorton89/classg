@@ -38,9 +38,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const theme: ResolvedTheme = preference === 'system' ? systemValue : preference
 
   useEffect(() => {
-    const root = document.documentElement
-    root.classList.toggle('dark', theme === 'dark')
-    root.classList.toggle('light', theme === 'light')
+    // Only .dark exists in the stylesheet — light is the absence of it.
+    document.documentElement.classList.toggle('dark', theme === 'dark')
   }, [theme])
 
   const setPreference = useCallback((next: ThemePreference) => {

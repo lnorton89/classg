@@ -44,8 +44,10 @@ services:
       - go-mod-cache:/go/pkg/mod
       - go-build-cache:/root/.cache/go-build
     ports:
-      # The host's Wi-Fi sensor publishes here.
-      - "${CLASSG_BUS_PORT:-5556}:5556"
+      # The host's Wi-Fi sensor publishes here, over loopback. The bus has no
+      # authentication, so it is not published to the LAN; see
+      # docker-compose.yml for the override when remote sensors need it.
+      - "${CLASSG_BUS_BIND:-127.0.0.1}:${CLASSG_BUS_PORT:-5556}:5556"
 
   api:
     build:
@@ -84,8 +86,9 @@ services:
       - fusion
 
   ui:
-    # Plain node image: dev serves from Vite, not nginx.
-    image: node:22-bookworm-slim
+    # Plain node image: dev serves from Vite, not nginx. The major tracks
+    # services/ui's engines field and the CI job -- all three say 24.
+    image: node:24-bookworm-slim
     container_name: classg-ui
     working_dir: /src/services/ui
     # node_modules lives in a volume, never on the bind mount: the host's copy

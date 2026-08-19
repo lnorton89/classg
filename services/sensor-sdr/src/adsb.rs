@@ -56,6 +56,14 @@ const RECONNECT_MIN: Duration = Duration::from_millis(500);
 /// against.
 const MAX_LINE_BYTES: usize = 64 * 1024;
 
+/// Distinct ICAO addresses tracked before the set stops growing. Mode S noise
+/// that happens to pass dump1090's CRC yields effectively random addresses, so
+/// an unbounded set is a slow leak on a months-long run -- and each insertion
+/// logs a line, so it is journal noise too (133 in 1.7 days, only ever
+/// climbing). 4096 is far beyond any genuine session (memory cost ~150 KiB)
+/// while still bounding a noise flood; past it the counter becomes a floor.
+const MAX_TRACKED_ICAOS: usize = 4096;
+
 pub struct Config {
     pub sensor_id: String,
     pub address: String,
@@ -82,8 +90,12 @@ pub struct Stats {
     pub reconnects: u64,
     /// Distinct ICAO addresses seen. The single most useful "is this working"
     /// number: one aircraft producing a hundred messages and a hundred aircraft
-    /// producing one each are very different situations.
+    /// producing one each are very different situations. Capped at
+    /// [`MAX_TRACKED_ICAOS`]; once saturated the reported count is a floor.
     pub icaos: BTreeSet<String>,
+    /// Whether the ICAO set hit its cap. Logged once at the transition, so the
+    /// journal says why "distinct this session" stopped moving.
+    icaos_saturated: bool,
     pub connected: bool,
     pub last_error: Option<String>,
     last_message: Option<Instant>,
@@ -288,12 +300,20 @@ fn handle_line<B: Bus>(
     detection.detection_id = ulid.mint(now);
     if let Some(adsb) = &detection.adsb {
         if !stats.icaos.contains(&adsb.icao) {
-            log(&format!(
-                "aircraft acquired: {} ({} distinct this session)",
-                adsb.icao,
-                stats.icaos.len() + 1
-            ));
-            stats.icaos.insert(adsb.icao.clone());
+            if stats.icaos.len() < MAX_TRACKED_ICAOS {
+                log(&format!(
+                    "aircraft acquired: {} ({} distinct this session)",
+                    adsb.icao,
+                    stats.icaos.len() + 1
+                ));
+                stats.icaos.insert(adsb.icao.clone());
+            } else if !stats.icaos_saturated {
+                stats.icaos_saturated = true;
+                log(&format!(
+                    "over {MAX_TRACKED_ICAOS} distinct ICAOs this session; the \
+                     set is capped, so the count is a floor from here on"
+                ));
+            }
         }
     }
     stats.parsed += 1;
@@ -620,6 +640,38 @@ mod tests {
         // The good record after the garbage still lands, which is the property
         // that matters: one bad line must not poison the stream.
         assert!(stats.parsed >= 1, "{stats:?}");
+    }
+
+    /// Mode S noise that passes the CRC yields effectively random ICAOs, so
+    /// on a months-long run an unbounded set is a slow leak with a journal
+    /// line per entry. Past the cap: detections keep flowing, the set stops.
+    #[test]
+    fn the_icao_set_is_capped() {
+        let mut stats = Stats::default();
+        let bus = Recorder::default();
+        let cfg = config("unused");
+        let mut stream = String::new();
+        for i in 0..(MAX_TRACKED_ICAOS + 10) {
+            stream.push_str(&format!(
+                "MSG,3,1,1,{i:06X},1,2026/08/11,14:23:11.482,2026/08/11,\
+                 14:23:11.482,,2100,,,47.1,8.2,,,,,,0\n"
+            ));
+        }
+        pump_reader(
+            &cfg,
+            &bus,
+            &mut stats,
+            &mut UlidFactory::seeded(7),
+            stream.as_bytes(),
+        );
+
+        assert_eq!(
+            stats.parsed as usize,
+            MAX_TRACKED_ICAOS + 10,
+            "detections must keep flowing past the cap"
+        );
+        assert_eq!(stats.icaos.len(), MAX_TRACKED_ICAOS);
+        assert!(stats.icaos_saturated);
     }
 
     #[test]

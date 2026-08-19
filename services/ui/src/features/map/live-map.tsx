@@ -13,9 +13,11 @@ import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef, useState } from 'react'
 
+import { usePreferences } from '@/app/preferences-context'
 import { useTheme } from '@/app/theme-context'
 import { useFormat } from '@/app/use-format'
 import { settingsQuery } from '@/lib/api/queries'
+import { asReceiverPosition } from '@/lib/api/types'
 import type { Detection, ReceiverPosition, Track } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
@@ -47,6 +49,33 @@ import {
 setWorkerUrl(workerUrl)
 
 const BASE_URL = import.meta.env.BASE_URL
+
+/**
+ * Resolve a design token to a color literal MapLibre can parse.
+ *
+ * The paint below used to hardcode what `--operator` and `--track` already
+ * define, so retuning a token recolored the markers and legend but not the
+ * canvas. MapLibre needs literals, and its color parser knows only
+ * hex/rgb/hsl/named — the tokens are authored in oklch — so the browser does
+ * the conversion: paint the color into a 1x1 canvas and read the bytes back.
+ * Called at style creation, which already re-runs per theme.
+ *
+ * The fallback keeps a test DOM (no 2d context) and a blank token from
+ * silently painting black.
+ */
+function resolveTokenColor(token: string, fallback: string): string {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(token).trim()
+  if (raw === '') return fallback
+  const canvas = document.createElement('canvas')
+  canvas.width = 1
+  canvas.height = 1
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return fallback
+  ctx.fillStyle = raw
+  ctx.fillRect(0, 0, 1, 1)
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+  return `rgb(${r},${g},${b})`
+}
 
 /**
  * Basemap layers that stand in for "there is map here".
@@ -127,6 +156,27 @@ export function LiveMap({
   // follow the operator's unit preference like every other reading.
   const format = useFormat()
 
+  // The scale bar follows the unit preference too — a console reading knots
+  // and nautical miles everywhere else must not measure the map in km.
+  // MapLibre's ScaleControl has no "aviation", so that maps to nautical.
+  const { preferences } = usePreferences()
+  const scaleUnit: 'metric' | 'imperial' | 'nautical' =
+    preferences.units === 'metric'
+      ? 'metric'
+      : preferences.units === 'aviation'
+        ? 'nautical'
+        : 'imperial'
+  const scaleControlRef = useRef<ScaleControl | null>(null)
+  // A ref so the map-creation effect can read the current unit without
+  // listing it as a dependency — a unit change must retune the control, not
+  // rebuild the whole map.
+  const scaleUnitRef = useRef(scaleUnit)
+
+  useEffect(() => {
+    scaleUnitRef.current = scaleUnit
+    scaleControlRef.current?.setUnit(scaleUnit)
+  }, [scaleUnit])
+
   useEffect(() => {
     onSelectRef.current = onSelectTrack
   }, [onSelectTrack])
@@ -153,7 +203,9 @@ export function LiveMap({
   // geolocation is per-device.
   const { data: settingsData } = useQuery(settingsQuery())
   const receiverPositionSetting = settingsData?.settings['map.receiver_position']
-  const receiverPosition = (receiverPositionSetting?.value ?? null) as ReceiverPosition | null
+  // Guarded, not cast: the settings store is stringly typed and this value
+  // goes straight into map.jumpTo, which throws on a malformed centre.
+  const receiverPosition = asReceiverPosition(receiverPositionSetting?.value)
   const settingsResolved = settingsData !== undefined
 
   const [browserLocation, setBrowserLocation] = useState<ReceiverPosition | null>(null)
@@ -265,7 +317,9 @@ export function LiveMap({
     const initialResizeFrame = requestAnimationFrame(() => map.resize())
 
     map.addControl(new NavigationControl({ visualizePitch: false }), 'top-right')
-    map.addControl(new ScaleControl({ maxWidth: 90, unit: 'metric' }), 'bottom-left')
+    const scaleControl = new ScaleControl({ maxWidth: 90, unit: scaleUnitRef.current })
+    map.addControl(scaleControl, 'bottom-left')
+    scaleControlRef.current = scaleControl
     if (basemap !== 'no-tiles') {
       map.addControl(new AttributionControl({ compact: true }), 'bottom-right')
     }
@@ -315,7 +369,12 @@ export function LiveMap({
           source: 'operator-links',
           layout: { 'line-cap': 'round' },
           paint: {
-            'line-color': theme === 'dark' ? '#e879c8' : '#a8368c',
+            // The same --operator the markers and legend read, so all three
+            // surfaces cannot drift apart. Fallbacks are the pre-token values.
+            'line-color': resolveTokenColor(
+              '--operator',
+              theme === 'dark' ? '#e879c8' : '#a8368c',
+            ),
             'line-width': 1.2,
             'line-opacity': 0.65,
             'line-dasharray': [1, 2],
@@ -329,7 +388,10 @@ export function LiveMap({
           source: 'trails',
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': theme === 'dark' ? '#5fd3f0' : '#1e7fa8',
+            'line-color': resolveTokenColor(
+              '--track',
+              theme === 'dark' ? '#5fd3f0' : '#1e7fa8',
+            ),
             // Trail width follows confidence — thicker means more corroborated,
             // within one hue. Never a hue ramp.
             'line-width': ['interpolate', ['linear'], ['get', 'confidence'], 0, 1, 1, 2.6],
@@ -393,6 +455,7 @@ export function LiveMap({
       drones.clear()
       operators.clear()
       manned.clear()
+      scaleControlRef.current = null
       map.remove()
       mapRef.current = null
     }

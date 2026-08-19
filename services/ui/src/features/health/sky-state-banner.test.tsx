@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SkyState } from './sky-state'
 import { SkyStateBanner } from './components'
 
+const QUIET_SKY_DISMISS_MS = 20_000
+
 function quietSky(): SkyState {
   return {
     kind: 'quiet',
@@ -81,6 +83,25 @@ describe('SkyStateBanner', () => {
     // Past the exit animation too.
     await advance(200)
     expect(screen.queryByText('Quiet sky')).not.toBeInTheDocument()
+  })
+
+  it('shows an escalation at full visibility after a dismissal', async () => {
+    // Regression: closing/drag state used to live in the keyed HOST element,
+    // which a key change remounts without resetting hook state -- so after
+    // "Quiet sky" auto-dismissed, "Coverage degraded" rendered permanently
+    // slid off screen at opacity 0.
+    vi.useFakeTimers()
+    const { rerender } = render(<SkyStateBanner state={quietSky()} />)
+
+    await advance(QUIET_SKY_DISMISS_MS + 500)
+    expect(screen.queryByText('Quiet sky')).not.toBeInTheDocument()
+
+    rerender(<SkyStateBanner state={sensorDown()} />)
+    const banner = screen.getByRole('alert')
+    expect(screen.getByText('Coverage degraded')).toBeVisible()
+    // Not carrying the previous banner's exit animation styles.
+    expect(banner.style.transform).toBe('')
+    expect(banner.style.opacity).toBe('')
   })
 
   it('never auto-dismisses a state where the absence of tracks is not evidence', async () => {

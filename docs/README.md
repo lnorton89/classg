@@ -68,6 +68,7 @@ If you read three documents, read these:
 | [10 — Continuous deployment](ops/10-continuous-deployment.md) | Deploy `main` automatically when CI is green, and why it is pull-based and opt-in |
 | [11 — Self-healing](ops/11-self-healing.md) | What survives a reboot, and the bounded watchdog that retries what systemd has given up on |
 | [12 — Spectrum sweeps](ops/12-spectrum-sweeps.md) | The host agent that sweeps on the API's behalf, and the shared-group permission the exchange needs |
+| [13 — Backup and restore](ops/13-backup-and-restore.md) | The database is the only irreplaceable artifact: Turso replication and how to verify it, cold copies, restore onto a fresh card, and uninstall |
 
 ## Development
 

@@ -114,9 +114,13 @@ That installs the service and timer, enables the timer, and writes a sudoers
 drop-in granting **exactly two commands**:
 
 ```
-admin ALL=(root) NOPASSWD: /usr/bin/systemctl restart classg-sensor-sdr.service
-admin ALL=(root) NOPASSWD: /usr/bin/systemctl restart classg-sensor-wifi.service
+<owner> ALL=(root) NOPASSWD: /usr/bin/systemctl restart classg-sensor-sdr.service
+<owner> ALL=(root) NOPASSWD: /usr/bin/systemctl restart classg-sensor-wifi.service
 ```
+
+`<owner>` is the checkout's owner — the same user the rendered
+`classg-autodeploy.service` runs as, so the grant and the unit cannot name
+different people.
 
 Narrow on purpose. `NOPASSWD` on a broad `systemctl` would turn this timer into
 a general privilege escalation for anyone who can write to the repo — which,

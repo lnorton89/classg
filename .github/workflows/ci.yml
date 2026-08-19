@@ -60,6 +60,13 @@ jobs:
       - name: Test
         run: python -m pytest -q
 
+      # docs/operator-guide.json powers the in-app docs page and quotes CLI
+      # commands, make targets and repo paths verbatim; nothing else checks it
+      # against reality the way schemas get conformance tests. It has already
+      # documented a flag the CLI accepted and ignored.
+      - name: Operator guide matches the CLI
+        run: python ../../scripts/check-operator-guide.py
+
   # ---------------------------------------------------------------------------
   # fusion (Go) -- track correlation and confidence scoring.
   #

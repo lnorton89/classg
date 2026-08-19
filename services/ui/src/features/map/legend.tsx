@@ -15,9 +15,7 @@ export function MapLegend({ className }: { className?: string }) {
         className,
       )}
     >
-      <h2 className="text-muted-foreground mb-1.5 text-2xs font-semibold tracking-wide uppercase">
-        Legend
-      </h2>
+      <h2 className="label-caps mb-1.5">Legend</h2>
       <ul className="space-y-1.5">
         <li className="flex items-center gap-2">
           <svg viewBox="0 0 24 24" className="text-track size-4" aria-hidden>

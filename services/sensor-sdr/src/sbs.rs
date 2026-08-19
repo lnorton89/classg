@@ -94,23 +94,50 @@ pub fn parse_line(line: &str, sensor_id: &str, now_rfc3339: &str) -> Result<Dete
 
     // 0,0 means "no fix", not the Gulf of Guinea. The schema requires sensors to
     // normalise it to absent, and fusion defends against it a second time.
+    //
+    // The range check is the other half of the same defence: dump1090 is a
+    // separate process and a corrupt line (lat=91, or "nan", which f64 parses)
+    // would otherwise become a schema-invalid position that fusion's plain
+    // json.Unmarshal accepts without a murmur. Rejected rather than clamped --
+    // a clamped position is a confident lie about where the aircraft is.
+    // NaN fails both range comparisons, so it is rejected here too.
     let position = match (lat, lon) {
-        (Some(lat), Some(lon)) if !(lat == 0.0 && lon == 0.0) => Some(Position {
-            lat,
-            lon,
-            alt_geodetic_m: alt_ft.map(|ft| ft as f64 * FT_TO_M),
-        }),
+        (Some(lat), Some(lon))
+            if !(lat == 0.0 && lon == 0.0)
+                && (-90.0..=90.0).contains(&lat)
+                && (-180.0..=180.0).contains(&lon) =>
+        {
+            Some(Position {
+                lat,
+                lon,
+                alt_geodetic_m: alt_ft.map(|ft| ft as f64 * FT_TO_M),
+            })
+        }
         _ => None,
     };
 
     let kinematics =
         if ground_speed_kt.is_some() || track_deg.is_some() || vertical_rate_fpm.is_some() {
             Some(Kinematics {
-                speed_mps: ground_speed_kt.map(|kt| kt * KT_TO_MPS),
+                // speed_mps has a schema minimum of 0; a negative ground speed
+                // is a corrupt record, not a direction.
+                speed_mps: ground_speed_kt
+                    .filter(|kt| *kt >= 0.0)
+                    .map(|kt| kt * KT_TO_MPS),
                 // The schema constrains track to [0, 360). dump1090 occasionally
                 // emits a negative bearing; fold rather than drop, since a heading
                 // is still useful and dropping it silently loses information.
-                track_deg: track_deg.map(|d| d.rem_euclid(360.0)),
+                // rem_euclid alone is not enough: for a tiny negative input the
+                // result rounds up to exactly 360.0, which exclusiveMaximum
+                // rejects, so that one value folds on to 0.0.
+                track_deg: track_deg.map(|d| {
+                    let t = d.rem_euclid(360.0);
+                    if t >= 360.0 {
+                        0.0
+                    } else {
+                        t
+                    }
+                }),
                 vertical_speed_mps: vertical_rate_fpm.map(|fpm| fpm * FT_TO_M / 60.0),
             })
         } else {
@@ -335,5 +362,49 @@ mod tests {
         let line = VELOCITY_MSG.replace(",90,271,", ",90,-89,");
         let d = parse_line(&line, "sdr-0", NOW).unwrap();
         assert_eq!(d.kinematics.unwrap().track_deg, Some(271.0));
+    }
+
+    /// rem_euclid of a tiny negative bearing rounds up to exactly 360.0 in
+    /// f64, which the schema's exclusiveMaximum rejects. It must fold to 0.
+    #[test]
+    fn a_tiny_negative_track_folds_to_zero_not_360() {
+        let line = VELOCITY_MSG.replace(",90,271,", ",90,-0.000000000000001,");
+        let d = parse_line(&line, "sdr-0", NOW).unwrap();
+        let track = d.kinematics.unwrap().track_deg.unwrap();
+        assert_eq!(track, 0.0, "got {track}");
+    }
+
+    /// A corrupt line must not become a schema-invalid position. dump1090's
+    /// output is not something this sensor controls.
+    #[test]
+    fn out_of_range_coordinates_are_rejected_not_forwarded() {
+        for (lat, lon) in [
+            ("91", "8.2"),
+            ("-91", "8.2"),
+            ("47.1", "181"),
+            ("47.1", "-181"),
+        ] {
+            let line = POSITION_MSG.replace(",47.1,8.2,", &format!(",{lat},{lon},"));
+            let d = parse_line(&line, "sdr-0", NOW).unwrap();
+            assert!(d.position.is_none(), "lat={lat} lon={lon} was accepted");
+        }
+    }
+
+    /// "nan" parses as a perfectly good f64, and NaN survives every equality
+    /// check. The range comparison is what keeps it off the wire.
+    #[test]
+    fn nan_coordinates_are_rejected() {
+        let line = POSITION_MSG.replace(",47.1,8.2,", ",nan,nan,");
+        let d = parse_line(&line, "sdr-0", NOW).unwrap();
+        assert!(d.position.is_none());
+    }
+
+    /// speed_mps has a schema minimum of 0; a negative ground speed is
+    /// corruption, not information.
+    #[test]
+    fn a_negative_ground_speed_is_dropped() {
+        let line = VELOCITY_MSG.replace(",90,271,", ",-90,271,");
+        let d = parse_line(&line, "sdr-0", NOW).unwrap();
+        assert_eq!(d.kinematics.unwrap().speed_mps, None);
     }
 }

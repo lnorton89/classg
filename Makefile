@@ -66,7 +66,12 @@ sqlc-check:
 
 test: test-wifi test-fusion test-api test-ui test-sdr
 
+# Fail with the fix, not a traceback: a fresh clone has no venv, and a venv
+# made with only the [replay] extra has no pytest. Both read as a broken
+# suite when the missing thing is actually `make setup`.
 test-wifi:
+	@test -x services/sensor-wifi/.venv/bin/python || { echo "services/sensor-wifi/.venv is missing -- run 'make setup' first"; exit 1; }
+	@services/sensor-wifi/.venv/bin/python -c 'import pytest' 2>/dev/null || { echo "no pytest in the sensor venv -- run 'make setup' (installs '.[dev,replay]')"; exit 1; }
 	cd services/sensor-wifi && .venv/bin/python -m pytest
 
 test-fusion:

@@ -38,6 +38,7 @@ SELECT doc FROM tracks WHERE track_id = ?;
 -- name: CountTracks :one
 SELECT COUNT(*) FROM tracks
 WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.narg('since'))
+  AND (CAST(sqlc.narg('last_seen_before') AS TEXT) IS NULL OR last_seen < sqlc.narg('last_seen_before'))
   AND (CAST(sqlc.narg('min_confidence') AS REAL) IS NULL OR confidence >= sqlc.narg('min_confidence'))
   AND (CAST(sqlc.narg('states') AS TEXT)         IS NULL
        OR state IN (SELECT value FROM json_each(sqlc.narg('states'))));
@@ -45,8 +46,12 @@ WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.n
 -- name: ListTracks :many
 -- Keyset paging on (last_seen DESC, track_id DESC), matching idx_tracks_page.
 -- Offset paging would silently skip rows on a table being appended to.
+-- last_seen_before exists for the stale-track sweep: staleness is decided
+-- here, on the indexed column, rather than by fetching and JSON-decoding
+-- every open track to compare timestamps in Go.
 SELECT doc, last_seen, track_id FROM tracks
 WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.narg('since'))
+  AND (CAST(sqlc.narg('last_seen_before') AS TEXT) IS NULL OR last_seen < sqlc.narg('last_seen_before'))
   AND (CAST(sqlc.narg('min_confidence') AS REAL) IS NULL OR confidence >= sqlc.narg('min_confidence'))
   AND (CAST(sqlc.narg('states') AS TEXT)         IS NULL
        OR state IN (SELECT value FROM json_each(sqlc.narg('states'))))
@@ -129,7 +134,15 @@ WHERE ts >= ?
 GROUP BY sensor_id;
 
 -- name: PurgeDetections :execrows
-DELETE FROM detections WHERE ts < ?;
+-- Batched via the rowid subquery. The first sweep after a Pi was powered off
+-- for a week can owe hundreds of thousands of rows, and a single unbounded
+-- DELETE holds SQLite's one writer -- the SAME pooled connection synchronous
+-- ZMQ ingest is waiting on -- for multiple seconds while the WAL balloons on
+-- an SD card. The store loops this until a batch comes back short, releasing
+-- the connection between rounds so ingest interleaves.
+DELETE FROM detections WHERE rowid IN (
+    SELECT d.rowid FROM detections AS d WHERE d.ts < sqlc.arg('before') LIMIT sqlc.arg('batch')
+);
 
 -- name: PurgeTracks :execrows
 DELETE FROM tracks WHERE last_seen < ?;
@@ -307,6 +320,19 @@ ON CONFLICT(rule_id) DO UPDATE SET
     action = excluded.action,
     doc = excluded.doc,
     updated_at = excluded.updated_at;
+
+-- name: MarkHookRuleFired :execrows
+-- A targeted json_set rather than a read-modify-write of the whole doc. Fire
+-- bookkeeping is written by concurrent dispatch workers from a rule copy read
+-- at handle time; rewriting the full document from that copy lost concurrent
+-- FireCount increments and could clobber an admin's edit with the worker's
+-- stale snapshot. The updated_at column is deliberately untouched: it records
+-- the last admin edit, not the last firing.
+UPDATE hook_rules
+SET doc = json_set(doc,
+    '$.fire_count',    COALESCE(json_extract(doc, '$.fire_count'), 0) + 1,
+    '$.last_fired_at', CAST(sqlc.arg('last_fired_at') AS TEXT))
+WHERE rule_id = sqlc.arg('rule_id');
 
 -- name: GetHookRule :one
 SELECT doc FROM hook_rules WHERE rule_id = ?;

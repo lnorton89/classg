@@ -1,0 +1,40 @@
+[Unit]
+Description=ClassG companion passive Wi-Fi sensor (TP-Link)
+Documentation=file://@CLASSG_HOME@/docs/architecture/adr/0003-sensor-process-isolation.md
+After=network-online.target classg-sensor-wifi.service
+Wants=network-online.target
+
+# Match the primary sensor's bounded restart policy. When the optional adapter
+# is absent the unit fails visibly instead of spinning forever; the watchdog
+# leaves it alone until the interface returns.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=@RUNAS@
+AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_RAW CAP_NET_ADMIN
+NoNewPrivileges=yes
+
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+MemoryMax=512M
+
+WorkingDirectory=@CLASSG_HOME@/services/sensor-wifi
+EnvironmentFile=@CLASSG_HOME@/.env
+
+# The stable name comes from deploy/udev/70-classg-wifi.rules. Channel 1 is
+# only the initial tune; channels-sweep.yaml owns the runtime schedule.
+ExecStartPre=+@CLASSG_HOME@/scripts/setup-monitor.sh wlan-tplink 1
+
+ExecStart=@CLASSG_HOME@/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli --sensor-id wifi-1 run --iface wlan-tplink --channels config/channels-sweep.yaml
+
+Restart=always
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

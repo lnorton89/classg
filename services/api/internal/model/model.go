@@ -19,14 +19,31 @@ import (
 
 const SchemaVersion = "1.0"
 
+// Position serves two schemas: track positions (track.schema.json, where `at`
+// is fusion's fix timestamp) and detection positions (detection.schema.json,
+// which has no `at` and whose additionalProperties:false forbids one).
+//
+// Ingest stores json.Marshal of this struct as the PERMANENT record, so every
+// field the schemas define must exist here -- a field this struct lacks is
+// stripped from history forever, which defeats the whole reason raw detections
+// are retained (replaying parser fixes; see Raw). alt_pressure_m and the two
+// accuracy fields were lost exactly that way until they were added.
 type Position struct {
-	Lat          float64   `json:"lat"`
-	Lon          float64   `json:"lon"`
-	AltGeodeticM *float64  `json:"alt_geodetic_m,omitempty"`
-	HeightAGLM   *float64  `json:"height_agl_m,omitempty"`
-	SpeedMPS     *float64  `json:"speed_mps,omitempty"`
-	TrackDeg     *float64  `json:"track_deg,omitempty"`
-	At           time.Time `json:"at"`
+	Lat               float64  `json:"lat"`
+	Lon               float64  `json:"lon"`
+	AltGeodeticM      *float64 `json:"alt_geodetic_m,omitempty"`
+	AltPressureM      *float64 `json:"alt_pressure_m,omitempty"`
+	HeightAGLM        *float64 `json:"height_agl_m,omitempty"`
+	TerrainElevationM *float64 `json:"terrain_elevation_m,omitempty"`
+	SpeedMPS          *float64 `json:"speed_mps,omitempty"`
+	TrackDeg          *float64 `json:"track_deg,omitempty"`
+	HAccuracyM        *float64 `json:"h_accuracy_m,omitempty"`
+	VAccuracyM        *float64 `json:"v_accuracy_m,omitempty"`
+	// omitzero, because detection positions have no timestamp of their own:
+	// without it every stored and served detection grew an
+	// "at":"0001-01-01T00:00:00Z" that detection.schema.json rejects. Track
+	// positions always carry a real fix time from fusion.
+	At time.Time `json:"at,omitzero"`
 }
 
 // OperatorPosition is the operator's ground position, from an F3411 System
@@ -34,10 +51,13 @@ type Position struct {
 // "did I just serialise the pilot's location rather than the aircraft's" is a
 // question the type system can answer.
 type OperatorPosition struct {
-	Lat  float64   `json:"lat"`
-	Lon  float64   `json:"lon"`
-	AltM *float64  `json:"alt_m,omitempty"`
-	At   time.Time `json:"at,omitempty"`
+	Lat  float64  `json:"lat"`
+	Lon  float64  `json:"lon"`
+	AltM *float64 `json:"alt_m,omitempty"`
+	// omitzero, not omitempty: omitempty never omits a struct, so the zero
+	// value used to serialise as "at":"0001-01-01T00:00:00Z" -- a field
+	// detection.schema.json's operator object forbids outright.
+	At time.Time `json:"at,omitzero"`
 }
 
 type Evidence struct {
@@ -92,7 +112,9 @@ var DetectionClasses = map[string]bool{
 	"E": true, "F": true, "G": true, "H": true,
 }
 
-var SensorKinds = map[string]bool{"wifi": true, "sdr": true, "ble": true}
+// SensorKinds is the closed set from the schema enum. "net" is a network feed
+// relayed to us (the ADS-B uplink heartbeats as one), not a radio on this box.
+var SensorKinds = map[string]bool{"wifi": true, "sdr": true, "ble": true, "net": true}
 
 type RF struct {
 	FreqHz      *int64   `json:"freq_hz,omitempty"`
@@ -147,8 +169,7 @@ type Raw struct {
 type Detection struct {
 	SchemaVersion string `json:"schema_version"`
 	DetectionID   string `json:"detection_id"`
-	// TS decodes both RFC3339 and the float epoch seconds the Python sensor
-	// currently emits on the bus. See FlexTime.
+	// TS decodes both RFC3339 and float epoch seconds. See FlexTime.
 	TS             FlexTime          `json:"ts"`
 	SensorID       string            `json:"sensor_id"`
 	SensorKind     string            `json:"sensor_kind"`
@@ -196,12 +217,16 @@ func RedactDetections(ds []Detection, expose bool) []Detection {
 	return out
 }
 
-// FlexTime accepts RFC3339 or a numeric epoch.
+// FlexTime accepts RFC3339 or a numeric epoch, and always emits RFC3339.
 //
-// The Wi-Fi sensor publishes heartbeats with `"ts": time.time()` -- a float --
-// while the schema specifies RFC3339 for detections. Rather than reject
-// messages from a sensor we do not own, accept both and always emit RFC3339.
-// If the sensors are ever unified on RFC3339 this type collapses to time.Time.
+// Historically the Wi-Fi sensor published heartbeats with `"ts": time.time()`
+// -- a float. As of schemas/heartbeat.schema.json both sensors emit RFC3339,
+// so nothing CURRENT needs the epoch path. It stays because the API cannot
+// verify what build a field-deployed sensor is running: an upgraded API next
+// to a not-yet-upgraded sensor would otherwise drop every heartbeat as
+// malformed, and a sensor that vanished because of a decode rule is exactly
+// the silent failure /health exists to prevent. Collapse this to time.Time
+// only once no supported deployment can still emit floats.
 type FlexTime struct{ time.Time }
 
 func (f *FlexTime) UnmarshalJSON(b []byte) error {

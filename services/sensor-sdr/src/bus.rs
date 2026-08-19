@@ -84,9 +84,10 @@ impl Bus for DetectionPublisher {
     fn heartbeat(&self, healthy: bool, detail: serde_json::Value) {
         let msg = json!({
             "schema_version": "1.0",
-            // The Wi-Fi sensor sends epoch seconds here and the API's FlexTime
-            // accepts either; RFC3339 matches the detection schema and fusion's
-            // own network-ADS-B heartbeat, so it is the better of the two.
+            // RFC3339, as schemas/heartbeat.schema.json requires. The Wi-Fi
+            // sensor used to send epoch seconds here -- a divergence only the
+            // API's FlexTime papered over -- until the heartbeat schema pinned
+            // every emitter to this format.
             "ts": clock::now_rfc3339(),
             "sensor_id": self.sensor_id,
             "sensor_kind": "sdr",

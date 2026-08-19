@@ -83,8 +83,17 @@ type TrackQuery struct {
 	States        []string
 	Since         time.Time
 	MinConfidence float64
-	Limit         int
-	Cursor        *Cursor
+	// LastSeenBefore keeps only tracks whose last_seen is strictly older.
+	// Exists for the stale-track sweep, so staleness is decided in SQL on the
+	// indexed column rather than by fetching and JSON-decoding every open
+	// track. Zero means no bound.
+	LastSeenBefore time.Time
+	// SkipTotal skips the COUNT query and leaves Total zero. For callers that
+	// iterate rather than paginate: the count is its own statement on the one
+	// shared connection, and a sweep that runs on a timer has no use for it.
+	SkipTotal bool
+	Limit     int
+	Cursor    *Cursor
 }
 
 type TrackPage struct {
@@ -113,8 +122,12 @@ type TrackDetectionQuery struct {
 	MACs   []string
 	From   time.Time
 	To     time.Time
-	Limit  int
-	Cursor *Cursor
+	// SkipTotal skips the COUNT query and leaves Total zero. GraphQL runs this
+	// query once per parent track; a client that did not select `total` should
+	// not pay a count per track for a number nobody asked for.
+	SkipTotal bool
+	Limit     int
+	Cursor    *Cursor
 }
 
 type DetectionPage struct {
@@ -222,6 +235,11 @@ type Store interface {
 	GetHookRule(ctx context.Context, id string) (hooks.Rule, error)
 	ListHookRules(ctx context.Context) ([]hooks.Rule, error)
 	DeleteHookRule(ctx context.Context, id string) error
+	// MarkHookRuleFired bumps fire_count and stamps last_fired_at as a
+	// targeted update. The dispatcher's workers call it concurrently; a
+	// read-modify-write through PutHookRule loses increments and can clobber
+	// an admin's concurrent edit with a worker's stale copy.
+	MarkHookRuleFired(ctx context.Context, ruleID string, at time.Time) error
 	PutHookDelivery(ctx context.Context, d hooks.Delivery) error
 	ListHookDeliveries(ctx context.Context, limit int) ([]hooks.Delivery, error)
 

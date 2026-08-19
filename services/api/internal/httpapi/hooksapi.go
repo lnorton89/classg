@@ -77,7 +77,18 @@ func (s *Server) handleCreateHookRule(w http.ResponseWriter, r *http.Request) {
 		fail(w, apierr.Internal("saving the hook rule failed"))
 		return
 	}
+	s.invalidateHookRules()
 	writeJSON(w, http.StatusCreated, rule.Redacted())
+}
+
+// invalidateHookRules tells the dispatcher its cached rule list is stale.
+// Every admin write path must call this, or the edit sits inert until the
+// cache TTL -- an admin who just disabled a noisy rule would keep getting
+// paged and reasonably conclude the button is broken.
+func (s *Server) invalidateHookRules() {
+	if s.hooks != nil {
+		s.hooks.InvalidateRules()
+	}
 }
 
 func (s *Server) handleUpdateHookRule(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +131,7 @@ func (s *Server) handleUpdateHookRule(w http.ResponseWriter, r *http.Request) {
 		fail(w, apierr.Internal("saving the hook rule failed"))
 		return
 	}
+	s.invalidateHookRules()
 	writeJSON(w, http.StatusOK, incoming.Redacted())
 }
 
@@ -170,6 +182,7 @@ func (s *Server) handleDeleteHookRule(w http.ResponseWriter, r *http.Request) {
 	err := s.store.DeleteHookRule(r.Context(), id)
 	switch {
 	case err == nil:
+		s.invalidateHookRules()
 		w.WriteHeader(http.StatusNoContent)
 	case errors.Is(err, store.ErrNotFound):
 		fail(w, apierr.NotFound("no hook rule with id "+id))

@@ -97,6 +97,9 @@ func (s *Store) ListTracks(_ context.Context, q store.TrackQuery) (store.TrackPa
 		if !q.Since.IsZero() && t.LastSeen.Before(q.Since) {
 			continue
 		}
+		if !q.LastSeenBefore.IsZero() && !t.LastSeen.Before(q.LastSeenBefore) {
+			continue
+		}
 		if t.Confidence < q.MinConfidence {
 			continue
 		}
@@ -110,6 +113,12 @@ func (s *Store) ListTracks(_ context.Context, q store.TrackQuery) (store.TrackPa
 	})
 
 	total := len(matched)
+	if q.SkipTotal {
+		// Parity with the SQL store, which skips the COUNT statement: a
+		// caller that opted out of the total gets zero, not a free answer the
+		// other implementation cannot afford.
+		total = 0
+	}
 	if q.Cursor != nil {
 		kept := matched[:0:0]
 		for _, t := range matched {
@@ -191,7 +200,12 @@ func (s *Store) ListTrackDetections(_ context.Context, q store.TrackDetectionQue
 		}
 		matched = append(matched, d)
 	}
-	return paginateDetections(matched, q.Limit, q.Cursor), nil
+	page := paginateDetections(matched, q.Limit, q.Cursor)
+	if q.SkipTotal {
+		// Same parity rule as ListTracks: the SQL store skipped the COUNT.
+		page.Total = 0
+	}
+	return page, nil
 }
 
 func paginateDetections(matched []model.Detection, limit int, cursor *store.Cursor) store.DetectionPage {

@@ -10,9 +10,9 @@ After=dump1090-mutability.service
 
 [Service]
 Type=simple
-User=admin
-WorkingDirectory=/home/admin/classg
-ExecStart=/home/admin/classg/scripts/classg-sweep-agent.sh
+User=@RUNAS@
+WorkingDirectory=@CLASSG_HOME@
+ExecStart=@CLASSG_HOME@/scripts/classg-sweep-agent.sh
 
 # A long-lived poller rather than a timer, unlike the other two agents. Sweep
 # latency is felt by a person who just pressed a button: a timer interval would

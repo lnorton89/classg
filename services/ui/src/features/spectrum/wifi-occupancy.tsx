@@ -20,6 +20,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangleIcon, WifiIcon } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { BarMeter } from '@/components/ui/bar-meter'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, EmptyState } from '@/components/ui/misc'
 import { sensorsQuery } from '@/lib/api/queries'
@@ -156,16 +157,16 @@ function ChannelBar({ channel }: { channel: ChannelOccupancy }) {
       <span className="tnum text-muted-foreground w-16 shrink-0 text-xs">
         {formatChannel(channel)}
       </span>
-      <span
-        className="bg-muted relative h-4 min-w-0 flex-1 overflow-hidden rounded-sm"
+      <BarMeter
+        // Floored so a measured-but-quiet channel still shows a sliver — an
+        // empty shell would be indistinguishable from an unmeasured one. The
+        // label carries the real reading.
+        fraction={Math.max(channel.busyFraction, 0.015)}
         role="img"
         aria-label={`${formatChannel(channel)}: ${percent.toFixed(0)} percent busy`}
-      >
-        <span
-          className={cn('absolute inset-y-0 left-0 rounded-sm transition-[width]', tone)}
-          style={{ width: `${Math.max(percent, 1.5)}%` }}
-        />
-      </span>
+        className="h-4 min-w-0 flex-1"
+        fillClassName={cn('transition-[width]', tone)}
+      />
       <span className="tnum w-10 shrink-0 text-right text-xs">{percent.toFixed(0)}%</span>
       <span className="tnum text-muted-foreground hidden w-16 shrink-0 text-right text-2xs sm:inline">
         {channel.noiseDbm !== null ? `${channel.noiseDbm.toFixed(0)} dBm` : '—'}

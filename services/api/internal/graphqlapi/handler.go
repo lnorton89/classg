@@ -15,6 +15,7 @@ import (
 	"github.com/graphql-go/graphql/language/source"
 
 	"github.com/classg/api/internal/apierr"
+	"github.com/classg/api/internal/store"
 )
 
 // MaxQueryBytes bounds the document itself. A query long enough to matter here
@@ -40,6 +41,15 @@ const MaxDepth = 8
 // `{a: tracks{...} b: tracks{...} c: tracks{...}}` -- that is a flat query
 // that runs the expensive resolver as many times as the client can type.
 const MaxAliases = 24
+
+// MaxTracksWithDetections caps the tracks page when `detections` is
+// sub-selected anywhere beneath it. Each parent track runs its own store
+// query (two, when `total` is selected) on the single database connection, so
+// `tracks(limit: 1000) { tracks { detections { ... } } }` was ~2001
+// sequential queries against live ingest -- legal under MaxDepth and
+// MaxAliases, which bound the query's SHAPE, not its fan-out. A hundred
+// parents is the default page; anything wider must paginate.
+const MaxTracksWithDetections = 100
 
 // Handler serves GraphQL over HTTP.
 //
@@ -97,7 +107,7 @@ func Handler(deps Deps) (http.HandlerFunc, error) {
 		// Cost is checked before execution rather than during it. A limit
 		// enforced by a resolver has already paid for every resolver that ran
 		// before it, which on this hardware is the cost that mattered.
-		if err := checkCost(in.Query); err != nil {
+		if err := checkCost(in.Query, in.Variables); err != nil {
 			writeGraphQLError(w, err.Error())
 			return
 		}
@@ -130,9 +140,9 @@ func writeGraphQLError(w http.ResponseWriter, msg string) {
 	})
 }
 
-// checkCost walks the parsed document and refuses queries that are too deep or
-// too wide before any resolver runs.
-func checkCost(query string) error {
+// checkCost walks the parsed document and refuses queries that are too deep,
+// too wide, or too fanned-out before any resolver runs.
+func checkCost(query string, variables map[string]any) error {
 	doc, err := parser.Parse(parser.ParseParams{
 		Source: source.NewSource(&source.Source{Body: []byte(query), Name: "GraphQL"}),
 	})
@@ -156,8 +166,99 @@ func checkCost(query string) error {
 				" levels deep; this unit executes at most " + strconv.Itoa(MaxDepth) +
 				". Ask for what you need in two queries rather than one walk of the graph")
 		}
+		if err := checkFanOut(op.SelectionSet, variables); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+// checkFanOut applies MaxTracksWithDetections: any `tracks` field whose
+// subtree selects `detections` may not ask for more parents than the budget.
+// Like depth(), named fragment spreads are treated as leaves -- a bounded,
+// documented under-count -- so a client that hides `detections` inside one
+// gets the old behaviour rather than a false refusal.
+func checkFanOut(set *ast.SelectionSet, variables map[string]any) error {
+	for _, sel := range set.Selections {
+		var inner *ast.SelectionSet
+		switch s := sel.(type) {
+		case *ast.Field:
+			inner = s.SelectionSet
+			if s.Name != nil && s.Name.Value == "tracks" && inner != nil && selectionSubtreeHas(inner, "detections") {
+				if limit := limitArgument(s.Arguments, variables); limit > MaxTracksWithDetections {
+					return errors.New("this query asks for detections under " + strconv.Itoa(limit) +
+						" tracks, which is " + strconv.Itoa(limit) + "+ store queries in one request; " +
+						"this unit allows at most " + strconv.Itoa(MaxTracksWithDetections) +
+						" tracks per page when detections are selected. Page with cursor instead")
+				}
+			}
+		case *ast.InlineFragment:
+			inner = s.SelectionSet
+		default:
+			continue
+		}
+		if inner != nil {
+			if err := checkFanOut(inner, variables); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func selectionSubtreeHas(set *ast.SelectionSet, name string) bool {
+	for _, sel := range set.Selections {
+		switch s := sel.(type) {
+		case *ast.Field:
+			if s.Name != nil && s.Name.Value == name {
+				return true
+			}
+			if s.SelectionSet != nil && selectionSubtreeHas(s.SelectionSet, name) {
+				return true
+			}
+		case *ast.InlineFragment:
+			if s.SelectionSet != nil && selectionSubtreeHas(s.SelectionSet, name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// limitArgument resolves a field's `limit`, following one level of variable
+// indirection. Absent, malformed or non-positive resolves to the default page
+// size -- the same answer the resolver itself would land on.
+func limitArgument(args []*ast.Argument, variables map[string]any) int {
+	const defaultLimit = store.DefaultLimit
+	for _, arg := range args {
+		if arg.Name == nil || arg.Name.Value != "limit" {
+			continue
+		}
+		switch v := arg.Value.(type) {
+		case *ast.IntValue:
+			if n, err := strconv.Atoi(v.Value); err == nil && n > 0 {
+				return n
+			}
+		case *ast.Variable:
+			if v.Name == nil {
+				return defaultLimit
+			}
+			// JSON numbers decode as float64; int covers hand-built maps in
+			// tests and callers.
+			switch n := variables[v.Name.Value].(type) {
+			case float64:
+				if n > 0 {
+					return int(n)
+				}
+			case int:
+				if n > 0 {
+					return n
+				}
+			}
+		}
+		return defaultLimit
+	}
+	return defaultLimit
 }
 
 // depth counts field nesting. An inline fragment is not a level of its own --

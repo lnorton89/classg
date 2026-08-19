@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""Check docs/operator-guide.json against the things it documents.
+
+The guide powers the in-app docs page, and unlike schemas/ nothing used to
+check it against reality -- it once documented a --channel flag the CLI
+accepted and ignored, and a PCAP that exists on exactly one machine. This
+holds the checkable parts to account:
+
+- every `path` field must name a file that exists in the repo
+- every `make <target>` must be a real Makefile target
+- every `scripts/...` command must be an existing file
+- every `npm run <script>` must exist in services/ui/package.json
+- every `classg-sensor-wifi <sub> --flag ...` must parse against the real
+  CLI's --help output (requires the package importable: CI's python job, or
+  the sensor venv locally)
+
+Anything else (curl, docker, go, cargo, systemctl) is deliberately not
+checked -- guessing at those would produce false failures, and the point is a
+check that is trusted enough to keep running.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shlex
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+GUIDE = REPO / "docs" / "operator-guide.json"
+
+errors: list[str] = []
+
+
+def fail(msg: str) -> None:
+    errors.append(msg)
+
+
+def wifi_cli(*args: str) -> subprocess.CompletedProcess[str]:
+    """Run the sensor CLI: installed entry point in CI, the venv locally."""
+    candidates = [
+        ["classg-sensor-wifi", *args],
+        [str(REPO / "services/sensor-wifi/.venv/bin/python"), "-m", "classg_wifi.cli", *args],
+        [sys.executable, "-m", "classg_wifi.cli", *args],
+    ]
+    last: subprocess.CompletedProcess[str] | None = None
+    for cmd in candidates:
+        try:
+            last = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=30,
+                cwd=REPO / "services/sensor-wifi",
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            # e.g. not installed, or a non-executable Windows shim on PATH
+            continue
+        return last
+    raise RuntimeError("no way to run classg-sensor-wifi; install the package or make setup")
+
+
+def check_wifi_command(line: str, where: str) -> None:
+    tokens = shlex.split(line)
+    # normalise the two spellings to the part after the program name:
+    # `classg-sensor-wifi ...` and `<python> -m classg_wifi.cli ...`
+    for i, t in enumerate(tokens):
+        if t.endswith("classg-sensor-wifi") or t == "classg_wifi.cli":
+            tokens = tokens[i:]
+            break
+    subcommands = {"capture", "replay", "analyze", "run"}
+    sub = next((t for t in tokens[1:] if not t.startswith("-")), None)
+    if sub is None or sub not in subcommands:
+        # global invocations: --help, --help-topic <id>
+        help_out = wifi_cli("--help")
+        for flag in (t for t in tokens[1:] if t.startswith("--")):
+            if flag not in help_out.stdout + help_out.stderr:
+                fail(f"{where}: {flag} not in classg-sensor-wifi --help")
+        if "--help-topic" in tokens:
+            topic = tokens[tokens.index("--help-topic") + 1]
+            r = wifi_cli("--help-topic", topic)
+            if r.returncode != 0:
+                fail(f"{where}: --help-topic {topic} exits {r.returncode}")
+        return
+    help_out = wifi_cli(sub, "--help")
+    if help_out.returncode != 0:
+        fail(f"{where}: classg-sensor-wifi {sub} --help exits {help_out.returncode}")
+        return
+    for flag in (t for t in tokens if t.startswith("--")):
+        if flag not in help_out.stdout:
+            fail(f"{where}: classg-sensor-wifi {sub} does not take {flag}")
+
+
+def check_command_line(line: str, where: str) -> None:
+    line = line.strip()
+    if not line or line.startswith("cd "):
+        return
+    first = line.split()[0]
+    if first == "make":
+        for target in line.split()[1:]:
+            if "=" in target or target.startswith("-"):
+                continue
+            makefile = (REPO / "Makefile").read_text(encoding="utf-8")
+            if not re.search(rf"^{re.escape(target)}:", makefile, re.M):
+                fail(f"{where}: no Makefile target '{target}'")
+    elif first.startswith("./scripts/") or first.startswith("scripts/"):
+        if not (REPO / first.lstrip("./")).is_file():
+            fail(f"{where}: {first} does not exist")
+    elif first == "npm" and " run " in line:
+        script = line.split()[2]
+        pkg = json.loads((REPO / "services/ui/package.json").read_text(encoding="utf-8"))
+        if script not in pkg.get("scripts", {}):
+            fail(f"{where}: npm script '{script}' not in services/ui/package.json")
+    elif "classg-sensor-wifi" in first or "classg_wifi.cli" in line:
+        check_wifi_command(line, where)
+    # everything else: deliberately unchecked (see module docstring)
+
+
+def main() -> int:
+    doc = json.loads(GUIDE.read_text(encoding="utf-8"))
+    for d in doc["documents"]:
+        for section in d.get("sections", []):
+            for item in section.get("items", []):
+                where = f"{d['id']} / {section['title']} / {item['title']}"
+                if "path" in item and not (REPO / item["path"]).exists():
+                    fail(f"{where}: path '{item['path']}' does not exist")
+                for line in item.get("command", "").splitlines():
+                    check_command_line(line, where)
+    if errors:
+        for e in errors:
+            print(f"FAIL {e}")
+        return 1
+    print("operator-guide.json: all paths, make targets, npm scripts and "
+          "classg-sensor-wifi commands check out")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

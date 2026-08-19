@@ -22,7 +22,12 @@ services:
       CLASSG_FUSION_TRACK_TTL: ${CLASSG_FUSION_TRACK_TTL:-5m}
       CLASSG_FUSION_REAP_INTERVAL: ${CLASSG_FUSION_REAP_INTERVAL:-1s}
     ports:
-      - "${CLASSG_BUS_PORT:-5556}:5556"
+      # Loopback by default. The host sensors dial 127.0.0.1, and anything that
+      # can reach this port can publish fabricated detections and heartbeats
+      # into fusion -- there is no authentication on the bus. Set
+      # CLASSG_BUS_BIND=0.0.0.0 in .env only when remote sensors on a trusted
+      # network genuinely need to publish here (ADR-0009), and firewall it.
+      - "${CLASSG_BUS_BIND:-127.0.0.1}:${CLASSG_BUS_PORT:-5556}:5556"
     restart: unless-stopped
 
   api:
@@ -82,6 +87,9 @@ services:
       # nginx serves the UI in this layout, so the API serves no static files.
       CLASSG_UI_DIR: "off"
       CLASSG_CAPTURE_DIR: /captures
+      # Operator captures must target the stable primary-radio name. Passing
+      # the .env override also updates an already-seeded settings database.
+      CLASSG_WIFI_INTERFACE: ${CLASSG_WIFI_INTERFACE:-wlan-alfa}
 
     # The agent-state bind mount is shared with host processes running as the
     # operator, and this container runs as its own unprivileged user. Without a

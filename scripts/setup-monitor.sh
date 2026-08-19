@@ -19,17 +19,51 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Load the driver if it is present but not loaded. udev normally autoloads it on
-# hotplug; this covers the case where it did not, which presents as no interface
-# ever appearing. No-op if already loaded.
-if ! grep -qE "^mt7921u " /proc/modules 2>/dev/null && modinfo mt7921u >/dev/null 2>&1; then
-    modprobe mt7921u && sleep 2
+# The mt7921u and vendor rtl8852au drivers share the Pi 4's USB 2 path even
+# when the dongles are physically in blue ports. Starting both units at boot
+# used to run `ip link` and `iw` concurrently; both calls entered uninterruptible
+# kernel sleep and pinned the boot transaction. Serialize all monitor-mode
+# transitions, including watchdog restarts and manual invocations.
+exec 9>/run/lock/classg-wifi-monitor.lock
+if ! flock -w 90 9; then
+    echo "timed out waiting for another Wi-Fi adapter setup to finish" >&2
+    exit 1
 fi
 
+# Load the driver if it is present but not loaded. The ALFA uses the in-kernel
+# mt7921u driver; the TP-Link uses rtl8852au on the Pi's current 6.12 kernel.
+# The TP-Link also appears briefly as a USB storage device before udev
+# mode-switches it, so wait for that sequence to produce the stable interface.
+driver=""
+case "$IFACE" in
+    wlan-alfa)   driver=mt7921u ;;
+    wlan-tplink) driver=8852au ;;
+esac
+
+if [[ -n "$driver" ]] && ! grep -qE "^${driver} " /proc/modules 2>/dev/null; then
+    if modinfo "$driver" >/dev/null 2>&1; then
+        modprobe "$driver"
+        udevadm settle --timeout=10 2>/dev/null || true
+    else
+        echo "driver $driver is not installed for kernel $(uname -r)" >&2
+        echo "check DKMS after a kernel update:  dkms status" >&2
+        exit 1
+    fi
+fi
+
+for _ in {1..20}; do
+    ip link show "$IFACE" >/dev/null 2>&1 && break
+    sleep 0.25
+done
+
 if ! ip link show "$IFACE" >/dev/null 2>&1; then
-    echo "interface $IFACE not found. Check: lsusb, dmesg | grep -i mt7921" >&2
-    echo "If the driver loaded but the adapter never initialised, firmware blobs" >&2
-    echo "are missing: apt install firmware-misc-nonfree" >&2
+    echo "interface $IFACE not found. Check: lsusb, dkms status, and dmesg" >&2
+    if [[ "$driver" == "mt7921u" ]]; then
+        echo "If mt7921u loaded but the ALFA never initialised, install" >&2
+        echo "firmware-misc-nonfree." >&2
+    elif [[ "$driver" == "8852au" ]]; then
+        echo "The TP-Link needs rtl8852au built for the running kernel." >&2
+    fi
     echo "Run ./scripts/check-capture-env.sh for a full diagnosis." >&2
     exit 1
 fi
@@ -72,9 +106,24 @@ fi
 
 current_type=$(iw dev "$IFACE" info 2>/dev/null | awk '/type/ {print $2}')
 if [[ "$current_type" != "monitor" ]]; then
-    ip link set "$IFACE" down
-    iw dev "$IFACE" set type monitor      # passive -- NOT 'set monitor active'
-    ip link set "$IFACE" up
+    # NetworkManager's "unmanaged" transition is asynchronous. A freshly
+    # mode-switched rtl8852au device returned EBUSY on the first conversion and
+    # worked five seconds later. Retry that expected handoff locally instead of
+    # burning a whole systemd restart.
+    monitor_ready=0
+    for attempt in {1..6}; do
+        ip link set "$IFACE" down 2>/dev/null || true
+        if iw dev "$IFACE" set type monitor; then  # passive -- never "active"
+            ip link set "$IFACE" up
+            monitor_ready=1
+            break
+        fi
+        [[ $attempt -lt 6 ]] && sleep 1
+    done
+    if [[ $monitor_ready -ne 1 ]]; then
+        echo "could not put $IFACE in monitor mode after 6 attempts" >&2
+        exit 1
+    fi
 fi
 
 iw dev "$IFACE" set channel "$CHANNEL"

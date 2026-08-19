@@ -7,9 +7,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=admin
-WorkingDirectory=/home/admin/classg
-ExecStart=/home/admin/classg/scripts/pi-autodeploy.sh
+User=@RUNAS@
+WorkingDirectory=@CLASSG_HOME@
+ExecStart=@CLASSG_HOME@/scripts/pi-autodeploy.sh
 
 # A rebuild of the Rust sensor is minutes on a Pi, and a docker build can be
 # longer. This kills a genuinely stuck run rather than bounding a normal one.

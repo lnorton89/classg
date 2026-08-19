@@ -67,9 +67,25 @@ type Querier interface {
 	ListTrackDetections(ctx context.Context, arg ListTrackDetectionsParams) ([]ListTrackDetectionsRow, error)
 	// Keyset paging on (last_seen DESC, track_id DESC), matching idx_tracks_page.
 	// Offset paging would silently skip rows on a table being appended to.
+	// last_seen_before exists for the stale-track sweep: staleness is decided
+	// here, on the indexed column, rather than by fetching and JSON-decoding
+	// every open track to compare timestamps in Go.
 	ListTracks(ctx context.Context, arg ListTracksParams) ([]ListTracksRow, error)
 	ListUsers(ctx context.Context) ([]User, error)
-	PurgeDetections(ctx context.Context, ts string) (int64, error)
+	// A targeted json_set rather than a read-modify-write of the whole doc. Fire
+	// bookkeeping is written by concurrent dispatch workers from a rule copy read
+	// at handle time; rewriting the full document from that copy lost concurrent
+	// FireCount increments and could clobber an admin's edit with the worker's
+	// stale snapshot. The updated_at column is deliberately untouched: it records
+	// the last admin edit, not the last firing.
+	MarkHookRuleFired(ctx context.Context, arg MarkHookRuleFiredParams) (int64, error)
+	// Batched via the rowid subquery. The first sweep after a Pi was powered off
+	// for a week can owe hundreds of thousands of rows, and a single unbounded
+	// DELETE holds SQLite's one writer -- the SAME pooled connection synchronous
+	// ZMQ ingest is waiting on -- for multiple seconds while the WAL balloons on
+	// an SD card. The store loops this until a batch comes back short, releasing
+	// the connection between rounds so ingest interleaves.
+	PurgeDetections(ctx context.Context, arg PurgeDetectionsParams) (int64, error)
 	PurgeExpiredSessions(ctx context.Context, expiresAt string) (int64, error)
 	PurgeHookDeliveries(ctx context.Context, createdAt string) (int64, error)
 	PurgeSweeps(ctx context.Context, startedAt string) (int64, error)

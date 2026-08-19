@@ -34,6 +34,22 @@
 set -euo pipefail
 
 REPO_DIR="${CLASSG_REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+
+# Compose only reads the .env in its own project directory (docker/), so
+# recreating the API without these would drop every Tier 1 secret the
+# repo-root .env supplies. Root last, because a later --env-file wins and
+# CLASSG_AGENT_STATE_GID lives only in docker/.env -- and this script exists
+# precisely to make that GID take effect, so losing it here would be circular.
+#
+# Written as `if` blocks rather than `[ -f x ] && arr+=(...)`: this script runs
+# under `set -e`, where a trailing test that fails is the script's exit status.
+COMPOSE_ENV_ARGS=()
+if [ -f "$REPO_DIR/docker/.env" ]; then
+    COMPOSE_ENV_ARGS+=(--env-file "$REPO_DIR/docker/.env")
+fi
+if [ -f "$REPO_DIR/.env" ]; then
+    COMPOSE_ENV_ARGS+=(--env-file "$REPO_DIR/.env")
+fi
 STATE_DIR="${CLASSG_DEPLOY_STATE:-$REPO_DIR/.agent-state}"
 COMPOSE_ENV="$REPO_DIR/docker/.env"
 CONTAINER="${CLASSG_API_CONTAINER:-classg-api}"
@@ -112,7 +128,7 @@ fi
 
 log "the API container cannot write to it yet; recreating it to pick up the group"
 log "(the API is unavailable for a second or two -- the sensors keep running)"
-(cd "$REPO_DIR/docker" && docker compose up -d api >/dev/null 2>&1) || true
+(cd "$REPO_DIR/docker" && docker compose ${COMPOSE_ENV_ARGS[@]+"${COMPOSE_ENV_ARGS[@]}"} up -d api >/dev/null 2>&1) || true
 
 for _ in 1 2 3 4 5 6 7 8 9 10; do
     if probe; then
@@ -124,5 +140,5 @@ done
 
 echo "The API container still cannot write to $STATE_DIR." >&2
 echo "Check that docker/docker-compose.yml has group_add on the api service," >&2
-echo "then:  cd $REPO_DIR/docker && docker compose up -d --force-recreate api" >&2
+echo "then:  cd $REPO_DIR && docker compose --env-file .env -f docker/docker-compose.yml up -d --force-recreate api" >&2
 exit 1

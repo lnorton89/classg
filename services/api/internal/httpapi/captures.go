@@ -60,6 +60,9 @@ func (s *Server) handleStartCapture(w http.ResponseWriter, r *http.Request) {
 		fail(w, apierr.InvalidParameter(ve.Field, ve.Message))
 	case errors.Is(err, capture.ErrPrivileges):
 		fail(w, apierr.PrivilegesRequired(err.Error()))
+	case errors.Is(err, capture.ErrBusy):
+		// 409, not 503: nothing is broken. The radio is doing its other job.
+		fail(w, apierr.Conflict(err.Error()))
 	case errors.Is(err, capture.ErrNotMonitor):
 		fail(w, apierr.Conflict(err.Error()))
 	default:

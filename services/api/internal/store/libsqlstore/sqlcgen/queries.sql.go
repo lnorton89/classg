@@ -86,19 +86,26 @@ func (q *Queries) CountTrackDetections(ctx context.Context, arg CountTrackDetect
 const countTracks = `-- name: CountTracks :one
 SELECT COUNT(*) FROM tracks
 WHERE (CAST(?1 AS TEXT)          IS NULL OR last_seen  >= ?1)
-  AND (CAST(?2 AS REAL) IS NULL OR confidence >= ?2)
-  AND (CAST(?3 AS TEXT)         IS NULL
-       OR state IN (SELECT value FROM json_each(?3)))
+  AND (CAST(?2 AS TEXT) IS NULL OR last_seen < ?2)
+  AND (CAST(?3 AS REAL) IS NULL OR confidence >= ?3)
+  AND (CAST(?4 AS TEXT)         IS NULL
+       OR state IN (SELECT value FROM json_each(?4)))
 `
 
 type CountTracksParams struct {
-	Since         sql.NullString
-	MinConfidence sql.NullFloat64
-	States        sql.NullString
+	Since          sql.NullString
+	LastSeenBefore sql.NullString
+	MinConfidence  sql.NullFloat64
+	States         sql.NullString
 }
 
 func (q *Queries) CountTracks(ctx context.Context, arg CountTracksParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countTracks, arg.Since, arg.MinConfidence, arg.States)
+	row := q.db.QueryRowContext(ctx, countTracks,
+		arg.Since,
+		arg.LastSeenBefore,
+		arg.MinConfidence,
+		arg.States,
+	)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -811,25 +818,27 @@ func (q *Queries) ListTrackDetections(ctx context.Context, arg ListTrackDetectio
 const listTracks = `-- name: ListTracks :many
 SELECT doc, last_seen, track_id FROM tracks
 WHERE (CAST(?1 AS TEXT)          IS NULL OR last_seen  >= ?1)
-  AND (CAST(?2 AS REAL) IS NULL OR confidence >= ?2)
-  AND (CAST(?3 AS TEXT)         IS NULL
-       OR state IN (SELECT value FROM json_each(?3)))
+  AND (CAST(?2 AS TEXT) IS NULL OR last_seen < ?2)
+  AND (CAST(?3 AS REAL) IS NULL OR confidence >= ?3)
+  AND (CAST(?4 AS TEXT)         IS NULL
+       OR state IN (SELECT value FROM json_each(?4)))
   AND (
-        CAST(?4 AS TEXT) IS NULL
-        OR last_seen < ?4
-        OR (last_seen = ?4 AND track_id < ?5)
+        CAST(?5 AS TEXT) IS NULL
+        OR last_seen < ?5
+        OR (last_seen = ?5 AND track_id < ?6)
       )
 ORDER BY last_seen DESC, track_id DESC
-LIMIT ?6
+LIMIT ?7
 `
 
 type ListTracksParams struct {
-	Since         sql.NullString
-	MinConfidence sql.NullFloat64
-	States        sql.NullString
-	CursorTs      sql.NullString
-	CursorID      sql.NullString
-	Limit         int64
+	Since          sql.NullString
+	LastSeenBefore sql.NullString
+	MinConfidence  sql.NullFloat64
+	States         sql.NullString
+	CursorTs       sql.NullString
+	CursorID       sql.NullString
+	Limit          int64
 }
 
 type ListTracksRow struct {
@@ -840,9 +849,13 @@ type ListTracksRow struct {
 
 // Keyset paging on (last_seen DESC, track_id DESC), matching idx_tracks_page.
 // Offset paging would silently skip rows on a table being appended to.
+// last_seen_before exists for the stale-track sweep: staleness is decided
+// here, on the indexed column, rather than by fetching and JSON-decoding
+// every open track to compare timestamps in Go.
 func (q *Queries) ListTracks(ctx context.Context, arg ListTracksParams) ([]ListTracksRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTracks,
 		arg.Since,
+		arg.LastSeenBefore,
 		arg.MinConfidence,
 		arg.States,
 		arg.CursorTs,
@@ -911,12 +924,52 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 	return items, nil
 }
 
-const purgeDetections = `-- name: PurgeDetections :execrows
-DELETE FROM detections WHERE ts < ?
+const markHookRuleFired = `-- name: MarkHookRuleFired :execrows
+UPDATE hook_rules
+SET doc = json_set(doc,
+    '$.fire_count',    COALESCE(json_extract(doc, '$.fire_count'), 0) + 1,
+    '$.last_fired_at', CAST(?1 AS TEXT))
+WHERE rule_id = ?2
 `
 
-func (q *Queries) PurgeDetections(ctx context.Context, ts string) (int64, error) {
-	result, err := q.db.ExecContext(ctx, purgeDetections, ts)
+type MarkHookRuleFiredParams struct {
+	LastFiredAt string
+	RuleID      string
+}
+
+// A targeted json_set rather than a read-modify-write of the whole doc. Fire
+// bookkeeping is written by concurrent dispatch workers from a rule copy read
+// at handle time; rewriting the full document from that copy lost concurrent
+// FireCount increments and could clobber an admin's edit with the worker's
+// stale snapshot. The updated_at column is deliberately untouched: it records
+// the last admin edit, not the last firing.
+func (q *Queries) MarkHookRuleFired(ctx context.Context, arg MarkHookRuleFiredParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markHookRuleFired, arg.LastFiredAt, arg.RuleID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const purgeDetections = `-- name: PurgeDetections :execrows
+DELETE FROM detections WHERE rowid IN (
+    SELECT d.rowid FROM detections AS d WHERE d.ts < ?1 LIMIT ?2
+)
+`
+
+type PurgeDetectionsParams struct {
+	Before string
+	Batch  int64
+}
+
+// Batched via the rowid subquery. The first sweep after a Pi was powered off
+// for a week can owe hundreds of thousands of rows, and a single unbounded
+// DELETE holds SQLite's one writer -- the SAME pooled connection synchronous
+// ZMQ ingest is waiting on -- for multiple seconds while the WAL balloons on
+// an SD card. The store loops this until a batch comes back short, releasing
+// the connection between rounds so ingest interleaves.
+func (q *Queries) PurgeDetections(ctx context.Context, arg PurgeDetectionsParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeDetections, arg.Before, arg.Batch)
 	if err != nil {
 		return 0, err
 	}

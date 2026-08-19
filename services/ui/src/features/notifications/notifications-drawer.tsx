@@ -74,6 +74,7 @@ export function NotificationsDrawer() {
   const [open, setOpen] = useState(false)
   const [lastSeenAt, setLastSeenAt] = useState<number>(() => readLastSeen())
   const closeRef = useRef<HTMLButtonElement>(null)
+  const bellRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLDivElement>(null)
 
@@ -113,9 +114,18 @@ export function NotificationsDrawer() {
     setOpen(true)
   }
 
-  // Focus only -- no state -- so the panel is keyboard-usable on open.
+  // Focus only -- no state -- so the panel is keyboard-usable on open, and
+  // handed back to the bell on close so a keyboard user is not dropped on
+  // <body> when the panel unmounts under their focus.
+  const hadFocus = useRef(false)
   useEffect(() => {
-    if (open) closeRef.current?.focus()
+    if (open) {
+      hadFocus.current = true
+      closeRef.current?.focus()
+    } else if (hadFocus.current) {
+      hadFocus.current = false
+      bellRef.current?.focus()
+    }
   }, [open])
 
   // Escape closes, because a panel that traps you is worse than no panel.
@@ -156,6 +166,7 @@ export function NotificationsDrawer() {
     <div ref={triggerRef} className="inline-flex">
       <Tooltip content="Recent detections and system events">
         <Button
+          ref={bellRef}
           variant="ghost"
           size="icon"
           onClick={() => (open ? setOpen(false) : openDrawer())}
@@ -185,11 +196,11 @@ export function NotificationsDrawer() {
       {open && (
         <div
           ref={panelRef}
-          // Anchored to the viewport rather than the button: the header wraps to
-          // two rows below xl, so anchoring to the bell would move the panel
-          // with it. Top-right under the header is where it always is.
+          // Anchored to the viewport rather than the button, so top-right
+          // under the header is where it always is. The offsets follow the
+          // header's height, which is h-14 until xl.
           className={cn(
-            'fixed top-14 right-2 z-50 sm:top-16 sm:right-3',
+            'fixed top-14 right-2 z-50 sm:right-3 xl:top-16',
             'w-[min(26rem,calc(100vw-1rem))]',
           )}
         >

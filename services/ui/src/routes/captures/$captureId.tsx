@@ -5,6 +5,7 @@ import { ArrowLeftIcon, DownloadIcon, PlayIcon } from 'lucide-react'
 import { BarMeter } from '@/components/ui/bar-meter'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button-variants'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, DataRow, EmptyState } from '@/components/ui/misc'
 import { Tooltip } from '@/components/ui/tooltip'
@@ -64,7 +65,7 @@ function CaptureDetail() {
           <a
             href={api.captureDownloadUrl(captureId)}
             download={capture.filename}
-            className="border-border bg-background hover:bg-accent inline-flex h-9 items-center gap-2 rounded-md border px-4 text-sm font-medium"
+            className={buttonVariants({ variant: 'outline' })}
           >
             <DownloadIcon className="size-4" aria-hidden />
             Download .pcap

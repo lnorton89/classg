@@ -61,6 +61,39 @@ export function SkyStateBanner({
   const dismissible = state.absenceIsEvidence
   const dismissed = dismissible && dismissedKind === state.kind
 
+  if (dismissed) return null
+
+  // The animation state lives in a CHILD component keyed on the kind, not in
+  // this one. A key on a host element only remounts the DOM node -- hook state
+  // survives it -- so when this component owned `closing`, a dismissed "quiet
+  // sky" left `closing` set forever and the "coverage degraded" that replaced
+  // it rendered already slid off screen: invisible, permanently, on exactly
+  // the state an operator must not miss. Keying the component boundary is what
+  // genuinely resets the hooks.
+  return (
+    <SkyStateBannerBody
+      key={state.kind}
+      state={state}
+      className={className}
+      action={action}
+      onDismissed={() => setDismissedKind(state.kind)}
+    />
+  )
+}
+
+function SkyStateBannerBody({
+  state,
+  className,
+  action,
+  onDismissed,
+}: {
+  state: SkyState
+  className?: string
+  action?: ReactNode
+  onDismissed: () => void
+}) {
+  const dismissible = state.absenceIsEvidence
+
   // Swipe and the timer both end here: a short slide-and-fade before the
   // banner actually leaves the tree, so a released swipe or an expired timer
   // reads as a dismissal happening rather than a banner disappearing.
@@ -68,21 +101,30 @@ export function SkyStateBanner({
   const [dragX, setDragX] = useState(0)
   const [dragging, setDragging] = useState(false)
   const dragStartX = useRef<number | null>(null)
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function commitDismiss(direction: 1 | -1) {
     if (closing !== null) return
     setClosing(direction)
-    setTimeout(() => setDismissedKind(state.kind), CLOSE_ANIMATION_MS)
+    closeTimer.current = setTimeout(onDismissed, CLOSE_ANIMATION_MS)
   }
+
+  // The close-animation timeout calls back into the parent; if the state kind
+  // changes mid-animation this body unmounts, and firing onDismissed then
+  // would dismiss the NEW kind sight unseen.
+  useEffect(
+    () => () => {
+      if (closeTimer.current !== null) clearTimeout(closeTimer.current)
+    },
+    [],
+  )
 
   useEffect(() => {
     if (!dismissible) return
     const id = setTimeout(() => commitDismiss(1), QUIET_SKY_DISMISS_MS)
     return () => clearTimeout(id)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- commitDismiss closes over state.kind, which is already this effect's dependency.
-  }, [dismissible, state.kind])
-
-  if (dismissed) return null
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- commitDismiss is stable for this body's lifetime; the component remounts per state kind.
+  }, [dismissible])
 
   function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (!dismissible || closing !== null) return
@@ -145,13 +187,11 @@ export function SkyStateBanner({
 
   return (
     <div
-      // key: a genuinely different message (the sky state's KIND changed)
-      // remounts this element -- which is also what resets closing/drag state
-      // left over from whatever this replaced, for free -- and makes the
-      // entrance below replay instead of a silent swap. "Quiet sky" becoming
-      // "sensor down" is exactly the change an operator must not be able to
-      // miss.
-      key={state.kind}
+      // No key here: the parent keys this whole component on state.kind, so a
+      // genuinely different message remounts body, hooks and all -- resetting
+      // closing/drag state and replaying the entrance instead of a silent
+      // swap. "Quiet sky" becoming "sensor down" is exactly the change an
+      // operator must not be able to miss.
       // Assertive only when the operator must not trust the screen.
       role={state.absenceIsEvidence ? 'status' : 'alert'}
       aria-live={state.absenceIsEvidence ? 'polite' : 'assertive'}

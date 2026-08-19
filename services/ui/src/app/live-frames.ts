@@ -16,10 +16,50 @@ import type {
   ServerFrame,
   SpectrumSweepsResponse,
   Track,
+  TracksQuery,
   TracksResponse,
 } from '@/lib/api/types'
 
 type QueryClientLike = ReturnType<typeof useQueryClient>
+
+/**
+ * Would the server have included this track in that list query's response?
+ *
+ * Every `['tracks', 'list']` cache entry carries its own filters in the key,
+ * and appending a pushed track to all of them regardless used to leak
+ * TENTATIVE tracks into the notifications drawer (which asks for
+ * CONFIRMED/COASTING/CLOSED) and out-of-window tracks into the timeline's
+ * `since` query -- each with a phantom `total` increment.
+ */
+function matchesQuery(track: Track, query: TracksQuery): boolean {
+  if (query.state && query.state.length > 0 && !query.state.includes(track.state)) return false
+  if (query.since && track.last_seen < query.since) return false
+  if (query.min_confidence !== undefined && track.confidence < query.min_confidence)
+    return false
+  return true
+}
+
+/**
+ * A session that runs for days accrues CLOSED tracks in every list cache
+ * without bound -- nothing ever removes them, and the socket keeps appending.
+ * Past this many closed entries the oldest are evicted, oldest `last_seen`
+ * first. Active tracks are never evicted: fusion bounds those itself via the
+ * track TTL. `total` is left alone -- the tracks still exist server-side, and
+ * a reconnect refetches the whole list anyway.
+ */
+const MAX_CLOSED_PER_LIST = 500
+
+function evictExcessClosed(tracks: Track[]): Track[] {
+  const closed = tracks.filter((t) => t.state === 'CLOSED')
+  if (closed.length <= MAX_CLOSED_PER_LIST) return tracks
+  const cutoff = closed
+    .map((t) => t.last_seen)
+    .sort()
+    .at(closed.length - MAX_CLOSED_PER_LIST - 1)
+  return tracks.filter(
+    (t) => t.state !== 'CLOSED' || cutoff === undefined || t.last_seen > cutoff,
+  )
+}
 
 /** Pure-ish reducer over the cache for one server frame. */
 export function applyFrame(queryClient: QueryClientLike, frame: ServerFrame): void {
@@ -27,16 +67,39 @@ export function applyFrame(queryClient: QueryClientLike, frame: ServerFrame): vo
     case 'track.update': {
       const track = normalizeTrack(frame.track)
       queryClient.setQueryData(queryKeys.track(track.track_id), track)
-      queryClient.setQueriesData<TracksResponse>({ queryKey: ['tracks', 'list'] }, (old) => {
-        if (!old) return old
+      // getQueriesData rather than setQueriesData: the updater needs each
+      // entry's own key to read the filters out of it.
+      for (const [key, old] of queryClient.getQueriesData<TracksResponse>({
+        queryKey: ['tracks', 'list'],
+      })) {
+        if (!old) continue
+        const query = (key[2] ?? {}) as TracksQuery
+        const matches = matchesQuery(track, query)
         const index = old.tracks.findIndex((t) => t.track_id === track.track_id)
         if (index === -1) {
-          return { ...old, tracks: [...old.tracks, track], total: old.total + 1 }
+          if (!matches) continue
+          queryClient.setQueryData<TracksResponse>(key, {
+            ...old,
+            tracks: evictExcessClosed([...old.tracks, track]),
+            total: old.total + 1,
+          })
+          continue
+        }
+        if (!matches) {
+          // The update moved the track outside this query's filter (a state
+          // change, in practice). Keeping the stale version would show a
+          // reading the server no longer stands behind.
+          queryClient.setQueryData<TracksResponse>(key, {
+            ...old,
+            tracks: old.tracks.filter((t) => t.track_id !== track.track_id),
+            total: Math.max(0, old.total - 1),
+          })
+          continue
         }
         const tracks = old.tracks.slice()
         tracks[index] = track
-        return { ...old, tracks }
-      })
+        queryClient.setQueryData<TracksResponse>(key, { ...old, tracks })
+      }
       break
     }
 

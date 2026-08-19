@@ -56,7 +56,25 @@ It refuses rather than half-installing:
 - **the API container cannot write to the state directory** — see below.
 
 It grants exactly two commands passwordless through sudo: stopping and starting
-`dump1090-mutability.service`. Nothing else.
+`dump1090-mutability.service`. Nothing else. The grant goes to the checkout's
+owner — the user the rendered unit runs as — not necessarily whoever ran the
+installer.
+
+## What a request is trusted to be
+
+The request file is the entire authentication: anyone who can write into the
+state directory can ask for a sweep, and a sweep stops dump1090. That is why
+membership in the directory's group (set up by `agent-state-setup.sh`) should
+be treated as the permission to sweep. The agent bounds the damage a bad
+writer can do rather than trying to identify one:
+
+- the request's `id` and `band` are validated to a plain token shape before
+  either names a file or reaches a command line;
+- repeated requests are rate-limited (`CLASSG_SWEEP_MIN_INTERVAL_S`, default
+  15 s between sweeps), so a request loop degrades ADS-B instead of removing
+  it;
+- the sudoers grant stops at dump1090 — a compromised request cannot restart
+  sensors or anything else.
 
 ## The permission that bites
 

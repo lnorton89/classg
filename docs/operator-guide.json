@@ -16,6 +16,7 @@
           "items": [
             { "title": "Create configuration", "body": "Copy the committed environment contract and review interface names and storage paths for this machine.", "command": "make env" },
             { "title": "Verify the radios", "body": "A missing sensor means no coverage, not a quiet sky. Confirm monitor mode and the RTL-SDR driver before flight testing.", "command": "./scripts/check-capture-env.sh" },
+            { "title": "Prove the pipeline without hardware", "body": "Generate a synthetic DJI hover, analyze it, then replay it into a running stack. If this does not put a CONFIRMED track on the map, a real drone would not have appeared either.", "command": "services/sensor-wifi/.venv/bin/python scripts/make-demo-capture.py\ncd services/sensor-wifi\n.venv/bin/python -m classg_wifi.cli analyze ../../captures/demo-hover.pcap\n.venv/bin/python -m classg_wifi.cli replay ../../captures/demo-hover.pcap --endpoint tcp://127.0.0.1:5556 --socket-mode connect" },
             { "title": "Run mock traffic", "body": "Exercise the map, health states, captures, and configuration without hardware.", "command": "cd services/ui\nnpm ci\nnpm run dev" }
           ]
         },
@@ -23,7 +24,7 @@
           "title": "Ground-truth workflow",
           "description": "A verified PCAP is the basis for parser and calibration decisions.",
           "items": [
-            { "title": "Capture", "body": "Power on the drone, wait for GPS, hover, land, and stop the passive recording.", "command": "classg-sensor-wifi capture --iface wlan1 --channel 6 --out captures/dji-first-flight.pcap" },
+            { "title": "Capture", "body": "Monitor mode first: capture retunes the interface passively for --channel, but only an interface already in monitor mode can be retuned, and it fails loudly when the interface is not ready (make monitor, or scripts/setup-monitor.sh). Then power on the drone, wait for GPS, hover, land, and stop the passive recording.", "command": "classg-sensor-wifi capture --iface wlan1 --channel 6 --out captures/dji-first-flight.pcap" },
             { "title": "Analyze", "body": "Confirm channel, beacon interval, identity messages, and calibration samples.", "command": "classg-sensor-wifi analyze captures/dji-first-flight.pcap" },
             { "title": "Replay", "body": "Run the deterministic parser regression path without radio hardware.", "command": "classg-sensor-wifi replay captures/dji-first-flight.pcap" }
           ]
@@ -205,28 +206,28 @@
       "title": "SDR sensor",
       "area": "services/sensor-sdr",
       "treePath": ["services", "sensor-sdr"],
-      "summary": "Rust scaffolding for ADS-B context and sub-2 GHz energy and cadence detection.",
+      "summary": "ADS-B airspace context via dump1090, plus band sweeps and probes on the RTL-SDR; sub-2 GHz detection classes are still to come.",
       "sections": [
         {
           "title": "Architecture and hardware",
           "description": "The RTL-SDR V4 tunes only to about 1.766 GHz.",
           "items": [
-            { "title": "What it can see", "body": "ADS-B, 433/868/915 MHz control links, 1.2/1.3 GHz analog FPV, and GNSS L1 interference indicators." },
+            { "title": "What it can see", "body": "ADS-B decoding runs today, via dump1090 -- the sensor consumes its decoded output rather than opening the radio. The tuner also reaches 433/868/915 MHz control links, 1.2/1.3 GHz analog FPV, and GNSS L1 interference indicators; detecting those is Milestone 3." },
             { "title": "What it cannot see", "body": "DJI OcuSync at 2.4 and 5.8 GHz is physically outside tuner range. Gain or antennas cannot change that." },
             { "title": "Privacy boundary", "body": "Future sweep logic characterizes envelopes and cadence only; it must never demodulate payload or video content." }
           ]
         },
         {
           "title": "Environment variables",
-          "description": "Reserved values document the future runtime contract while the acquisition loop is still scaffolding.",
+          "description": "Read at startup by the ADS-B loop and the sweep engine; environment and flags agree with the shared contract.",
           "items": [
             { "title": "Receiver identity", "body": "CLASSG_SDR_SENSOR_ID identifies the receiver in health and detection streams." },
-            { "title": "Sweep timing", "body": "CLASSG_SDR_DWELL_MS sets the planned dwell duration per sweep step.", "path": ".env.example" }
+            { "title": "Sweep timing", "body": "CLASSG_SDR_DWELL_MS sets the dwell duration per sweep step.", "path": ".env.example" }
           ]
         },
         {
           "title": "Development",
-          "description": "The current crate contains tuner abstractions, buffer logic, noise-floor estimation, and sweep planning.",
+          "description": "The crate ships the ADS-B ingest loop, a hand-written ZMTP publisher, tuner abstractions, noise-floor estimation, and the band sweep engine (behind the rtlsdr feature).",
           "items": [
             { "title": "Verify", "body": "Rust formatting, Clippy, and unit tests are required.", "command": "cd services/sensor-sdr\ncargo fmt --check\ncargo clippy --all-targets -- -D warnings\ncargo test" },
             { "title": "Hardware decision", "body": "Why the tuner cannot cover DJI and where it still adds value.", "path": "docs/architecture/adr/0004-rtlsdr-scope.md" }

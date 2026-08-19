@@ -1,0 +1,10 @@
+# Stable names for the two ClassG monitor radios. Match the USB product rather
+# than wlan enumeration order: both adapters can reset under load, and whichever
+# driver finishes probing first would otherwise become wlan1 after a reboot.
+#
+# ALFA AWUS036AXML (MediaTek MT7921AUN)
+ACTION=="add", SUBSYSTEM=="net", ATTRS{idVendor}=="0e8d", ATTRS{idProduct}=="7961", NAME="wlan-alfa"
+
+# TP-Link Archer TX20U Plus (Realtek RTL8852AU, after USB mode-switch)
+ACTION=="add", SUBSYSTEM=="net", ATTRS{idVendor}=="2357", ATTRS{idProduct}=="013f", NAME="wlan-tplink"
+

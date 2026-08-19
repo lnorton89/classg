@@ -1,6 +1,6 @@
 # ADR-0007: Three configuration tiers — bootstrap env, database settings, YAML seed
 
-**Status:** Accepted · **Date:** 2026-08-10 · **Amends:** [ADR-0006](0006-storage-turso-libsql.md)
+**Status:** Accepted · **Date:** 2026-08-10 · **Amends:** [ADR-0006](0006-storage-turso-libsql.md) · **Amended:** 2026-08-18 (see below)
 
 ## Context
 
@@ -41,7 +41,8 @@ because they are what makes the database reachable.
 | **`CLASSG_TURSO_URL`** | **secret** |
 | **`CLASSG_TURSO_AUTH_TOKEN`** | **secret** |
 
-That is the whole list. `.env` is for these and nothing else.
+That is the whole list. `.env` is for these and nothing else. *(Amended
+2026-08-18: the list has grown — see the amendment at the end.)*
 
 ### Tier 2 — Settings (database)
 
@@ -110,3 +111,22 @@ which place any given value came from.
 | Everything in DB, no env override at all | Breaks CI and container deployment, where injecting one value is routine. |
 | TOML for the seed | A second config dialect for no benefit; the repo is already YAML. |
 | Ban env override, error on Tier 2 env vars | Considered seriously — it forces the migration to complete. Rejected as too brittle for CI, and reporting `source` achieves the same visibility without the breakage. |
+
+---
+
+## Amendment — 2026-08-18
+
+The Tier 1 table above is the list as originally decided, and it has since
+grown — for the reason the tier exists, not against it. Authentication and
+mail (`CLASSG_AUTH_MODE`, `CLASSG_SESSION_TTL`, the `CLASSG_OIDC_*` group,
+the `CLASSG_SMTP_*` group) are Tier 1 by the same test the original eight
+passed: they are secrets, or they are settings a unit must not let its own
+web UI change — an auth mode editable through the web interface can be
+switched off by whoever already got in, and a password in the settings table
+is readable by anything that can read `/config/settings`.
+
+So "that is the whole list" holds for *kinds* — bootstrap and secrets,
+nothing else — rather than for the eight names. The current concrete list is
+maintained in [docs/ops/00-configuration.md](../../ops/00-configuration.md),
+which is the operational reference; this ADR records why the tier is shaped
+the way it is.

@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { KeyRoundIcon, Trash2Icon, UserPlusIcon, XIcon } from 'lucide-react'
 import { useState } from 'react'
 
+import { usePreferences } from '@/app/preferences-context'
 import { useFormat } from '@/app/use-format'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -205,8 +206,12 @@ function CreateUserCard() {
 function UserRow({ user, isSelf }: { user: AuthUser; isSelf: boolean }) {
   const queryClient = useQueryClient()
   const format = useFormat()
+  const { preferences } = usePreferences()
   const [resetting, setResetting] = useState(false)
   const [newPassword, setNewPassword] = useState('')
+  // Deleting an account is unrecoverable, so it takes the same second click a
+  // sensor restart does -- and a restart is merely disruptive.
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.users })
@@ -280,18 +285,41 @@ function UserRow({ user, isSelf }: { user: AuthUser; isSelf: boolean }) {
               Reset password
             </Button>
           ) : null}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => remove.mutate()}
-            disabled={remove.isPending || isSelf}
-            aria-label={`Delete ${user.username}`}
-            // Deleting the account you are signed in with is almost always a
-            // misclick; the API refuses it too.
-            title={isSelf ? 'You cannot delete the account you are signed in with' : undefined}
-          >
-            <Trash2Icon className="size-3.5" aria-hidden />
-          </Button>
+          {confirmingDelete ? (
+            <>
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={() => {
+                  setConfirmingDelete(false)
+                  remove.mutate()
+                }}
+                disabled={remove.isPending}
+              >
+                Confirm delete — cannot be undone
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmingDelete(false)}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() =>
+                preferences.confirmDestructive ? setConfirmingDelete(true) : remove.mutate()
+              }
+              disabled={remove.isPending || isSelf}
+              aria-label={`Delete ${user.username}`}
+              // Deleting the account you are signed in with is almost always a
+              // misclick; the API refuses it too.
+              title={
+                isSelf ? 'You cannot delete the account you are signed in with' : undefined
+              }
+            >
+              <Trash2Icon className="size-3.5" aria-hidden />
+            </Button>
+          )}
         </div>
       </div>
 
@@ -344,6 +372,10 @@ function UserRow({ user, isSelf }: { user: AuthUser; isSelf: boolean }) {
 function SessionRow({ session }: { session: AuthSession }) {
   const queryClient = useQueryClient()
   const format = useFormat()
+  const { preferences } = usePreferences()
+  // Revoking signs somebody out mid-shift with no undo, so it gets the same
+  // second click as the other destructive actions.
+  const [confirming, setConfirming] = useState(false)
   const revoke = useMutation({
     mutationFn: () => api.revokeSession(session.session_id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.sessions }),
@@ -364,15 +396,37 @@ function SessionRow({ session }: { session: AuthSession }) {
       <span className="text-muted-foreground ml-auto">
         last seen {format.timestamp(session.last_seen)}
       </span>
-      <Button
-        size="sm"
-        variant="ghost"
-        onClick={() => revoke.mutate()}
-        disabled={revoke.isPending}
-      >
-        <XIcon className="size-3.5" aria-hidden />
-        Revoke
-      </Button>
+      {confirming ? (
+        <>
+          <Button
+            size="sm"
+            variant="destructive"
+            onClick={() => {
+              setConfirming(false)
+              revoke.mutate()
+            }}
+            disabled={revoke.isPending}
+          >
+            Confirm revoke — signs this browser out
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
+            Cancel
+          </Button>
+        </>
+      ) : (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() =>
+            preferences.confirmDestructive ? setConfirming(true) : revoke.mutate()
+          }
+          disabled={revoke.isPending}
+          aria-label={`Revoke the session for ${session.username}`}
+        >
+          <XIcon className="size-3.5" aria-hidden />
+          Revoke
+        </Button>
+      )}
     </li>
   )
 }

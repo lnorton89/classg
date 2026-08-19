@@ -128,6 +128,16 @@ func (s *Server) resolveSSOUser(r *http.Request, id oidcauth.Identity) (auth.Use
 			// trying to take over an account.
 			return auth.User{}, oidcauth.ErrNoAccount
 		}
+		// Never auto-link into MORE than auto-provisioning would grant. The
+		// username claim is user-settable at some providers, so "an unlinked
+		// local account with the same name" describes exactly the account an
+		// attacker would name themselves after -- and this link used to hand
+		// over that account's role, admin included, bypassing the configured
+		// CLASSG_OIDC_ROLE tier. Linking an account at or below the tier is
+		// still allowed; anything above it needs an admin to link by hand.
+		if !role.AtLeast(existing.Role) {
+			return auth.User{}, oidcauth.ErrNoAccount
+		}
 		existing.Issuer, existing.Subject = id.Issuer, id.Subject
 		if existing.DisplayName == "" {
 			existing.DisplayName = id.Name

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/classg/api/internal/auth"
+	"github.com/classg/api/internal/hooks"
 	"github.com/classg/api/internal/model"
 	"github.com/classg/api/internal/store"
 )
@@ -69,6 +70,87 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("Sweeps", func(t *testing.T) { testSweeps(t, newStore) })
 	t.Run("Users", func(t *testing.T) { testUsers(t, newStore) })
 	t.Run("Sessions", func(t *testing.T) { testSessions(t, newStore) })
+	t.Run("SkipTotal", func(t *testing.T) { testSkipTotal(t, newStore) })
+	t.Run("HookRuleFired", func(t *testing.T) { testHookRuleFired(t, newStore) })
+}
+
+// SkipTotal means "do not run the count", and both implementations must agree
+// on what the caller then sees: zero, not a free answer one of them happens to
+// have lying around.
+func testSkipTotal(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+	for _, tr := range []model.Track{track("T1", base, "CONFIRMED", 0.9), track("T2", base.Add(-time.Hour), "COASTING", 0.4)} {
+		if err := s.UpsertTrack(ctx, tr); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.InsertDetection(ctx, detection("D1", base, "wifi-0", "A")); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := s.ListTracks(ctx, store.TrackQuery{SkipTotal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Tracks) != 2 || page.Total != 0 {
+		t.Fatalf("tracks=%d total=%d, want rows with a zero total", len(page.Tracks), page.Total)
+	}
+
+	dpage, err := s.ListTrackDetections(ctx, store.TrackDetectionQuery{Serial: "SER-T1", SkipTotal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dpage.Detections) != 1 || dpage.Total != 0 {
+		t.Fatalf("detections=%d total=%d, want rows with a zero total", len(dpage.Detections), dpage.Total)
+	}
+}
+
+// MarkHookRuleFired is a targeted update: it must bump the counter and stamp
+// the time without disturbing the rest of the document, however stale a copy
+// the caller happens to hold.
+func testHookRuleFired(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	rule := hooks.Rule{
+		RuleID: "r1", Name: "confirmed drones", Enabled: true,
+		Event: "track.confirmed", Action: "webhook",
+		Config:    map[string]any{"url": "https://example.com/hook"},
+		CooldownS: 300,
+		CreatedAt: base, UpdatedAt: base,
+	}
+	if err := s.PutHookRule(ctx, rule); err != nil {
+		t.Fatal(err)
+	}
+
+	firedAt := base.Add(time.Minute)
+	if err := s.MarkHookRuleFired(ctx, "r1", firedAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkHookRuleFired(ctx, "r1", firedAt.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := s.GetHookRule(ctx, "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FireCount != 2 {
+		t.Fatalf("fire_count = %d, want 2", got.FireCount)
+	}
+	if got.LastFiredAt == nil || !got.LastFiredAt.Equal(firedAt.Add(time.Minute)) {
+		t.Fatalf("last_fired_at = %v", got.LastFiredAt)
+	}
+	// The rest of the document is untouched -- this is what the targeted
+	// update buys over a read-modify-write of the whole doc.
+	if got.Name != rule.Name || got.CooldownS != rule.CooldownS || got.Config["url"] != rule.Config["url"] {
+		t.Fatalf("firing disturbed the rule document: %+v", got)
+	}
+
+	if err := s.MarkHookRuleFired(ctx, "no-such-rule", firedAt); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("missing rule: got %v, want ErrNotFound", err)
+	}
 }
 
 func testTrackRoundTrip(t *testing.T, newStore Factory) {
@@ -134,6 +216,7 @@ func testTrackFilters(t *testing.T, newStore Factory) {
 		{"since", store.TrackQuery{Since: base.Add(-90 * time.Minute)}, []string{"T1", "T2"}},
 		{"min_confidence", store.TrackQuery{MinConfidence: 0.5}, []string{"T1"}},
 		{"combined", store.TrackQuery{States: []string{"CONFIRMED"}, MinConfidence: 0.5}, []string{"T1"}},
+		{"last_seen_before", store.TrackQuery{LastSeenBefore: base.Add(-30 * time.Minute)}, []string{"T2", "T3"}},
 		{"no match", store.TrackQuery{States: []string{"CLOSED"}}, nil},
 	}
 	for _, tc := range tests {

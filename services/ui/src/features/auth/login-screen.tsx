@@ -117,6 +117,10 @@ export function LoginScreen({ providers }: { providers?: SsoProvider[] }) {
             or
             <span className="bg-border h-px flex-1" />
           </div>
+          {/* No provider id in the start URL, deliberately: the API supports
+              a single OIDC provider (its /auth/me lists at most one, id
+              "oidc") and /auth/sso/start takes only `return`. If the API ever
+              grows multiple providers, this loop needs the id wired through. */}
           {providers.map((p) => (
             <Button
               key={p.id}

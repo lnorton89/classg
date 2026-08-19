@@ -261,3 +261,88 @@ func TestGraphQLMissingTrackIsNull(t *testing.T) {
 		t.Fatalf("data = %s, want a null track", got.Data)
 	}
 }
+
+// MaxDepth and MaxAliases bound a query's SHAPE; neither stopped
+// tracks(limit: 1000) with detections sub-selected, which is ~2001 sequential
+// store queries on the single database connection, against live ingest.
+func TestGraphQLRefusesWideTrackPagesWithDetections(t *testing.T) {
+	h := newHarness(t, nil)
+	seedTrack(t, h, "trk-fan", base, false)
+
+	got := gql(t, h, `{ tracks(limit: 1000) { tracks { track_id detections { detections { detection_id } } } } }`)
+	if len(got.Errors) == 0 {
+		t.Fatalf("a 1000-track fan-out executed: %s", got.Data)
+	}
+	if !strings.Contains(got.firstError(), "tracks per page when detections are selected") {
+		t.Errorf("error = %q, want the fan-out message", got.firstError())
+	}
+
+	// The same width WITHOUT detections stays legal -- one query, one page.
+	if got := gql(t, h, `{ tracks(limit: 1000) { tracks { track_id } } }`); len(got.Errors) != 0 {
+		t.Fatalf("a plain 1000-track page was refused: %s", got.firstError())
+	}
+	// And detections under a paginable width stays legal.
+	if got := gql(t, h, `{ tracks(limit: 100) { tracks { track_id detections { detections { detection_id } } } } }`); len(got.Errors) != 0 {
+		t.Fatalf("a 100-track fan-out was refused: %s", got.firstError())
+	}
+}
+
+// The budget cannot be dodged by moving the limit into a variable: checkCost
+// resolves variables before deciding.
+func TestGraphQLFanOutBudgetSeesVariables(t *testing.T) {
+	h := newHarness(t, nil)
+
+	body, err := json.Marshal(map[string]any{
+		"query":     `query($n: Int) { tracks(limit: $n) { tracks { detections { total } } } }`,
+		"variables": map[string]any{"n": 1000},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := h.do(t, "POST", "/api/v1/graphql", string(body))
+	var out gqlResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Errors) == 0 {
+		t.Fatal("limit: $n with n=1000 slipped past the fan-out budget")
+	}
+}
+
+// Skipping the count when total is not selected must not change what a client
+// that DOES select total sees.
+func TestGraphQLTrackDetectionsTotalStillWorks(t *testing.T) {
+	h := newHarness(t, nil)
+	h.ingestDetection(t, sampleDetection("det-tot"))
+
+	tr := model.Track{
+		SchemaVersion: model.SchemaVersion, TrackID: "trk-tot", State: "CONFIRMED",
+		FirstSeen: time.Date(2026, 8, 11, 3, 0, 0, 0, time.UTC),
+		LastSeen:  time.Date(2026, 8, 11, 5, 0, 0, 0, time.UTC),
+		Identity:  model.TrackIdentity{Serial: "1581F0000000FAKE0001"},
+	}
+	if err := h.store.UpsertTrack(t.Context(), tr); err != nil {
+		t.Fatal(err)
+	}
+
+	got := gql(t, h, `{ tracks { tracks { detections { total detections { detection_id } } } } }`).
+		mustSucceed(t)
+	var out struct {
+		Tracks struct {
+			Tracks []struct {
+				Detections struct {
+					Total      int `json:"total"`
+					Detections []struct {
+						DetectionID string `json:"detection_id"`
+					} `json:"detections"`
+				} `json:"detections"`
+			} `json:"tracks"`
+		} `json:"tracks"`
+	}
+	if err := json.Unmarshal(got.Data, &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Tracks.Tracks) != 1 || out.Tracks.Tracks[0].Detections.Total != 1 {
+		t.Fatalf("total did not survive the count-skipping change: %s", got.Data)
+	}
+}

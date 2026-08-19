@@ -5,7 +5,7 @@
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-2021-000000?logo=rust&logoColor=white)
-![Node](https://img.shields.io/badge/Node-22%2B-339933?logo=node.js&logoColor=white)
+![Node](https://img.shields.io/badge/Node-24%2B-339933?logo=node.js&logoColor=white)
 
 **Passive, multi-sensor drone detection for a Raspberry Pi.**
 
@@ -123,15 +123,77 @@ Details, env vars, and the two rules that shaped all of them:
 
 - A Raspberry Pi for a real deployment, or any Linux box for development
 - [ALFA AWUS036AXML](docs/ops/02-wifi-adapter.md) and/or an [RTL-SDR V4](docs/ops/03-sdr-setup.md) — see [hardware capabilities](docs/research/02-hardware-capabilities.md) for what each one actually buys you
-- Go 1.26+, Python 3.11+, Rust (stable, 2021 edition), Node 22+ — only needed for the services you're touching; Docker for the web tier
+- Go 1.26+, Python 3.11+, Rust (stable, 2021 edition), Node 24+ — only needed for the services you're touching; Docker for the web tier
 
-### Configure
+### Get the code
+
+```bash
+git clone --recursive https://github.com/lnorton89/classg
+cd classg
+```
+
+`--recursive` only matters for `tools/pi-dash`, the optional terminal dashboard
+submodule — if you forgot it, `git submodule update --init --recursive` later.
+
+### Configure and install dependencies
 
 Configuration is centralized in `.env`; bootstrap it from the committed contract before
 running anything. See [docs/ops/00-configuration.md](docs/ops/00-configuration.md).
 
 ```bash
 make env
+make setup   # per-service dependencies: Python venv, Go modules, npm ci, cargo fetch
+```
+
+`make setup` needs all four toolchains (see prerequisites above). If you only
+care about one service, run that service's line from the [`setup` target](Makefile)
+by hand — but `make test` assumes the full setup, and says so when it is missing.
+
+### Prove the pipeline without hardware
+
+A fresh clone has nothing to replay: the capture corpus is gitignored on
+purpose, because raw captures can contain neighbours' traffic. So the first
+runnable thing is a **synthetic** flight — the same frame recipe the sensor's
+test suite uses, written to a PCAP:
+
+```bash
+services/sensor-wifi/.venv/bin/python scripts/make-demo-capture.py
+cd services/sensor-wifi
+.venv/bin/python -m classg_wifi.cli analyze ../../captures/demo-hover.pcap
+```
+
+`analyze` proves the capture-to-parser chain with no radio attached: expect one
+drone transmitter on channel 6, a 240 ms beacon interval, and serial
+`1596F3B24C5D7E8F9A0B` decoded from both the Remote ID and DJI DroneID IEs.
+
+Then push it through the whole stack — bus, fusion, API, map:
+
+```bash
+make dev     # web tier with hot reload; UI on :5173, API on :8081
+cd services/sensor-wifi
+.venv/bin/python -m classg_wifi.cli replay ../../captures/demo-hover.pcap \
+  --endpoint tcp://127.0.0.1:5556 --socket-mode connect
+curl -s localhost:8081/api/v1/health
+```
+
+`/health` needs no login and should now report `wifi-0` healthy with 500
+detections in the last five minutes. Open `http://localhost:5173`, create the
+first admin account (there is no default password), and the map shows one
+CONFIRMED track hovering near Zürich and then flying a small square — correct
+serial, confidence 0.8, per-class evidence listed. The signed-in API views
+(`/api/v1/tracks`, `/api/v1/detections`) show the same thing.
+
+If any step of that did not happen, a real drone would not have appeared
+either — which is the point of running this before buying anything.
+
+The operator UI can also run entirely alone on deterministic mock scenarios —
+browser-only, no API and no bus underneath, so it validates nothing below the
+browser:
+
+```bash
+cd services/ui
+npm ci
+npm run dev
 ```
 
 ### Read before you plug anything in
@@ -143,44 +205,35 @@ make env
    (there are real MT7921AU landmines here; read before plugging in)
 4. **Verify with your DJI** — [docs/planning/test-plan.md](docs/planning/test-plan.md)
 
-### Run it
+### Run it with your own aircraft
 
-The first thing worth doing is capturing a PCAP of your DJI powering up. Everything else
-is built against that ground truth.
+The first thing worth doing with real hardware is capturing a PCAP of your DJI
+powering up. Everything else is built against that ground truth.
+
+**Monitor mode first.** `capture --channel` retunes the interface before
+recording (passively — `iw dev set channel` transmits nothing), but only an
+interface already in monitor mode can be retuned and captured from, and
+monitor mode survives neither a reboot nor a replug. On an interface that is
+not ready, `capture` fails with an error naming the fix rather than silently
+recording the wrong channel. Set up monitor mode before every session:
 
 ```bash
+make monitor                 # wraps scripts/setup-monitor.sh; IFACE=wlan2 to override
 cd services/sensor-wifi
-python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[replay]'
 .venv/bin/python -m classg_wifi.cli capture \
   --iface wlan1 --channel 6 --out ../../captures/dji-first-flight.pcap
 ```
 
-The operator UI also runs without hardware, using deterministic mock scenarios:
-
-```bash
-cd services/ui
-npm ci
-npm run dev
-```
-
-To run the real web tier in containers while the sensor stays on the host with
-the adapter, see [docker/README.md](docker/README.md):
-
-```bash
-make compose-up
-cd services/sensor-wifi
-.venv/bin/python -m classg_wifi.cli replay \
-  ../../captures/20260810-141223-dji-first-flight.pcap
-```
-
-For a real unit — sensors under systemd, web tier in Compose, and how to update
-it in place — follow [docs/ops/09-deployment.md](docs/ops/09-deployment.md).
+Replaying your own capture works exactly like the synthetic one above. For the
+web tier in production-shaped containers rather than the dev stack, see
+[docker/README.md](docker/README.md) (`make compose-up`); for a real unit —
+sensors under systemd, web tier in Compose, and how to update it in place —
+follow [docs/ops/09-deployment.md](docs/ops/09-deployment.md).
 
 ### Run the tests
 
 ```bash
-make test    # all five suites: wifi, fusion, api, ui, sdr
+make test    # all five suites: wifi, fusion, api, ui, sdr — needs `make setup` first
 make lint    # mirrors the lint jobs in CI — see CLAUDE.md for what it doesn't cover
 ```
 

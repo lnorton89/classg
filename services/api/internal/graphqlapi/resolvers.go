@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/graphql-go/graphql"
+	"github.com/graphql-go/graphql/language/ast"
 
 	"github.com/classg/api/internal/model"
 	"github.com/classg/api/internal/spectrum"
@@ -164,6 +165,10 @@ func trackDetections(p graphql.ResolveParams) (any, error) {
 		From:   t.FirstSeen,
 		To:     t.LastSeen,
 		Limit:  limit,
+		// The count is a second statement on the one shared connection, and
+		// this resolver runs once per parent track. Pay for it only when the
+		// client actually selected `total`.
+		SkipTotal: !selectsField(p.Info.FieldASTs, "total"),
 	}
 	if raw, ok := p.Args["cursor"].(string); ok && raw != "" {
 		c, cerr := store.DecodeCursor(raw)
@@ -178,6 +183,38 @@ func trackDetections(p graphql.ResolveParams) (any, error) {
 	}
 	page.Detections = r.redactDetections(page.Detections)
 	return page, nil
+}
+
+// selectsField reports whether the field being resolved selects `name`,
+// directly or through an inline fragment. A named fragment spread returns
+// true conservatively: resolving one needs the whole document, and the only
+// cost of a false positive here is running a count that was already the
+// unconditional behaviour.
+func selectsField(fields []*ast.Field, name string) bool {
+	for _, f := range fields {
+		if f.SelectionSet != nil && selectionHas(f.SelectionSet, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func selectionHas(set *ast.SelectionSet, name string) bool {
+	for _, sel := range set.Selections {
+		switch s := sel.(type) {
+		case *ast.Field:
+			if s.Name != nil && s.Name.Value == name {
+				return true
+			}
+		case *ast.InlineFragment:
+			if s.SelectionSet != nil && selectionHas(s.SelectionSet, name) {
+				return true
+			}
+		case *ast.FragmentSpread:
+			return true
+		}
+	}
+	return false
 }
 
 func (r *resolvers) detections(p graphql.ResolveParams) (any, error) {

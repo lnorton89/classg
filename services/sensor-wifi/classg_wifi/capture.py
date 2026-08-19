@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .bus import DetectionPublisher
-from .hopper import ChannelHopper
+from .hopper import ChannelHopper, ChannelSpec
 from .pipeline import Pipeline
 from .survey import SurveySampler
 
@@ -46,6 +46,13 @@ log = logging.getLogger(__name__)
 
 # Management frames, beacon subtype. Compiled by libpcap and attached to the
 # socket, so non-beacon traffic is discarded before it crosses into userspace.
+#
+# Deliberate coverage gap: F3411 also permits Remote ID over Wi-Fi NAN, whose
+# frames are management *action* frames, typically on channels 6 and 149. This
+# filter never sees them. Widening it to "subtype beacon or subtype action"
+# would push every nearby AP's action traffic across into Python -- a real CPU
+# cost on a Pi, paid for a transport no aircraft in the capture corpus uses --
+# so NAN stays invisible until a drone that needs it shows up.
 BEACON_FILTER = "type mgt subtype beacon"
 
 # A dwell is bounded by wall clock, but a burst of frames should not starve the
@@ -56,6 +63,13 @@ MAX_FRAMES_PER_POLL = 64
 # failures happen (a busy interface, a DFS channel); an unbroken run of them
 # means the adapter is not there any more.
 MAX_CONSECUTIVE_CHANNEL_ERRORS = 5
+
+# Consecutive failed reads before the same conclusion. Genuinely consecutive:
+# any successful frame resets the count. An earlier version compared against
+# the lifetime total while calling it consecutive, so ~50 scattered read
+# errors -- one an hour, millions of good frames in between -- restarted a
+# healthy sensor with a message blaming the adapter.
+MAX_CONSECUTIVE_READ_ERRORS = 50
 
 
 class CaptureError(RuntimeError):
@@ -118,9 +132,11 @@ def preflight(iface: str) -> None:
             "interface usually means missing firmware: apt install firmware-misc-nonfree"
         )
 
-    if hasattr(os, "geteuid") and os.geteuid() != 0:
+    if hasattr(os, "geteuid") and os.geteuid() != 0 and not _has_packet_capabilities():
         raise CaptureError(
-            "live capture needs root for AF_PACKET. Re-run with sudo, or use `make sense`."
+            "live capture needs root, or CAP_NET_RAW plus CAP_NET_ADMIN, for "
+            "AF_PACKET and retuning. Re-run with sudo or use `make sense`; the "
+            "systemd unit grants the capabilities via AmbientCapabilities."
         )
 
     mode = interface_mode(iface)
@@ -135,6 +151,16 @@ def preflight(iface: str) -> None:
 
 def interface_mode(iface: str) -> str | None:
     """Return the interface's `iw` type, or None if it cannot be determined."""
+    return _iw_dev_info_field(iface, "type ")
+
+
+def interface_phy(iface: str) -> str | None:
+    """The phy ("phy0") behind an interface, or None if it cannot be determined."""
+    index = _iw_dev_info_field(iface, "wiphy ")
+    return f"phy{index}" if index else None
+
+
+def _iw_dev_info_field(iface: str, prefix: str) -> str | None:
     try:
         res = subprocess.run(
             ["iw", "dev", iface, "info"],
@@ -146,9 +172,113 @@ def interface_mode(iface: str) -> str | None:
         return None
     for line in res.stdout.splitlines():
         line = line.strip()
-        if line.startswith("type "):
+        if line.startswith(prefix):
             return line.split(None, 1)[1].strip()
     return None
+
+
+# Bit positions in the kernel's capability bitmap (linux/capability.h).
+_CAP_NET_ADMIN = 12
+_CAP_NET_RAW = 13
+
+
+def _has_packet_capabilities() -> bool:
+    """Whether the effective capability set covers AF_PACKET plus retuning.
+
+    The systemd unit runs the sensor as an unprivileged user carrying
+    AmbientCapabilities=CAP_NET_RAW CAP_NET_ADMIN rather than as root. Checking
+    euid alone would turn that process away with a message telling it to sudo.
+    """
+    try:
+        with open("/proc/self/status", encoding="ascii") as fh:
+            for line in fh:
+                if line.startswith("CapEff:"):
+                    cap_eff = int(line.split()[1], 16)
+                    return bool(
+                        cap_eff >> _CAP_NET_RAW & 1 and cap_eff >> _CAP_NET_ADMIN & 1
+                    )
+    except (OSError, ValueError, IndexError):
+        return False
+    return False
+
+
+def parse_phy_channels(text: str) -> set[int]:
+    """Channel numbers `iw phy <phy> channels` reports as usable.
+
+    Channel lines look like `* 2467 MHz [12] (disabled)`. A disabled channel
+    is one the current regdomain forbids outright: retuning to it fails with
+    -EINVAL, every time. `(no IR)` is different -- it restricts *initiating*
+    radiation, which a receive-only monitor interface never does -- so those
+    channels stay usable and stay in.
+    """
+    permitted: set[int] = set()
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line.startswith("*"):
+            continue
+        start = line.find("[")
+        end = line.find("]", start)
+        if start < 0 or end < 0:
+            continue
+        try:
+            channel = int(line[start + 1:end])
+        except ValueError:
+            continue
+        if "(disabled)" not in line:
+            permitted.add(channel)
+    return permitted
+
+
+def permitted_channels(iface: str) -> set[int] | None:
+    """The channels this adapter will actually tune to, or None when unknowable."""
+    phy = interface_phy(iface)
+    if phy is None:
+        return None
+    try:
+        res = subprocess.run(
+            ["iw", "phy", phy, "channels"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if res.returncode != 0:
+        return None
+    return parse_phy_channels(res.stdout) or None
+
+
+def prune_channel_plan(channels: list[ChannelSpec], iface: str) -> list[ChannelSpec]:
+    """Drop plan channels the adapter's regdomain forbids, logging each once.
+
+    config/channels.yaml deliberately keeps channels that are legal somewhere
+    -- 12 and 13 are fine in the EU -- so the filtering has to happen here,
+    against the radio actually fitted, not by editing the config. Unfiltered,
+    every visit to a forbidden channel fails the hop and still spends a full
+    dwell listening to whatever channel the radio was left on: measured at
+    4,247 failed-hop warnings in 24 h on a US regdomain. Worse, the weighted
+    pick genuinely can draw a forbidden channel five times running, which
+    aborted a healthy capture with a message blaming the radio.
+    """
+    permitted = permitted_channels(iface)
+    if permitted is None:
+        # Hopping and occasionally failing beats refusing to start because
+        # `iw` is missing; the loop already tolerates individual failed hops.
+        log.debug("could not read permitted channels for %s; using the plan as-is", iface)
+        return channels
+    kept = [spec for spec in channels if spec.channel in permitted]
+    for spec in channels:
+        if spec.channel not in permitted:
+            log.info(
+                "channel %d (%d MHz) is disabled in this adapter's regdomain; "
+                "dropping it from the plan",
+                spec.channel, spec.freq_mhz,
+            )
+    if not kept:
+        raise CaptureError(
+            f"every channel in the plan is disabled on {iface}: the regdomain "
+            "and config/channels.yaml do not overlap. Check `iw reg get` and "
+            "the plan."
+        )
+    return kept
 
 
 # ARPHRD_IEEE80211_RADIOTAP. A monitor-mode interface reports this as its
@@ -247,6 +377,7 @@ def run_capture(
     last_heartbeat = 0.0
     consecutive_read_errors = 0
     consecutive_channel_errors = 0
+    tuned_channel: int | None = None
 
     # Shared with the watchdog thread, which cannot read the local above.
     #
@@ -265,7 +396,16 @@ def run_capture(
     try:
         while should_run():
             spec = hopper.next_channel()
-            hop_ok = set_channel(iface, spec.channel)
+            # Weighted selection can pick the same channel twice, and the
+            # dedicated receiver has a one-channel plan. Calling `iw` anyway
+            # creates a blind retune interval with no change in coverage.
+            if tuned_channel == spec.channel:
+                hop_ok = True
+            else:
+                hopper.record_hop()
+                hop_ok = set_channel(iface, spec.channel)
+                if hop_ok:
+                    tuned_channel = spec.channel
             if hop_ok:
                 consecutive_channel_errors = 0
             else:
@@ -318,8 +458,22 @@ def run_capture(
                     break
 
                 for _ in range(MAX_FRAMES_PER_POLL):
+                    read_errors_before = stats.read_errors
                     frame = _recv(sock, stats)
                     if frame is None:
+                        # _recv returns None for "nothing there" and for a
+                        # failed read alike; only the failure -- visible as a
+                        # bumped error counter -- advances the consecutive
+                        # count. A radio that has vanished fails every read,
+                        # so an unbroken run means give up and let the
+                        # supervisor restart us rather than spinning.
+                        if stats.read_errors > read_errors_before:
+                            consecutive_read_errors += 1
+                            if consecutive_read_errors > MAX_CONSECUTIVE_READ_ERRORS:
+                                raise CaptureError(
+                                    f"{iface}: {consecutive_read_errors} consecutive "
+                                    "read failures; the adapter has probably gone away"
+                                )
                         break
                     consecutive_read_errors = 0
                     stats.frames += 1
@@ -343,16 +497,6 @@ def run_capture(
                     more, _, _ = select.select([sock], [], [], 0)
                     if not more:
                         break
-
-                if stats.read_errors and stats.read_errors != consecutive_read_errors:
-                    consecutive_read_errors = stats.read_errors
-                    # A radio that has vanished fails every read. Give up and
-                    # let the supervisor restart us rather than spinning.
-                    if consecutive_read_errors > 50:
-                        raise CaptureError(
-                            f"{iface}: {consecutive_read_errors} consecutive read "
-                            "failures; the adapter has probably gone away"
-                        )
 
             stats.dwells += 1
             hopper.record_dwell(spec.channel, (time.monotonic() - dwell_started) * 1000.0)

@@ -180,7 +180,8 @@ function EventBar({
       )}
       style={{ left: `${left}%`, width: `${width}%`, minWidth: minPx, top, height: LANE_H }}
     >
-      <span className="truncate px-1 text-[10px] leading-[18px] font-medium">
+      {/* leading matches LANE_H so the label centres in the bar. */}
+      <span className="truncate px-1 text-2xs leading-[18px] font-medium">
         {width > 6 ? trackLabel(track) : ''}
       </span>
     </button>
