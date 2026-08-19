@@ -53,7 +53,13 @@ dist/
 .env
 .env.local
 .env.*.local
+# Any .env variant, so a hand-made backup (.env.bak, .env.pre-dual-wifi) cannot
+# be committed. These are the real secrets file with real credentials in them --
+# one was sitting untracked on the Pi with a live Turso token. The negations
+# below keep the committed templates visible.
+.env.*
 !.env.example
+!.env.*.example
 !**/.env.example
 
 # Third-party reference data, fetched by scripts/fetch-*.sh. All of it is
