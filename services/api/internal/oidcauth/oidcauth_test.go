@@ -47,3 +47,36 @@ func TestSafeReturnKeepsTheRedirectInsideTheApp(t *testing.T) {
 		}
 	}
 }
+
+// Which claim becomes the local username decides what an attacker at the
+// provider has to control to name themselves after somebody. The second return
+// says whether that name came from an email, which is a claim the provider may
+// never have checked -- and that is what stops it linking to an account that
+// already exists.
+func TestPickUsernameReportsWhenTheNameCameFromAnEmail(t *testing.T) {
+	tests := []struct {
+		claim     string
+		preferred string
+		email     string
+		sub       string
+		want      string
+		fromEmail bool
+	}{
+		{"email", "alice", "Alice@Example.com", "sub-1", "alice@example.com", true},
+		{"sub", "alice", "alice@example.com", "sub-1", "sub-1", false},
+		{"preferred_username", "Alice", "alice@example.com", "sub-1", "alice", false},
+		// The default: preferred_username where the provider sends one...
+		{"", "Alice", "alice@example.com", "sub-1", "alice", false},
+		// ...and the email where it does not, which is the case a reader of
+		// CLASSG_OIDC_USERNAME_CLAIM would not think of.
+		{"", "", "Alice@Example.com", "sub-1", "alice@example.com", true},
+	}
+	for _, tc := range tests {
+		p := &Provider{cfg: Config{UsernameClaim: tc.claim}}
+		got, fromEmail := p.pickUsername(tc.preferred, tc.email, tc.sub)
+		if got != tc.want || fromEmail != tc.fromEmail {
+			t.Errorf("claim %q: got (%q, %v), want (%q, %v)",
+				tc.claim, got, fromEmail, tc.want, tc.fromEmail)
+		}
+	}
+}

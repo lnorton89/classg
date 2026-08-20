@@ -662,6 +662,16 @@ claim a provider can change and, at some providers, one a user can set — match
 on it would mean anyone who can set an email claim can become an existing
 operator.
 
+Auto-provisioning is where that rule needed spelling out. On a first login it
+looks for a local account with the same **username**, and the username may
+itself be the email: `CLASSG_OIDC_USERNAME_CLAIM=email` says so outright, and
+the default falls back to email whenever the provider sends no
+`preferred_username`. So a username-derived-from-email must carry
+`email_verified: true` before it is allowed to **link** to an account that
+already exists; a provider that omits the claim counts as unverified.
+*Creating* a fresh account from an unverified email is unaffected — that is
+somebody's first login and takes nothing from anyone. The refusal is logged.
+
 **SSO does not create accounts by default.** A provider that issues tokens to
 anyone with a Google account would otherwise make "SSO configured" mean "anyone
 on the internet is an operator". `CLASSG_OIDC_AUTO_PROVISION=true` opts in, and

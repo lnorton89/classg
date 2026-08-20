@@ -228,6 +228,15 @@ type Identity struct {
 	Name     string
 	Email    string
 	Return   string
+	// UsernameFromEmail records that Username was derived from the email
+	// claim, which happens under CLASSG_OIDC_USERNAME_CLAIM=email and also by
+	// default when the provider sends no preferred_username.
+	UsernameFromEmail bool
+	// EmailVerified is the provider's own email_verified claim, absent
+	// counting as false. It was decoded and discarded before: an unverified
+	// email is a string the user typed, and this identity's username may be
+	// that string. resolveSSOUser is what acts on it.
+	EmailVerified bool
 }
 
 // Exchange completes a login.
@@ -276,34 +285,40 @@ func (p *Provider) Exchange(ctx context.Context, state, code string) (Identity, 
 		return Identity{}, fmt.Errorf("reading id_token claims failed: %w", err)
 	}
 
-	username := p.pickUsername(claims.PreferredUsername, claims.Email, claims.Sub)
+	username, fromEmail := p.pickUsername(claims.PreferredUsername, claims.Email, claims.Sub)
 	if username == "" {
 		return Identity{}, errors.New("the provider returned no usable username claim")
 	}
 
 	return Identity{
-		Issuer:   idToken.Issuer,
-		Subject:  claims.Sub,
-		Username: username,
-		Name:     claims.Name,
-		Email:    claims.Email,
-		Return:   f.Return,
+		Issuer:            idToken.Issuer,
+		Subject:           claims.Sub,
+		Username:          username,
+		Name:              claims.Name,
+		Email:             claims.Email,
+		Return:            f.Return,
+		UsernameFromEmail: fromEmail,
+		EmailVerified:     claims.EmailVerified,
 	}, nil
 }
 
-func (p *Provider) pickUsername(preferred, email, sub string) string {
+// pickUsername returns the local username and whether it came from the email
+// claim. The second return is not bookkeeping: an email a provider has not
+// verified is a string the user typed, so a username derived from one names
+// whoever the user chose to name.
+func (p *Provider) pickUsername(preferred, email, sub string) (string, bool) {
 	switch p.cfg.UsernameClaim {
 	case "email":
-		return strings.ToLower(email)
+		return strings.ToLower(email), true
 	case "sub":
-		return sub
+		return sub, false
 	case "preferred_username":
-		return strings.ToLower(preferred)
+		return strings.ToLower(preferred), false
 	}
 	if preferred != "" {
-		return strings.ToLower(preferred)
+		return strings.ToLower(preferred), false
 	}
-	return strings.ToLower(email)
+	return strings.ToLower(email), true
 }
 
 // sweepLocked drops expired flows. Caller holds the lock.

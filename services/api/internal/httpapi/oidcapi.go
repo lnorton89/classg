@@ -7,6 +7,7 @@ package httpapi
 // internal/oidcauth mints and checks, not in who may call these.
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -94,8 +95,18 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 // subject is the provider's stable identifier for a person and is what it is
 // for.
 func (s *Server) resolveSSOUser(r *http.Request, id oidcauth.Identity) (auth.User, error) {
-	ctx := r.Context()
+	auto, roleName := s.oidc.AutoProvision()
+	return s.resolveSSOIdentity(r.Context(), id, auto, roleName)
+}
 
+// resolveSSOIdentity is resolveSSOUser without the provider.
+//
+// Split so its branches are reachable from a test. Every refusal below is a
+// security decision and none of them had one, because reaching this code meant
+// standing up a live OIDC issuer -- which is how a rule the comment above
+// states plainly ("never on email") went on being contradicted by the linking
+// branch without anyone noticing.
+func (s *Server) resolveSSOIdentity(ctx context.Context, id oidcauth.Identity, auto bool, roleName string) (auth.User, error) {
 	u, err := s.auth.Store.GetUserByOIDC(ctx, id.Issuer, id.Subject)
 	switch {
 	case err == nil:
@@ -111,7 +122,6 @@ func (s *Server) resolveSSOUser(r *http.Request, id oidcauth.Identity) (auth.Use
 	// username, link them rather than creating a near-twin — but only if an
 	// admin has opted into auto-provisioning, because linking is exactly the
 	// step an attacker at the provider would want to happen automatically.
-	auto, roleName := s.oidc.AutoProvision()
 	if !auto {
 		return auth.User{}, oidcauth.ErrNoAccount
 	}
@@ -122,6 +132,25 @@ func (s *Server) resolveSSOUser(r *http.Request, id oidcauth.Identity) (auth.Use
 
 	existing, err := s.auth.Store.GetUserByUsername(ctx, id.Username)
 	if err == nil {
+		// An unverified email must not name an account someone already has.
+		//
+		// The rule above is "matched on (issuer, subject), never on email",
+		// because email is a claim a user can set at some providers. This
+		// branch is the exception that rule did not cover: under
+		// CLASSG_OIDC_USERNAME_CLAIM=email -- and by default whenever the
+		// provider sends no preferred_username -- the username IS the email,
+		// so linking by username is linking by email after all. The provider
+		// says whether it checked, in email_verified, and that claim was being
+		// decoded and thrown away.
+		//
+		// Only linking is refused. Creating a fresh account from an unverified
+		// email is somebody's first login and takes nothing from anyone;
+		// taking over an account that already exists is the whole attack.
+		if id.UsernameFromEmail && !id.EmailVerified {
+			slog.Warn("refused to link a single sign-on identity to an existing account on an unverified email",
+				"issuer", id.Issuer, "username", id.Username)
+			return auth.User{}, oidcauth.ErrNoAccount
+		}
 		if existing.Issuer != "" {
 			// Already linked to a different provider identity. Refuse rather
 			// than reassign: this is either a misconfiguration or someone
