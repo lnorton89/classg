@@ -614,8 +614,13 @@ func (s *Store) GetSweep(ctx context.Context, id string) (model.SpectrumSweep, e
 }
 
 func (s *Store) ListSweeps(ctx context.Context, limit int) ([]model.SpectrumSweep, error) {
+	// Non-positive means no limit, matching memstore -- the third and last
+	// place in this store that quietly substituted a cap. In ListSessions that
+	// silently truncated the set a password change revokes; the other two were
+	// only ever latent, but three functions disagreeing with their counterparts
+	// about what zero means is a pattern rather than an accident.
 	if limit <= 0 {
-		limit = defaultSweepLimit
+		limit = -1 // SQLite: a negative LIMIT is no limit.
 	}
 	docs, err := s.q.ListSweeps(ctx, int64(limit))
 	if err != nil {

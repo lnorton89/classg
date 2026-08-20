@@ -77,6 +77,41 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("SessionRevocation", func(t *testing.T) { testSessionRevocation(t, newStore) })
 	t.Run("HookRulesAndDeliveries", func(t *testing.T) { testHookRulesAndDeliveries(t, newStore) })
 	t.Run("CaptureOrdering", func(t *testing.T) { testCaptureOrdering(t, newStore) })
+	t.Run("SweepLimit", func(t *testing.T) { testSweepLimit(t, newStore) })
+}
+
+// The last of the three limit disagreements: ListSweeps capped at 500 in one
+// store and returned everything in the other. Latent -- both callers pass a
+// positive limit -- but pinned so it stays that way.
+func testSweepLimit(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+	for i := 0; i < 12; i++ {
+		if err := s.PutSweep(ctx, model.SpectrumSweep{
+			SweepID: fmt.Sprintf("s-%d", i), State: "done",
+			StartedAt: base.Add(time.Duration(i) * time.Minute),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := s.ListSweeps(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 12 {
+		t.Fatalf("limit 0 returned %d sweeps, want all 12", len(all))
+	}
+	if all[0].SweepID != "s-11" {
+		t.Errorf("sweeps must come back newest first, got %s", all[0].SweepID)
+	}
+	page, err := s.ListSweeps(ctx, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page) != 5 {
+		t.Fatalf("limit 5 returned %d sweeps, want 5", len(page))
+	}
 }
 
 // ListCaptures is newest first in both stores. The nil-versus-empty difference
