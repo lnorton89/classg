@@ -162,9 +162,24 @@ cd services/sensor-wifi
 .venv/bin/python -m classg_wifi.cli analyze ../../captures/demo-hover.pcap
 ```
 
-`analyze` proves the capture-to-parser chain with no radio attached: expect one
-drone transmitter on channel 6, a 240 ms beacon interval, and serial
-`1596F3B24C5D7E8F9A0B` decoded from both the Remote ID and DJI DroneID IEs.
+`analyze` proves the capture-to-parser chain with no radio attached. Expect
+`drone transmitters: 1` on channel 6 out of two transmitters seen, a 240 ms
+beacon interval, and both vendor IEs decoded from the same MAC: the Remote ID
+one carrying serial `1596F3B24C5D7E8F9A0B`, the DJI DroneID one carrying
+`1581F5FMD234A00A`.
+
+Two serials for one aircraft is the capture being deliberate, not a fault. It
+is what exercises the correlation rule that matters — fusion folds them into
+**one** track by MAC, because an aircraft that identifies itself differently in
+two protocols must not become two contacts on the map. Two lines of the report
+are also expected and are not warnings about your setup:
+
+- `mfr code: 1596 (unknown ...)` — the synthetic serial deliberately does not
+  claim a real CTA-2063 manufacturer code, so the parser correctly says it does
+  not recognise one. A real DJI reads `1581`.
+- `NOTE: the ~1 Hz design assumption looks wrong (4.17 Hz)` — that is the
+  analyzer doing its job. 240 ms is what a Mini 5 Pro was measured at, and the
+  note is why `config/channels-primary.yaml` weights dwell the way it does.
 
 Then push it through the whole stack — bus, fusion, API, map:
 

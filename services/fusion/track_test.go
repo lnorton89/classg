@@ -351,3 +351,56 @@ func TestPublishedTrackSatisfiesTheSchema(t *testing.T) {
 		t.Error("the schema accepted an invented field; this check proves nothing")
 	}
 }
+
+// One aircraft identifying itself differently in two protocols must not become
+// two contacts on the map.
+//
+// This is not hypothetical, and it is not only a DJI quirk: the project's own
+// demo capture broadcasts an ASTM Remote ID serial and a DJI DroneID serial
+// that differ, from one MAC, because the two wire formats carry different
+// factory identifiers for the same airframe. `scripts/make-demo-capture.py` is
+// the first thing a new operator runs, so this is the correlation rule their
+// first map depends on -- and the failure mode is two aircraft where there is
+// one, which is worse than a miss: it invents traffic.
+func TestTwoSerialsFromOneMACStayOneTrack(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+	const mac = "60:60:1f:aa:bb:cc"
+	const odidSerial = "1596F3B24C5D7E8F9A0B" // ASTM Basic ID
+	const djiSerial = "1581F5FMD234A00A"      // DJI DroneID
+
+	// Class A first, which is the order the demo capture produces.
+	a := s.Ingest(det("A", odidSerial, mac, now), now)
+	b := s.Ingest(det("B", djiSerial, mac, now.Add(200*time.Millisecond)), now.Add(200*time.Millisecond))
+
+	if a.TrackID != b.TrackID {
+		t.Fatalf("two serials from one MAC made two tracks: %s and %s", a.TrackID, b.TrackID)
+	}
+	if got := len(s.Active()); got != 1 {
+		t.Fatalf("%d active tracks, want 1", got)
+	}
+	// The first serial stays: resolve only adopts one onto a track that has
+	// none, so a second protocol cannot rename an aircraft mid-flight.
+	if b.Identity.Serial != odidSerial {
+		t.Errorf("serial is %q, want the first one seen (%q)", b.Identity.Serial, odidSerial)
+	}
+	// And both classes count as evidence, which is the point of seeing two.
+	if _, ok := b.Evidence["A"]; !ok {
+		t.Error("class A evidence missing")
+	}
+	if _, ok := b.Evidence["B"]; !ok {
+		t.Error("class B evidence missing")
+	}
+
+	// The reverse order must fold too -- a sensor that decodes the DJI IE first
+	// is not a different aircraft.
+	s2 := newTestStore()
+	x := s2.Ingest(det("B", djiSerial, mac, now), now)
+	y := s2.Ingest(det("A", odidSerial, mac, now.Add(200*time.Millisecond)), now.Add(200*time.Millisecond))
+	if x.TrackID != y.TrackID {
+		t.Fatalf("DJI-first ordering made two tracks: %s and %s", x.TrackID, y.TrackID)
+	}
+	if got := len(s2.Active()); got != 1 {
+		t.Fatalf("DJI-first: %d active tracks, want 1", got)
+	}
+}
