@@ -235,6 +235,42 @@ def check_shell_state_files() -> None:
         compare(label, sh_file, sh, f"api deploy.{go_name}", go)
 
 
+def check_ulid_alphabet() -> None:
+    """api internal/ulid -> fusion id.go.
+
+    Two hand-rolled copies of the same identifier format, in two Go modules
+    that cannot import each other. api mints capture and hook-rule ids, fusion
+    mints track and detection ids, and they land in the same tables and the
+    same keyset cursors.
+
+    The property both packages claim is that ids sort by creation time. That
+    holds only while the alphabet is identical and in ascending byte order --
+    a copy that gained a character, reordered one, or moved to a different
+    base32 variant would still produce plausible ids, and pages over the mixed
+    set would skip rows or repeat them. Which reads as a quiet sky.
+    """
+    alphabets = []
+    for name, rel in (
+        ("api internal/ulid", "services/api/internal/ulid/ulid.go"),
+        ("fusion id.go", "services/fusion/id.go"),
+    ):
+        m = re.search(r'const crockford = "([^"]+)"', read(rel))
+        if not m:
+            fail("ulid alphabet", f"could not find the alphabet in {name}")
+            return
+        alphabets.append((name, m.group(1)))
+
+    compare("ulid alphabet", alphabets[0][0], [alphabets[0][1]], alphabets[1][0], [alphabets[1][1]])
+
+    alphabet = alphabets[0][1]
+    if len(alphabet) != 32 or list(alphabet) != sorted(alphabet):
+        fail(
+            "ulid alphabet",
+            f"{alphabet!r} is not 32 characters in ascending byte order, so byte order "
+            "no longer recovers creation order and keyset pagination is unsound",
+        )
+
+
 def check_world_extract_zoom() -> None:
     """style.ts WORLD_MAX_ZOOM -> scripts/fetch-basemap.sh --maxzoom.
 
@@ -359,6 +395,7 @@ def main() -> int:
     check_go_ts_fields()
     check_shell_state_files()
     check_exec_sites()
+    check_ulid_alphabet()
     check_world_extract_zoom()
     check_basemap_provider()
 

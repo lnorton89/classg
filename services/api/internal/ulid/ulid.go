@@ -17,7 +17,18 @@ const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 func New(t time.Time) string {
 	var id [26]byte
 
-	ms := uint64(t.UTC().UnixMilli())
+	// Clamped at the epoch. A time before it gives a negative UnixMilli, and
+	// the conversion to uint64 wraps it to something enormous -- so the id
+	// begins ZZZZZ and sorts after every real one, for ever, at the end of
+	// every keyset page. No caller passes such a time today; the one that
+	// eventually does will pass a zero time.Time, which is an uninitialised
+	// struct field and the easiest mistake in the language. Sorting first is
+	// the recoverable outcome.
+	milli := t.UTC().UnixMilli()
+	if milli < 0 {
+		milli = 0
+	}
+	ms := uint64(milli)
 	for i := 9; i >= 0; i-- {
 		id[i] = crockford[ms&0x1f]
 		ms >>= 5

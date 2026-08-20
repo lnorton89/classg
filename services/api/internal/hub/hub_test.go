@@ -68,33 +68,51 @@ func TestSlowConsumerIsDropped(t *testing.T) {
 
 // TestFastConsumerSurvivesTheSameFlood: the drop rule must not punish a client
 // that is keeping up.
+//
+// Batched against clientBuffer with a handshake, rather than a producer that
+// sleeps a millisecond every fiftieth frame and hopes the consumer was
+// scheduled. That version failed on a loaded machine -- correctly, by the
+// hub's own contract: it drops a client whose buffer is full, and whether a
+// goroutine ran in a given millisecond is not something a test gets to assume.
+// A test that reddens main under load teaches people to re-run it, which is
+// how a real drop bug would get waved through.
+//
+// Each round fills the buffer exactly and is drained before the next begins,
+// so the flood is real -- 512 frames, eight bufferfuls -- and the client
+// provably never had a full buffer at a broadcast.
 func TestFastConsumerSurvivesTheSameFlood(t *testing.T) {
 	h := New()
 	c := h.Register([]string{TopicTracks})
 
-	done := make(chan int)
-	go func() {
-		n := 0
-		for range c.Frames {
-			n++
-			if n == 500 {
-				done <- n
-				return
-			}
+	const rounds = 8
+	got := 0
+	for r := 0; r < rounds; r++ {
+		for i := 0; i < clientBuffer; i++ {
+			h.Broadcast(Frame{Type: TypeTrackUpdate})
 		}
-	}()
-
-	for i := 0; i < 500; i++ {
-		h.Broadcast(Frame{Type: TypeTrackUpdate})
-		if i%50 == 0 {
-			time.Sleep(time.Millisecond)
+		for i := 0; i < clientBuffer; i++ {
+			select {
+			case _, ok := <-c.Frames:
+				if !ok {
+					t.Fatalf("the frame channel closed after %d frames; a client that "+
+						"kept up was dropped", got)
+				}
+				got++
+			case <-c.Dropped:
+				t.Fatalf("a client that kept up was dropped after %d frames", got)
+			case <-time.After(5 * time.Second):
+				t.Fatalf("only %d of %d frames arrived", got, rounds*clientBuffer)
+			}
 		}
 	}
 
+	if got != rounds*clientBuffer {
+		t.Fatalf("received %d frames, want %d", got, rounds*clientBuffer)
+	}
 	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("a client that kept up was starved or dropped")
+	case <-c.Dropped:
+		t.Fatal("the client was dropped after keeping up with the whole flood")
+	default:
 	}
 }
 
