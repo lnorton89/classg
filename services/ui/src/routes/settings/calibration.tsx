@@ -166,6 +166,12 @@ function DetectionTimingCard() {
               kind: 'text',
               hint: 'A wedged USB device must not hold the radio away from ADS-B for ever.',
             },
+            {
+              key: 'capture.analyze_timeout',
+              label: 'Abandon a capture analysis after',
+              kind: 'text',
+              hint: 'A scapy pass over tens of megabytes, on the cores that are also decoding frames. Raise it for large captures; it is bounded so a wedged parse cannot hold a request open for ever.',
+            },
           ]}
         />
       </CardContent>

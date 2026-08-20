@@ -63,7 +63,7 @@ them rather than through `curl`:
 |---|---|
 | `api.expose_operator_location` | Settings → Storage |
 | `retention.*`, `telemetry.interval` | Settings → Storage |
-| `sensors.stale_after`, `fusion.track_ttl`, `fusion.max_history`, `spectrum.sweep_timeout` | Settings → Calibration |
+| `sensors.stale_after`, `fusion.track_ttl`, `fusion.max_history`, `spectrum.sweep_timeout`, `capture.analyze_timeout` | Settings → Calibration |
 | `map.receiver_position`, the channel plan, fusion weights | Settings → Calibration |
 | `fusion.net_adsb*`, `fusion.terrain*`, `sensors.oui_registry`, `fusion.aircraft_db` | Settings → External data |
 | `hooks.allow_private_targets` | Administration → Outbound |
