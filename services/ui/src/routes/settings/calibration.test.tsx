@@ -18,8 +18,15 @@ const settings: SettingsResponse = {
       source: 'db',
       mutable: true,
     },
+    // The ARRAY the API actually sends, not the string a client PUTs. The
+    // first version of this mock used the string, which is why a field that
+    // renders empty on the real unit passed its test.
     'sensors.expected': {
-      value: 'wifi-0:wifi',
+      value: [
+        { sensor_id: 'wifi-0', sensor_kind: 'wifi' },
+        { sensor_id: 'wifi-1', sensor_kind: 'wifi', optional: true },
+        { sensor_id: 'sdr-0', sensor_kind: 'sdr', optional: true },
+      ],
       source: 'db',
       mutable: true,
     },
@@ -136,7 +143,11 @@ describe('ExpectedSensorsCard', () => {
     )
 
     expect(await screen.findByText('Expected sensors')).toBeVisible()
-    expect(await screen.findByDisplayValue('wifi-0:wifi')).toBeVisible()
+    // Round-tripped back into the form a PUT accepts, including :optional --
+    // whatever this shows is what the operator edits and sends back.
+    expect(
+      await screen.findByDisplayValue('wifi-0:wifi,wifi-1:wifi:optional,sdr-0:sdr:optional'),
+    ).toBeVisible()
   })
 })
 

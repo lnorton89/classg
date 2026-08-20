@@ -34,13 +34,40 @@ export interface FieldSpec {
   hint?: ReactNode
 }
 
-/** The registry stores everything as one string; render it as one too. */
+/**
+ * The registry stores everything as one string; render it as one too.
+ *
+ * "Everything" was not quite everything. The API parses each setting into its
+ * typed form before serialising, so most keys arrive as the scalar they went in
+ * as -- but `sensors.expected` comes back as an ARRAY of decoded declarations,
+ * and this returned '' for it. The field rendered empty on a unit that had the
+ * setting, which reads as "not configured" for the one setting whose whole job
+ * is saying which sensors exist.
+ *
+ * Worth knowing how that shipped: the test mocked the value as the string a
+ * client sends on the way IN, not the array the API sends on the way OUT, so it
+ * asserted against its own fixture rather than the contract. The mock is fixed
+ * alongside this.
+ */
 function asText(setting: SettingValue | undefined): string {
   const value = setting?.value
   if (value === null || value === undefined) return ''
   if (typeof value === 'boolean') return value ? 'true' : 'false'
   if (typeof value === 'number' || typeof value === 'string') return String(value)
+  if (Array.isArray(value)) return value.map(sensorDeclText).filter(Boolean).join(',')
   return ''
+}
+
+/**
+ * One `sensors.expected` entry, back in the `id:kind[:optional]` form the API
+ * accepts on a PUT. Round-tripping matters more than prettiness here: whatever
+ * this renders is what an operator edits and sends back.
+ */
+function sensorDeclText(decl: unknown): string {
+  if (typeof decl !== 'object' || decl === null) return ''
+  const d = decl as { sensor_id?: unknown; sensor_kind?: unknown; optional?: unknown }
+  if (typeof d.sensor_id !== 'string' || typeof d.sensor_kind !== 'string') return ''
+  return `${d.sensor_id}:${d.sensor_kind}${d.optional === true ? ':optional' : ''}`
 }
 
 function isLocked(setting: SettingValue | undefined): boolean {
