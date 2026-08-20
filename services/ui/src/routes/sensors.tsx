@@ -374,6 +374,27 @@ function SensorDetail({
         </Alert>
       ) : null}
 
+      {/* The API has always sent `expected` and nothing rendered it, which is
+          the worst possible pairing for this particular flag: an undeclared
+          sensor looks completely normal right up until it dies, and then it
+          does not appear as unhealthy — it disappears, and /health stays "ok"
+          with one fewer receiver. There is no later moment at which to notice.
+          The live unit declares only wifi-0, so both the SDR and the second
+          Wi-Fi receiver are currently in this state. */}
+      {config && !config.expected ? (
+        <Alert tone="warn" title="Not declared, so its failure would be silent">
+          <span className="font-mono">{sensor.sensor_id}</span> is heartbeating but is not in{' '}
+          <code className="font-mono">sensors.expected</code>. Undeclared sensors are listed
+          only while they are alive: if this one stops, it vanishes from the sensor list and
+          overall health stays <span className="font-mono">ok</span> rather than degrading. Add{' '}
+          <code className="font-mono">
+            {sensor.sensor_id}:{sensor.sensor_kind}
+            {sensor.optional ? ':optional' : ''}
+          </code>{' '}
+          to <code className="font-mono">CLASSG_EXPECTED_SENSORS</code>.
+        </Alert>
+      ) : null}
+
       <div className={cn('grid min-w-0 items-start gap-4', spectrum && 'xl:grid-cols-2')}>
         <SensorHealthCard
           sensor={sensor}

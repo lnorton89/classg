@@ -91,6 +91,20 @@ function sensor(id: string, kind: SensorHealth['sensor_kind']): SensorHealth {
   }
 }
 
+function sensorConfig(
+  overrides: Partial<NonNullable<SensorHealth['config']>> = {},
+): NonNullable<SensorHealth['config']> {
+  return {
+    unit: 'classg-sensor-wifi.service',
+    stale_after_s: 30,
+    expected: true,
+    restart_command: 'systemctl restart classg-sensor-wifi.service',
+    restart_available: true,
+    capture: { supported: false },
+    ...overrides,
+  }
+}
+
 function renderPage(initialPath = '/sensors') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const rootRoute = createRootRouteWithContext<{ queryClient: QueryClient }>()({
@@ -225,6 +239,29 @@ describe('SensorsView', () => {
     expect(await screen.findByText('wifi-0-doomed.pcap')).toBeVisible()
     expect(screen.getByText('failed')).toBeVisible()
     expect(screen.getByText('wlan1 is not in monitor mode')).toBeVisible()
+  })
+
+  // `expected` has always been on the wire and nothing rendered it, which is
+  // the worst pairing for this flag in particular: an undeclared sensor looks
+  // completely normal until it dies, and then it does not go unhealthy -- it
+  // disappears, and overall health stays "ok" with one fewer receiver. There
+  // is no later moment at which to notice.
+  it('warns that an undeclared sensor would vanish rather than fail', async () => {
+    sensors = [{ ...sensor('wifi-1', 'wifi'), config: sensorConfig({ expected: false }) }]
+    renderPage()
+
+    expect(
+      await screen.findByText(/Not declared, so its failure would be silent/),
+    ).toBeVisible()
+    expect(screen.getByText('wifi-1:wifi')).toBeVisible()
+  })
+
+  it('says nothing about a sensor that is declared', async () => {
+    sensors = [{ ...sensor('wifi-0', 'wifi'), config: sensorConfig({ expected: true }) }]
+    renderPage()
+
+    await screen.findByText('Channel occupancy')
+    expect(screen.queryByText(/Not declared/)).not.toBeInTheDocument()
   })
 
   it('can return to the list and select a different sensor', async () => {
