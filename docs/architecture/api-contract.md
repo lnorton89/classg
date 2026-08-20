@@ -679,6 +679,35 @@ on the internet is an operator". `CLASSG_OIDC_AUTO_PROVISION=true` opts in, and
 config validator and the service refuse, because auto-provisioning admins hands
 this unit to whoever runs the identity provider.
 
+### The local agent
+
+A process running on this unit's own host authenticates with
+`Authorization: Bearer <token>`, where the token is the one the API writes at
+startup into `CLASSG_DEPLOY_STATE_DIR` as `local-api-token`, mode `0640`.
+
+The grant is **viewer**, always. It reads; it cannot restart a sensor, stop a
+recording, or reach anything under `/admin`. The principal is `local-agent` and
+is not a row in the users table -- there is no account to disable here, only a
+file to delete or an API to restart, which mints a new one.
+
+Being able to read that file *is* the authorization. The alternative, trusting
+loopback, would also trust anything that can make this API issue a request to
+itself, and the API is reached through nginx and a tailnet where a peer address
+is not evidence of anything. File permissions are a question the kernel answers.
+
+Deliberately not a session: `NeedsSetup` is `CountUsers() == 0`, so an
+auto-created account would mean a fresh unit never shows its first-run setup
+screen and can never get an administrator. For the same reason the local token
+is checked *before* the setup gate -- a dashboard on the host is most useful on
+a unit nobody has finished setting up, and it still cannot create the
+administrator, because setup is an unauthenticated route of its own.
+
+`GET /auth/me` recognises it too, so a host tool is not authenticated everywhere
+except on the endpoint that tells it whether it is.
+
+Absent `CLASSG_DEPLOY_STATE_DIR`, no token is written and nothing authenticates
+this way.
+
 ### Administration
 
 `GET|POST /admin/users`, `PATCH|DELETE /admin/users/{user_id}`,

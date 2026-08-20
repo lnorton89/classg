@@ -289,6 +289,23 @@ func run() error {
 			"consequence", "a hook can reach this API and any host on the LAN")
 	}
 
+	// A token for processes on this unit's own host -- pi-dash is the one that
+	// exists today. Written into the agent-state directory the deploy and
+	// watchdog agents already share with this container, so "is this the
+	// operator?" is answered by file permissions rather than by a peer address
+	// that means nothing behind nginx or a tailnet. Viewer only.
+	//
+	// A failure here is logged and not fatal: it costs a dashboard its session
+	// and takes nothing else with it, which is not a reason to refuse to serve
+	// the sky.
+	localAgent, err := auth.NewLocalAgent(cfg.DeployStateDir)
+	if err != nil {
+		slog.Warn("could not publish a local agent token; host tools will need a session cookie",
+			"err", err)
+	} else if localAgent.Enabled() {
+		slog.Info("published a local agent token for host tools", "file", localAgent.Path())
+	}
+
 	srv := httpapi.New(httpapi.Options{
 		Config:     cfg,
 		Store:      st,
@@ -297,6 +314,7 @@ func run() error {
 		Captures:   captures,
 		Spectrum:   sweeps,
 		Auth:       authSvc,
+		LocalAgent: localAgent,
 		Hooks:      hookDispatcher,
 		Deploy:     deploy.Reader{Dir: cfg.DeployStateDir},
 		OIDC:       ssoProvider,

@@ -48,6 +48,7 @@ type Server struct {
 	captures   *capture.Manager
 	spectrum   *spectrum.Service
 	auth       *auth.Service
+	localAgent *auth.LocalAgent
 	oidc       *oidcauth.Provider
 	hooks      *hooks.Dispatcher
 	deploy     deploy.Reader
@@ -75,6 +76,10 @@ type Options struct {
 	Auth *auth.Service
 	// OIDC is nil when SSO is not configured, which is the common case.
 	OIDC *oidcauth.Provider
+	// LocalAgent authenticates a process on this unit's own host as a viewer.
+	// Nil is the same as one that was never minted: nobody authenticates that
+	// way and everything else is unchanged.
+	LocalAgent *auth.LocalAgent
 	// Hooks may be nil; the endpoints then report the dispatcher as not
 	// running rather than panicking.
 	Hooks *hooks.Dispatcher
@@ -100,6 +105,7 @@ func New(opts Options) *Server {
 		captures:   opts.Captures,
 		spectrum:   opts.Spectrum,
 		auth:       opts.Auth,
+		localAgent: opts.LocalAgent,
 		oidc:       opts.OIDC,
 		hooks:      opts.Hooks,
 		deploy:     opts.Deploy,
@@ -114,6 +120,11 @@ func New(opts Options) *Server {
 		// disabled one degrades the way ADR-0003 asks for: the API works, and
 		// /auth/me reports auth_enabled false so the UI says so.
 		s.auth = &auth.Service{Mode: auth.ModeOff}
+	}
+	if s.localAgent == nil {
+		// Methods on LocalAgent tolerate a nil receiver, but an explicit zero
+		// value keeps "no local agent" a state rather than an absence.
+		s.localAgent = &auth.LocalAgent{}
 	}
 	s.mux = s.routes()
 	return s

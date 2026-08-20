@@ -50,6 +50,26 @@ func (s *Server) protect(need auth.Role, next http.HandlerFunc) http.HandlerFunc
 			return
 		}
 
+		// The local agent, before anything that touches the database. A
+		// process on this unit's own host proves itself by reading a 0640 file
+		// in the operator's state directory -- see auth.LocalAgent for why
+		// that and not a loopback check. Viewer only, so this can never be a
+		// way past the role gate below.
+		//
+		// Checked before NeedsSetup deliberately: on a unit with no accounts
+		// the local agent still reads, which is the state pi-dash is most
+		// useful in. It cannot create one -- setup is an unauthenticated route
+		// of its own and does not come through here.
+		if tok := bearerToken(r); s.localAgent.Matches(tok) {
+			p := s.localAgent.Principal()
+			if !p.User.Role.AtLeast(need) {
+				fail(w, apierr.Forbidden("the local agent may only read; this needs the "+need.String()+" role"))
+				return
+			}
+			next(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
+			return
+		}
+
 		// A unit with no accounts serves nothing but setup. Answering 401 here
 		// would send a browser to a login screen that cannot succeed.
 		if needs, err := s.auth.NeedsSetup(r.Context()); err == nil && needs {
@@ -84,6 +104,20 @@ func (s *Server) protect(need auth.Role, next http.HandlerFunc) http.HandlerFunc
 
 		next(w, r.WithContext(context.WithValue(r.Context(), principalKey{}, p)))
 	}
+}
+
+// bearerToken reads `Authorization: Bearer <token>`.
+//
+// The browser never sends this header -- it carries a cookie. It is here for
+// machine callers on this unit's own host, which have no cookie jar and no
+// business borrowing a person's session.
+func bearerToken(r *http.Request) string {
+	const prefix = "Bearer "
+	v := r.Header.Get("Authorization")
+	if len(v) <= len(prefix) || !strings.EqualFold(v[:len(prefix)], prefix) {
+		return ""
+	}
+	return strings.TrimSpace(v[len(prefix):])
 }
 
 func sessionToken(r *http.Request) string {
@@ -201,6 +235,17 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if needs {
 		resp.SetupRequired = true
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	// The local agent answers here too, or a host tool would be authenticated
+	// on every other endpoint while this one told it -- and the operator
+	// reading its screen -- that nobody was logged in. A pane that contradicts
+	// itself is worse than one that says nothing.
+	if tok := bearerToken(r); s.localAgent.Matches(tok) {
+		u := s.localAgent.Principal().User
+		resp.Authenticated, resp.User = true, &u
 		writeJSON(w, http.StatusOK, resp)
 		return
 	}
