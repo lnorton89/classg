@@ -336,7 +336,14 @@ type WatchdogState struct {
 
 	APIHealthy         bool `json:"api_healthy"`
 	WifiAdapterPresent bool `json:"wifi_adapter_present"`
-	SDRPresent         bool `json:"sdr_present"`
+	// WifiTPLinkAdapterPresent is the second Wi-Fi adapter, and it is a pointer
+	// because absent means the unit does not have one -- the watchdog writes
+	// this field only when classg-sensor-wifi-tplink.service is enabled. A
+	// plain bool would decode a missing key as false and report a permanently
+	// unplugged adapter on every single-adapter unit, which is the same
+	// broken-vs-never-fitted confusion health.Sensor.Optional exists to avoid.
+	WifiTPLinkAdapterPresent *bool `json:"wifi_tplink_adapter_present,omitempty"`
+	SDRPresent               bool  `json:"sdr_present"`
 
 	Log []string `json:"log,omitempty"`
 }

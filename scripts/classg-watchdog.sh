@@ -404,7 +404,15 @@ check_sudoers_drift
     printf '  "needs_hands": "%s",\n' "$(json_escape "${NEEDS_HANDS%%; }")"
     printf '  "api_healthy": %s,\n' "$(api_ok && echo true || echo false)"
     printf '  "wifi_adapter_present": %s,\n' "$(wifi_adapter_present "${CLASSG_WIFI_IFACE:-wlan-alfa}" && echo true || echo false)"
-    printf '  "wifi_tplink_adapter_present": %s,\n' "$(wifi_adapter_present "${CLASSG_WIFI_TPLINK_IFACE:-wlan-tplink}" && echo true || echo false)"
+    # Only on units that actually have the second adapter. The repair loop
+    # above gates on the same condition, and an unconditional `false` here is
+    # the "broken vs never fitted" confusion this project keeps paying for: a
+    # single-adapter unit would report a TP-Link permanently missing. Absent
+    # means not fitted, which is why the API reads this one as a pointer.
+    if unit_enabled classg-sensor-wifi-tplink.service; then
+        printf '  "wifi_tplink_adapter_present": %s,\n' \
+            "$(wifi_adapter_present "${CLASSG_WIFI_TPLINK_IFACE:-wlan-tplink}" && echo true || echo false)"
+    fi
     printf '  "sdr_present": %s,\n' "$(sdr_present && echo true || echo false)"
     printf '  "log": %s\n' "$(json_log_array)"
     printf '}\n'

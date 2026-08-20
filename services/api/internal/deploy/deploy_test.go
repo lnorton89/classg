@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -184,6 +185,34 @@ func TestWatchdogHealthyPass(t *testing.T) {
 	w := r.Watchdog()
 	if w.NeedsHands != "" || w.ActionsTaken != 0 || !w.APIHealthy {
 		t.Fatalf("got %+v", w)
+	}
+}
+
+// The second Wi-Fi adapter is optional hardware, so its field has three
+// states, not two. The watchdog writes it only on units where
+// classg-sensor-wifi-tplink.service is enabled; decoding a missing key as
+// false would report a permanently unplugged adapter on every unit that never
+// had one.
+func TestWatchdogSecondAdapterIsAbsentNotFalse(t *testing.T) {
+	r := newReader(t)
+	write(t, r.Dir, watchdogFile, `{
+		"last_check_at": "2026-08-18T12:00:00Z", "actions_taken": 0,
+		"api_healthy": true, "wifi_adapter_present": true, "sdr_present": true
+	}`)
+	if got := r.Watchdog().WifiTPLinkAdapterPresent; got != nil {
+		t.Fatalf("a unit with no second adapter reported %v, want nil", *got)
+	}
+
+	for _, present := range []bool{true, false} {
+		write(t, r.Dir, watchdogFile, fmt.Sprintf(`{
+			"last_check_at": "2026-08-18T12:00:00Z", "actions_taken": 0,
+			"api_healthy": true, "wifi_adapter_present": true,
+			"wifi_tplink_adapter_present": %t, "sdr_present": true
+		}`, present))
+		got := r.Watchdog().WifiTPLinkAdapterPresent
+		if got == nil || *got != present {
+			t.Fatalf("a fitted adapter reported %v, want %t", got, present)
+		}
 	}
 }
 

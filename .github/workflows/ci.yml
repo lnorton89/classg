@@ -67,12 +67,16 @@ jobs:
       - name: Operator guide matches the CLI
         run: python ../../scripts/check-operator-guide.py
 
-      # Constants that four services keep private copies of, because fusion and
-      # api are separate Go modules, the API cannot read sensor-wifi's YAML, and
-      # the UI cannot import Go. Each copy says which one it mirrors; none of
-      # them came with a check. Two implementations disagreeing is how a
-      # password change left stolen sessions alive earlier in this project.
-      - name: Hand-copied constants still agree
+      # Values and shapes that services keep private copies of, because fusion
+      # and api are separate Go modules, the API cannot read sensor-wifi's
+      # YAML, the UI cannot import Go, and the deploy agents are shell writing
+      # JSON by hand. Each copy says which one it mirrors; none of them came
+      # with a check. Two implementations disagreeing is how a password change
+      # left stolen sessions alive earlier in this project, and how the
+      # watchdog reported a second Wi-Fi adapter into a struct with no field
+      # for it -- silently, because shell and JSON have no compiler between
+      # them.
+      - name: Hand-copied constants and shapes still agree
         run: python ../../scripts/check-mirrors.py
 
   # ---------------------------------------------------------------------------

@@ -792,6 +792,13 @@ export interface WatchdogStatus {
   needs_hands?: string
   api_healthy: boolean
   wifi_adapter_present: boolean
+  /**
+   * The second Wi-Fi adapter, on units that have one. Absent — not false —
+   * when the unit was never fitted with it: the watchdog writes this key only
+   * where `classg-sensor-wifi-tplink.service` is enabled, so `undefined` means
+   * "no such hardware" and `false` means "fitted and now missing from the bus".
+   */
+  wifi_tplink_adapter_present?: boolean
   sdr_present: boolean
   /** Seconds since the last pass. The timer runs every two minutes, so a large
    *  value means the watchdog itself is not running. */

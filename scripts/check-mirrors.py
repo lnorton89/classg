@@ -28,7 +28,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from check_sensor_fields import capture_field_names, sensor_field_names  # noqa: E402
+from check_field_names import go_vs_ts, shell_vs_go  # noqa: E402
 
 errors: list[str] = []
 
@@ -171,36 +171,68 @@ def check_channel_allowlist() -> None:
     compare("channel allowlist", lists[0][0], lists[0][1], lists[1][0], lists[1][1])
 
 
-def check_sensor_health_fields() -> None:
-    """api health.Sensor -> UI SensorHealth, by JSON field name.
+# Go response structs against the TypeScript that hand-describes them.
+#
+# (label, go file, go struct, ts interface). Every one of these is a shape the
+# UI re-declares by hand because it cannot import Go, and every one of them has
+# no compiler between the two copies. Two had already lost a field this way --
+# health.Sensor's `optional` and model.Capture's `error` -- which is why the
+# list is here rather than the two that were found.
+GO_TS_PAIRS = [
+    ("sensor health", "services/api/internal/health/health.go", "Sensor", "SensorHealth"),
+    ("capture fields", "services/api/internal/model/model.go", "Capture", "Capture"),
+    ("spectrum sweep", "services/api/internal/model/model.go", "SpectrumSweep", "SpectrumSweep"),
+    ("hook rules", "services/api/internal/hooks/hooks.go", "Rule", "HookRule"),
+    ("hook deliveries", "services/api/internal/hooks/hooks.go", "Delivery", "HookDelivery"),
+    ("deployment status", "services/api/internal/deploy/deploy.go", "Status", "DeploymentStatus"),
+    ("watchdog status", "services/api/internal/deploy/deploy.go", "WatchdogStatus", "WatchdogStatus"),
+]
 
-    The /health sensors array is hand-described in TypeScript and nothing
-    checked it. Go grew `optional` -- whether a sensor is hardware the unit
-    may not have fitted -- and the UI type never learned about it, so the
-    difference between broken and never-fitted arrived on every response and
-    was discarded. Extraction lives in check_sensor_fields.py.
-    """
-    go_fields, ts_fields, err = sensor_field_names()
-    if err:
-        fail("sensor health", err)
-        return
-    compare("sensor health", "api health.Sensor", go_fields, "ui SensorHealth", ts_fields)
+# The state documents the deploy agents write by hand, and the Go structs that
+# read them. Unlike the pairs above there is no type system on either end of
+# this one: a printf writing a key nobody reads, or a struct field no printf
+# ever writes, is silent for ever. classg-watchdog.sh had done exactly the
+# first -- publishing `wifi_tplink_adapter_present` for the second Wi-Fi
+# adapter into a struct with no such field, so the panel whose entire job is
+# naming missing hardware could not show half the Wi-Fi hardware.
+#
+# Compared against State/WatchdogState, not Status/WatchdogStatus: the outer
+# types add what the API works out for itself (configured, state_age_s), which
+# the script correctly never writes.
+SHELL_GO_PAIRS = [
+    (
+        "deploy state file",
+        "scripts/pi-autodeploy.sh",
+        "write_state() {",
+        "State",
+    ),
+    (
+        "watchdog state file",
+        "scripts/classg-watchdog.sh",
+        "# --- publish ---",
+        "WatchdogState",
+    ),
+]
+
+DEPLOY_GO = "services/api/internal/deploy/deploy.go"
 
 
-def check_capture_fields() -> None:
-    """api model.Capture -> UI Capture, by JSON field name.
+def check_go_ts_fields() -> None:
+    for label, go_file, go_name, ts_name in GO_TS_PAIRS:
+        go, ts, err = go_vs_ts(go_file, go_name, ts_name)
+        if err:
+            fail(label, err)
+            continue
+        compare(label, f"api {go_name}", go, f"ui {ts_name}", ts)
 
-    Same shape of copy as the sensor fields above, and it had the same kind of
-    hole: model.Capture has always carried `error`, the reason a capture
-    failed, and the UI type never declared it. A failed capture therefore
-    rendered a red badge with nothing beside it while the explanation sat
-    unread in the response body. Extraction lives in check_sensor_fields.py.
-    """
-    go_fields, ts_fields, err = capture_field_names()
-    if err:
-        fail("capture fields", err)
-        return
-    compare("capture fields", "api model.Capture", go_fields, "ui Capture", ts_fields)
+
+def check_shell_state_files() -> None:
+    for label, sh_file, marker, go_name in SHELL_GO_PAIRS:
+        sh, go, err = shell_vs_go(sh_file, marker, DEPLOY_GO, go_name)
+        if err:
+            fail(label, err)
+            continue
+        compare(label, sh_file, sh, f"api deploy.{go_name}", go)
 
 
 def main() -> int:
@@ -208,8 +240,8 @@ def main() -> int:
     check_weights()
     check_corroborating_classes()
     check_channel_allowlist()
-    check_sensor_health_fields()
-    check_capture_fields()
+    check_go_ts_fields()
+    check_shell_state_files()
 
     if errors:
         for e in errors:
@@ -218,9 +250,9 @@ def main() -> int:
         print("These are hand-maintained copies. Update every copy, or record the")
         print("divergence in scripts/check-mirrors.py with the reason it is correct.")
         return 1
-    print("mirrors: channel plan, fusion weights, corroborating classes, the")
-    print("channel allowlist, the /health sensor fields and the capture fields")
-    print("all agree")
+    print("mirrors: channel plan, fusion weights, corroborating classes and the")
+    print(f"channel allowlist agree; so do {len(GO_TS_PAIRS)} Go/TypeScript response shapes")
+    print(f"and {len(SHELL_GO_PAIRS)} hand-written state documents")
     return 0
 
 

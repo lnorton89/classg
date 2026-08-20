@@ -124,6 +124,26 @@ export function WatchdogPanel() {
               w.wifi_adapter_present ? undefined : 'hardware — restarting software cannot help'
             }
           />
+          {/* Only on units that have a second adapter. `undefined` means the
+              unit was never fitted with one, and rendering "absent" for that
+              is a permanent false alarm on every single-adapter box. */}
+          {w.wifi_tplink_adapter_present !== undefined ? (
+            <DataRow
+              label="Wi-Fi adapter (TP-Link)"
+              value={
+                w.wifi_tplink_adapter_present ? (
+                  <Badge variant="ok">on the bus</Badge>
+                ) : (
+                  <Badge variant="down">absent</Badge>
+                )
+              }
+              hint={
+                w.wifi_tplink_adapter_present
+                  ? undefined
+                  : 'hardware — restarting software cannot help'
+              }
+            />
+          ) : null}
           <DataRow
             label="SDR"
             value={
