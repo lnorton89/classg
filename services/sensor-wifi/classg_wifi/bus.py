@@ -7,7 +7,6 @@ is not. See ADR-0002.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 from datetime import UTC, datetime
@@ -81,6 +80,7 @@ class DetectionPublisher:
 
         self.published = 0
         self.dropped = 0
+        self.heartbeats_dropped = 0
 
     def publish(self, detection: dict[str, Any]) -> bool:
         topic = f"{self.detection_topic}{detection['detection_class']}"
@@ -106,7 +106,7 @@ class DetectionPublisher:
         msg = heartbeat_message(
             self.sensor_id, healthy, self.published, self.dropped, detail
         )
-        with contextlib.suppress(zmq.Again):
+        try:
             self._sock.send_multipart(
                 [
                     f"{self.heartbeat_topic}wifi".encode(),
@@ -114,6 +114,23 @@ class DetectionPublisher:
                 ],
                 flags=zmq.NOBLOCK,
             )
+        except zmq.Again:
+            # Counted and logged rather than suppressed. This is the message
+            # that distinguishes "no drones present" from "sensor wedged", so
+            # losing it silently produces the worse of the two readings: the API
+            # stops hearing from a sensor that is working perfectly well and
+            # marks it unhealthy, and the operator goes looking for a radio
+            # fault that is really a slow subscriber.
+            #
+            # Same 1-in-100 log cadence as publish(), because whatever is
+            # applying backpressure is applying it to both.
+            self.heartbeats_dropped += 1
+            if self.heartbeats_dropped % 100 == 1:
+                log.warning(
+                    "bus backpressure: %d heartbeats dropped; this sensor will "
+                    "read as unhealthy while it is not",
+                    self.heartbeats_dropped,
+                )
 
     def close(self) -> None:
         self._sock.close()
