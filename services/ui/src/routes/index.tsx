@@ -46,6 +46,10 @@ function LiveView() {
   const { data: health } = useQuery(healthQuery())
   const { data: adsbData } = useQuery(adsbDetectionsQuery())
   const { preferences } = usePreferences()
+  // Read here rather than inside ResponsiveSplit because the contacts column
+  // needs the answer too: its own vertical divider only exists in the wide
+  // layout, where the column is a full-height pane rather than one of two tabs.
+  const wide = useMediaQuery(LG_QUERY)
 
   // One selection for the whole view — drone or manned, never both. See
   // features/map/selection.ts for why that exclusion is structural.
@@ -164,6 +168,7 @@ function LiveView() {
       </div>
 
       <ContactsPanel
+        splitId={wide ? 'live-contacts-sections' : undefined}
         tracks={activeTracks}
         unidentifiedTracks={unidentifiedTracks}
         closedTracks={closedTracks}
@@ -180,6 +185,7 @@ function LiveView() {
 
   return (
     <ResponsiveSplit
+      wide={wide}
       map={map}
       banner={banner}
       toggle={toggle}
@@ -199,29 +205,34 @@ function LiveView() {
  * display and a laptop want different answers and re-dragging on every load is
  * the kind of tax that makes people stop bothering.
  *
+ * The contacts column carries a second, vertical handle of its own, for the
+ * same reason and against fixed heights rather than a fixed width. That one
+ * lives in ContactsPanel, since the sections it divides are its own.
+ *
  * Below lg there is no split to make: the panes stack, one is shown at a time
  * by the toggle, and a divider would only be a way to make one of them too
- * small to read.
+ * small to read. That applies to the vertical handle too, which is why the
+ * splitId is withheld rather than the column being told to hide it.
  *
- * This is a media QUERY rather than two class-hidden trees, and that is not a
+ * `wide` is a media QUERY rather than two class-hidden trees, and that is not a
  * style preference. Rendering both and letting CSS hide one would mount the
  * map twice -- two MapLibre instances, two WebGL contexts -- to show one map.
  */
 function ResponsiveSplit({
+  wide,
   map,
   banner,
   toggle,
   contacts,
   mobilePane,
 }: {
+  wide: boolean
   map: ReactNode
   banner: ReactNode
   toggle: ReactNode
   contacts: ReactNode
   mobilePane: 'map' | 'list'
 }) {
-  const wide = useMediaQuery(LG_QUERY)
-
   if (wide) {
     return (
       <ResizableSplit id="live-map-contacts">

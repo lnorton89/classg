@@ -79,15 +79,18 @@ function Panel({
   adsb = [airliner],
   tracks = [track],
   unidentifiedTracks = [],
+  splitId,
 }: {
   adsb?: Detection[]
   tracks?: Track[]
   unidentifiedTracks?: Track[]
+  splitId?: string
 }) {
   const { selectedTrackId, selectedMannedIcao, selectTrack, selectManned } =
     useContactSelection()
   return (
     <ContactsPanel
+      splitId={splitId}
       tracks={tracks}
       unidentifiedTracks={unidentifiedTracks}
       adsb={adsb}
@@ -302,5 +305,38 @@ describe('unidentified RF', () => {
     await renderInRouter(<Panel />)
 
     expect(screen.queryByText(/Unidentified RF/)).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * The vertical divider between the active tracks and the reference sections
+ * below them, which only the wide layout asks for.
+ *
+ * jsdom cannot measure a drag, so these do not try to. What they pin is the
+ * part that has actually gone wrong before in this file's other split: that
+ * restructuring the panel into panes does not lose a section, and that the
+ * narrow layout -- where the column is one of two tabs -- gets no divider to
+ * squeeze a list with.
+ */
+describe('resizable sections', () => {
+  it('keeps every section reachable once the panel is split', async () => {
+    await renderInRouter(
+      <Panel splitId="test-contacts" unidentifiedTracks={[vendorMatchOnly]} />,
+    )
+
+    expect(screen.getByRole('region', { name: /Active drone tracks/ })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: /Unidentified RF/ })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: /Manned traffic/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /SERIAL-ABC/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /UAL1234/ })).toBeInTheDocument()
+  })
+
+  it('offers a handle when split and none when not', async () => {
+    const { unmount } = await renderInRouter(<Panel splitId="test-contacts" />)
+    expect(screen.getByRole('separator')).toBeInTheDocument()
+    unmount()
+
+    await renderInRouter(<Panel />)
+    expect(screen.queryByRole('separator')).not.toBeInTheDocument()
   })
 })

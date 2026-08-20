@@ -11,6 +11,7 @@ import { ArchiveIcon, PlaneIcon, RadioIcon, SatelliteDishIcon, UserIcon } from '
 import { useFormat, useTicker, type Formatters } from '@/app/use-format'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/misc'
+import { Panel, ResizableSplit, ResizeHandle } from '@/components/ui/resizable'
 import type { Detection, Track } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
@@ -44,6 +45,14 @@ export interface ContactsPanelProps {
    */
   selectedMannedIcao: string | null
   onSelectManned: (icao: string | null) => void
+  /**
+   * Storage key for a draggable boundary between the active drone tracks and
+   * the three reference sections below them. Omit it and the panel keeps its
+   * fixed proportions, which is what the narrow layout wants: the column is
+   * one of two tabs there, and a divider inside a tab is a way to make a list
+   * unreadable through a target a few pixels tall.
+   */
+  splitId?: string
   className?: string
 }
 
@@ -57,6 +66,7 @@ export function ContactsPanel({
   onSelectTrack,
   selectedMannedIcao,
   onSelectManned,
+  splitId,
   className,
 }: ContactsPanelProps) {
   const format = useFormat()
@@ -68,42 +78,55 @@ export function ContactsPanel({
   const plotted = tracks.filter((t) => t.current)
   const unplotted = tracks.filter((t) => !t.current)
 
-  return (
-    <div className={cn('flex min-h-0 flex-col', className)}>
-      <section aria-labelledby="contacts-drones" className="min-h-0 flex-1 overflow-y-auto">
-        <h2
-          id="contacts-drones"
-          className="label-caps bg-card/95 sticky top-0 z-10 px-3 py-2 backdrop-blur"
-        >
-          Active drone tracks ({tracks.length})
-        </h2>
+  /*
+   * The three reference sections used to be capped at max-h-64 each, a height
+   * chosen once for all displays. On a wall panel that is 16rem of manned
+   * traffic nobody asked for; on a laptop it is three headings and a scrollbar.
+   * Under a split the cap is the operator's to set, so the sections share the
+   * lower pane instead -- basis-0 rather than an intrinsic height, or the
+   * longest list would take the pane and the other two would collapse to their
+   * headings.
+   */
+  const secondaryBox = cn(
+    'border-border flex min-h-0 flex-col border-t',
+    splitId ? 'flex-1 basis-0' : 'max-h-64',
+  )
 
-        {tracks.length === 0 ? (
-          <EmptyState icon={PlaneIcon} title="No tracks">
-            Whether that means an empty sky depends on sensor health — see the banner above the
-            map.
-          </EmptyState>
-        ) : (
-          <ul className="divide-border divide-y">
-            {[...plotted, ...unplotted].map((track) => (
-              <li key={track.track_id}>
-                <TrackRow
-                  track={track}
-                  format={format}
-                  selected={track.track_id === selectedTrackId}
-                  onSelect={onSelectTrack}
-                />
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+  const droneSection = (
+    <section aria-labelledby="contacts-drones" className="min-h-0 flex-1 overflow-y-auto">
+      <h2
+        id="contacts-drones"
+        className="label-caps bg-card/95 sticky top-0 z-10 px-3 py-2 backdrop-blur"
+      >
+        Active drone tracks ({tracks.length})
+      </h2>
 
+      {tracks.length === 0 ? (
+        <EmptyState icon={PlaneIcon} title="No tracks">
+          Whether that means an empty sky depends on sensor health — see the banner above the
+          map.
+        </EmptyState>
+      ) : (
+        <ul className="divide-border divide-y">
+          {[...plotted, ...unplotted].map((track) => (
+            <li key={track.track_id}>
+              <TrackRow
+                track={track}
+                format={format}
+                selected={track.track_id === selectedTrackId}
+                onSelect={onSelectTrack}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+
+  const referenceSections = (
+    <>
       {unidentifiedTracks.length > 0 ? (
-        <section
-          aria-labelledby="contacts-unidentified"
-          className="border-border flex max-h-64 min-h-0 flex-col border-t"
-        >
+        <section aria-labelledby="contacts-unidentified" className={secondaryBox}>
           <h2 id="contacts-unidentified" className="label-caps shrink-0 px-3 py-2">
             Unidentified RF ({unidentifiedTracks.length})
           </h2>
@@ -127,10 +150,7 @@ export function ContactsPanel({
       ) : null}
 
       {showClosed ? (
-        <section
-          aria-labelledby="contacts-closed"
-          className="border-border flex max-h-64 min-h-0 flex-col border-t"
-        >
+        <section aria-labelledby="contacts-closed" className={secondaryBox}>
           <h2 id="contacts-closed" className="label-caps shrink-0 px-3 py-2">
             Closed tracks ({closedTracks.length})
           </h2>
@@ -141,9 +161,9 @@ export function ContactsPanel({
           ) : (
             /*
              * min-h-0 and flex-1 are what make overflow-y-auto mean anything
-             * here. Without a bounded height the list just grows: the section's
-             * max-h-64 caps the section box while the list overflows straight
-             * past it, dragging the document to 9000px in a 600px viewport.
+             * here. Without a bounded height the list just grows: the section
+             * box caps its own height while the list overflows straight past
+             * it, dragging the document to 9000px in a 600px viewport.
              */
             <ul className="divide-border min-h-0 flex-1 divide-y overflow-y-auto">
               {closedTracks.map((track) => (
@@ -156,10 +176,7 @@ export function ContactsPanel({
         </section>
       ) : null}
 
-      <section
-        aria-labelledby="contacts-manned"
-        className="border-border flex max-h-64 min-h-0 flex-col border-t"
-      >
+      <section aria-labelledby="contacts-manned" className={secondaryBox}>
         <h2 id="contacts-manned" className="label-caps shrink-0 px-3 py-2">
           Manned traffic ({adsb.length})
         </h2>
@@ -186,7 +203,41 @@ export function ContactsPanel({
           </ul>
         )}
       </section>
-    </div>
+    </>
+  )
+
+  if (splitId === undefined) {
+    return (
+      <div className={cn('flex min-h-0 flex-col', className)}>
+        {droneSection}
+        {referenceSections}
+      </div>
+    )
+  }
+
+  /*
+   * Two panels, never a variable number. The reference sections come and go --
+   * unidentified RF only when there is any, closed tracks only when the
+   * operator wants them -- and a group whose panel count changes cannot be
+   * restored from a stored layout, so the remembered split would be discarded
+   * the first time a vendor match appeared. Grouping them into one pane keeps
+   * the layout two numbers wide whatever is showing.
+   *
+   * Manned traffic renders unconditionally, so the lower pane is never empty.
+   */
+  return (
+    <ResizableSplit id={splitId} orientation="vertical" className={cn('min-h-0', className)}>
+      {/* minSize on both, for the same reason the map split has one: a drag
+          that collapses either pane to nothing leaves whoever did it by
+          accident with no obvious way back. */}
+      <Panel defaultSize="62%" minSize="25%" className="flex min-h-0 flex-col">
+        {droneSection}
+      </Panel>
+      <ResizeHandle />
+      <Panel defaultSize="38%" minSize="15%" className="flex min-h-0 flex-col">
+        {referenceSections}
+      </Panel>
+    </ResizableSplit>
   )
 }
 
