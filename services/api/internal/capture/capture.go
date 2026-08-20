@@ -25,6 +25,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -334,8 +335,13 @@ func (m *Manager) finish(c model.Capture, state, errMsg string) {
 		c.FrameCount = countFrames(path)
 	}
 	if err := m.store.PutCapture(context.Background(), c); err != nil {
-		// Nothing useful to do: the file exists on disk regardless.
-		_ = err
+		// The file exists on disk regardless, so there is nothing to retry --
+		// but this is the write that moves the capture out of "running", and
+		// losing it silently leaves a row that never finishes. An operator sees
+		// a capture stuck mid-flight for ever, with the finished PCAP sitting
+		// next to it and nothing anywhere saying why.
+		slog.Error("recording the finished capture failed; it will still show as running",
+			"capture_id", c.CaptureID, "state", state, "file", c.Filename, "err", err)
 	}
 	m.publish(c)
 }
