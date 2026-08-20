@@ -280,3 +280,65 @@ func TestNetADSBEndpointShape(t *testing.T) {
 		t.Errorf("endpoint %q, want %q", got, want)
 	}
 }
+
+// The net feed is a heartbeat emitter like any sensor, and it was the only one
+// with no schema check -- because its shape lived in a closure in package main,
+// which has no test files. That is why it is now built in this package.
+//
+// Both branches matter: the unhealthy one adds error and consecutive_failures
+// to detail, and detail is where a stray field would land.
+func TestNetADSBHeartbeatSatisfiesTheSchema(t *testing.T) {
+	source, err := os.ReadFile("../../schemas/heartbeat.schema.json")
+	if err != nil {
+		t.Fatalf("read schema: %v", err)
+	}
+	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(source)))
+	if err != nil {
+		t.Fatalf("parse schema: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("heartbeat.schema.json", doc); err != nil {
+		t.Fatalf("add schema: %v", err)
+	}
+	schema, err := compiler.Compile("heartbeat.schema.json")
+	if err != nil {
+		t.Fatalf("compile schema: %v", err)
+	}
+
+	cfg := NetADSBConfig{BaseURL: "https://example.invalid/api", RadiusNM: 25}
+	cases := map[string]NetADSBStatus{
+		"healthy":   {Healthy: true, Aircraft: 7, Total: 12},
+		"unhealthy": {Healthy: false, Failures: 3, LastError: "dial tcp: i/o timeout"},
+	}
+	for name, st := range cases {
+		t.Run(name, func(t *testing.T) {
+			hb := NetADSBHeartbeat("net-0", time.Now(), st, 42, 1, NetADSBHeartbeatDetail(cfg, st))
+			body, err := json.Marshal(hb)
+			if err != nil {
+				t.Fatal(err)
+			}
+			instance, err := jsonschema.UnmarshalJSON(strings.NewReader(string(body)))
+			if err != nil {
+				t.Fatalf("decode heartbeat: %v", err)
+			}
+			if err := schema.Validate(instance); err != nil {
+				t.Fatalf("the net feed emits a heartbeat the schema rejects: %v (body: %s)", err, body)
+			}
+		})
+	}
+
+	// And the schema is actually enforcing something.
+	hb := NetADSBHeartbeat("net-0", time.Now(), cases["healthy"], 1, 0, map[string]any{})
+	hb["invented_field"] = true
+	body, err := json.Marshal(hb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad, err := jsonschema.UnmarshalJSON(strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(bad); err == nil {
+		t.Error("the schema accepted an invented field; this check proves nothing")
+	}
+}

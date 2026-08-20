@@ -358,33 +358,13 @@ func startNetADSB(ctx context.Context, out chan<- busMessage, detectionTopic, he
 	// answering degrades /health the same way a wedged adapter does.
 	published, dropped := 0, 0
 	emitStatus := func(s fusion.NetADSBStatus) {
-		detail := map[string]any{
-			"source":    cfg.BaseURL,
-			"radius_nm": cfg.RadiusNM,
-			"aircraft":  s.Aircraft,
-		}
-		if s.Total > s.Aircraft {
-			// Ground traffic and stale fixes are filtered, so total > forwarded
-			// is normal. Reporting both is what makes a truncation at
-			// MaxAircraft visible instead of looking like a quiet sky.
-			detail["reported"] = s.Total
-		}
+		detail := fusion.NetADSBHeartbeatDetail(cfg, s)
 		if !s.Healthy {
-			detail["error"] = s.LastError
-			detail["consecutive_failures"] = s.Failures
 			dropped++
 		}
 		published += s.Aircraft
-		body, err := json.Marshal(map[string]any{
-			"schema_version": "1.0",
-			"ts":             time.Now().UTC().Format(time.RFC3339Nano),
-			"sensor_id":      feed.SensorID(),
-			"sensor_kind":    "net",
-			"healthy":        s.Healthy,
-			"published":      published,
-			"dropped":        dropped,
-			"detail":         detail,
-		})
+		body, err := json.Marshal(
+			fusion.NetADSBHeartbeat(feed.SensorID(), time.Now(), s, published, dropped, detail))
 		if err != nil {
 			slog.Error("encode network ADS-B heartbeat", "err", err)
 			return

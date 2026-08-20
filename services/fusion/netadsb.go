@@ -403,3 +403,42 @@ func (f *NetADSBFeed) Run(ctx context.Context, emit func(body []byte), status fu
 		}
 	}
 }
+
+// NetADSBHeartbeatDetail is the free-form half of this feed's heartbeat.
+//
+// Built here rather than in main so there is one place the wire shape is
+// written and a test can reach it. package main has no test files, which is
+// how the only heartbeat emitter in the system with no schema check ended up
+// being the one whose shape lives in a closure.
+func NetADSBHeartbeatDetail(cfg NetADSBConfig, s NetADSBStatus) map[string]any {
+	detail := map[string]any{
+		"source":    cfg.BaseURL,
+		"radius_nm": cfg.RadiusNM,
+		"aircraft":  s.Aircraft,
+	}
+	if s.Total > s.Aircraft {
+		// Ground traffic and stale fixes are filtered, so total > forwarded is
+		// normal. Reporting both is what makes a truncation at MaxAircraft
+		// visible instead of looking like a quiet sky.
+		detail["reported"] = s.Total
+	}
+	if !s.Healthy {
+		detail["error"] = s.LastError
+		detail["consecutive_failures"] = s.Failures
+	}
+	return detail
+}
+
+// NetADSBHeartbeat is the document this feed puts on the heartbeat topic.
+func NetADSBHeartbeat(sensorID string, ts time.Time, s NetADSBStatus, published, dropped int, detail map[string]any) map[string]any {
+	return map[string]any{
+		"schema_version": "1.0",
+		"ts":             ts.UTC().Format(time.RFC3339Nano),
+		"sensor_id":      sensorID,
+		"sensor_kind":    "net",
+		"healthy":        s.Healthy,
+		"published":      published,
+		"dropped":        dropped,
+		"detail":         detail,
+	}
+}
