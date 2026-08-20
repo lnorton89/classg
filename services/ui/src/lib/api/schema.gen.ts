@@ -7,65 +7,6 @@
  */
 
 /**
- * Fusion's stateful correlation of Detections over time. The unit both the CLI and the web app render.
- */
-export interface Track {
-  schema_version: '1.0'
-  track_id: string
-  /**
-   * TENTATIVE=seen once, CONFIRMED=corroborated, COASTING=lost but recent, CLOSED=expired
-   */
-  state: 'TENTATIVE' | 'CONFIRMED' | 'COASTING' | 'CLOSED'
-  first_seen: string
-  last_seen: string
-  detection_count: number
-  identity?: {
-    serial?: string | null
-    macs?: string[]
-    vendor?: string | null
-    /**
-     * ANSI/CTA-2063-A code from the serial. Survives MAC randomisation, unlike an OUI.
-     */
-    manufacturer_code?: string | null
-    model_hint?: string | null
-    operator_id?: string | null
-    ua_type?: string | null
-  }
-  /**
-   * Noisy-OR over distinct evidence classes. Answers 'is this really a drone', NOT 'is this a threat'.
-   */
-  confidence: number
-  evidence?: {
-    class: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H'
-    sensor_kind: 'wifi' | 'sdr' | 'ble' | 'net'
-    weight: number
-    count: number
-    last_seen?: string
-  }[]
-  current?: Position
-  history?: Position[]
-  /**
-   * SENSITIVE. Omitted by the API unless CLASSG_EXPOSE_OPERATOR_LOCATION=true. Clients MUST tolerate absence.
-   */
-  operator?: Position | null
-  rssi_dbm?: number | null
-  adsb_correlated?: boolean
-}
-export interface Position {
-  lat: number
-  lon: number
-  alt_geodetic_m?: number | null
-  height_agl_m?: number | null
-  /**
-   * Ground elevation under this fix, from a terrain model rather than from any sensor. Present ONLY when fusion derived height_agl_m by subtracting it -- its absence alongside a height_agl_m means the aircraft reported that height itself. Consumers that care about provenance must check this rather than trusting height_agl_m to have come from the aircraft.
-   */
-  terrain_elevation_m?: number | null
-  speed_mps?: number | null
-  track_deg?: number | null
-  at?: string
-}
-
-/**
  * A single observation by a single sensor. Immutable. Contains no inference about identity, tracking, or threat - those are fusion concerns.
  */
 export interface Detection {
@@ -173,4 +114,92 @@ export interface Detection {
     bytes: string
     parser: string
   } | null
+}
+
+/**
+ * Periodic sensor liveness report, emitted unconditionally so 'no drones present' and 'sensor wedged' stay distinguishable (ADR-0003). Every emitter -- sensor-wifi, sensor-sdr, and fusion's network ADS-B feed -- sends this exact shape on the heartbeat.<kind> topic.
+ */
+export interface Heartbeat {
+  schema_version: '1.0'
+  /**
+   * RFC3339 UTC. Historically sensor-wifi sent an epoch float here and the API's FlexTime papered over the divergence; RFC3339 is now the contract, matching the detection schema.
+   */
+  ts: string
+  sensor_id: string
+  sensor_kind: 'wifi' | 'sdr' | 'ble' | 'net'
+  /**
+   * The state of the sensor's own machinery, never of the sky. An empty sky is healthy; an unreachable radio or decoder is not.
+   */
+  healthy: boolean
+  /**
+   * Messages put on the bus since the process started.
+   */
+  published: number
+  /**
+   * Messages refused by the bus (backpressure) since the process started.
+   */
+  dropped: number
+  /**
+   * Sensor-specific diagnostics. Deliberately free-form: each sensor kind reports different machinery, and consumers must tolerate unknown keys here.
+   */
+  detail: {}
+}
+
+/**
+ * Fusion's stateful correlation of Detections over time. The unit both the CLI and the web app render.
+ */
+export interface Track {
+  schema_version: '1.0'
+  track_id: string
+  /**
+   * TENTATIVE=seen once, CONFIRMED=corroborated, COASTING=lost but recent, CLOSED=expired
+   */
+  state: 'TENTATIVE' | 'CONFIRMED' | 'COASTING' | 'CLOSED'
+  first_seen: string
+  last_seen: string
+  detection_count: number
+  identity?: {
+    serial?: string | null
+    macs?: string[]
+    vendor?: string | null
+    /**
+     * ANSI/CTA-2063-A code from the serial. Survives MAC randomisation, unlike an OUI.
+     */
+    manufacturer_code?: string | null
+    model_hint?: string | null
+    operator_id?: string | null
+    ua_type?: string | null
+  }
+  /**
+   * Noisy-OR over distinct evidence classes. Answers 'is this really a drone', NOT 'is this a threat'.
+   */
+  confidence: number
+  evidence?: {
+    class: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G' | 'H'
+    sensor_kind: 'wifi' | 'sdr' | 'ble' | 'net'
+    weight: number
+    count: number
+    last_seen?: string
+  }[]
+  current?: Position
+  history?: Position[]
+  /**
+   * SENSITIVE. Omitted by the API unless CLASSG_EXPOSE_OPERATOR_LOCATION=true. Clients MUST tolerate absence.
+   */
+  operator?: Position | null
+  rssi_dbm?: number | null
+  adsb_correlated?: boolean
+}
+export interface Position {
+  lat: number
+  lon: number
+  alt_geodetic_m?: number | null
+  height_agl_m?: number | null
+  /**
+   * Ground elevation under this fix, from a terrain model rather than from any sensor. Present ONLY when fusion derived height_agl_m by subtracting it -- its absence alongside a height_agl_m means the aircraft reported that height itself. Consumers that care about provenance must check this rather than trusting height_agl_m to have come from the aircraft.
+   */
+  terrain_elevation_m?: number | null
+  speed_mps?: number | null
+  track_deg?: number | null
+  at?: string
 }
