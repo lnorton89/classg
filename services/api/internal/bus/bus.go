@@ -47,6 +47,12 @@ const (
 	maxBackoff = 30 * time.Second
 )
 
+// Swapped in tests. The reset below is three lines that only misbehave after
+// several disconnects, which is exactly the shape of thing that ships broken
+// and is only noticed on the unit -- so the retry delay is made observable
+// rather than inferred from how long a test took.
+var afterFunc = time.After
+
 // Run subscribes until ctx is cancelled, reconnecting with capped exponential
 // backoff. It returns only when ctx is done.
 func Run(ctx context.Context, opts Options) {
@@ -56,9 +62,20 @@ func Run(ctx context.Context, opts Options) {
 	}
 	backoff := minBackoff
 	for ctx.Err() == nil {
-		err := runOnce(ctx, opts)
+		connected, err := runOnce(ctx, opts)
 		if ctx.Err() != nil {
 			return
+		}
+		// A connection that worked earns the short retry back. Without this the
+		// backoff only ever climbs: the api starts alongside fusion, so these
+		// subscribers reliably flap a few times at boot, reach the 30s cap, and
+		// stay there for the life of the process. A later blip lasting
+		// milliseconds then costs thirty seconds of no detections, no tracks
+		// and no heartbeats -- during which /health goes stale and the map
+		// empties, for a fault that had already cleared. The SDR sensor's
+		// reconnect resets, and so does fusion's; this was the one that did not.
+		if connected {
+			backoff = minBackoff
 		}
 		notify(opts.OnState, State{Connected: false, Reason: reasonOf(err)})
 		// Jitter so that several subscribers reconnecting after a shared
@@ -70,7 +87,7 @@ func Run(ctx context.Context, opts Options) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(sleep):
+		case <-afterFunc(sleep):
 		}
 		if backoff < maxBackoff {
 			backoff *= 2
@@ -81,16 +98,18 @@ func Run(ctx context.Context, opts Options) {
 	}
 }
 
-func runOnce(ctx context.Context, opts Options) error {
+// runOnce reports whether it ever reached the connected state, so the caller
+// can tell "the endpoint is down" from "the endpoint was up and dropped".
+func runOnce(ctx context.Context, opts Options) (bool, error) {
 	sock := zmq4.NewSub(ctx)
 	defer sock.Close()
 
 	if err := sock.Dial(opts.Endpoint); err != nil {
-		return err
+		return false, err
 	}
 	for _, t := range opts.Topics {
 		if err := sock.SetOption(zmq4.OptionSubscribe, t); err != nil {
-			return err
+			return false, err
 		}
 	}
 
@@ -100,7 +119,7 @@ func runOnce(ctx context.Context, opts Options) error {
 	for {
 		msg, err := sock.Recv()
 		if err != nil {
-			return err
+			return true, err
 		}
 		// PUB/SUB here is two-frame: [topic][json]. A single-frame message is
 		// a publisher bug rather than something to crash over.
