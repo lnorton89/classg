@@ -67,6 +67,14 @@ jobs:
       - name: Operator guide matches the CLI
         run: python ../../scripts/check-operator-guide.py
 
+      # Constants that four services keep private copies of, because fusion and
+      # api are separate Go modules, the API cannot read sensor-wifi's YAML, and
+      # the UI cannot import Go. Each copy says which one it mirrors; none of
+      # them came with a check. Two implementations disagreeing is how a
+      # password change left stolen sessions alive earlier in this project.
+      - name: Hand-copied constants still agree
+        run: python ../../scripts/check-mirrors.py
+
   # ---------------------------------------------------------------------------
   # fusion (Go) -- track correlation and confidence scoring.
   #
