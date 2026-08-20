@@ -179,8 +179,18 @@ func (s *Store) DeleteUserSessions(ctx context.Context, userID string) (int64, e
 }
 
 func (s *Store) ListSessions(ctx context.Context, limit int) ([]auth.Session, error) {
+	// A non-positive limit means NO limit, matching memstore and what the one
+	// caller that passes 0 actually needs.
+	//
+	// This used to substitute 200, and that was an authentication bug:
+	// revokeExcept lists sessions with limit 0 to revoke every OTHER session
+	// after a password change. The query is ORDER BY last_seen DESC, so a
+	// stolen session sitting idle sorts to the bottom -- past 200 rows it fell
+	// outside the window, was never listed, and therefore never deleted. The
+	// user changed their password believing they had locked the attacker out.
+	// memstore treats 0 as unlimited, so it only ever failed in production.
 	if limit <= 0 {
-		limit = 200
+		limit = -1 // SQLite: a negative LIMIT is no limit.
 	}
 	rows, err := s.q.ListSessions(ctx, int64(limit))
 	if err != nil {

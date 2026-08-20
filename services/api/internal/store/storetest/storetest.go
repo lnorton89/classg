@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -73,6 +74,77 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("SkipTotal", func(t *testing.T) { testSkipTotal(t, newStore) })
 	t.Run("HookRuleFired", func(t *testing.T) { testHookRuleFired(t, newStore) })
 	t.Run("LastSeenBefore", func(t *testing.T) { testLastSeenBefore(t, newStore) })
+	t.Run("SessionRevocation", func(t *testing.T) { testSessionRevocation(t, newStore) })
+}
+
+// A non-positive limit to ListSessions means NO limit, and both stores must
+// agree, because revocation is built on it.
+//
+// auth.revokeExcept lists sessions with limit 0 to delete every OTHER session
+// after a password change. libsqlstore used to substitute 200 while memstore
+// returned everything, and the query is newest-active first -- so a stolen
+// session sitting idle sorted below the cutoff, was never listed, and survived
+// the password change that was supposed to kill it. Only in production.
+func testSessionRevocation(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	// More sessions than any cap a store might invent, with the target user's
+	// session deliberately the LEAST recently active so a truncating
+	// implementation drops exactly the one that matters.
+	// Both users are real: libsqlstore enforces sessions.user_id as a foreign
+	// key and memstore does not, so a fixture that skips this passes in one
+	// store and fails in the other.
+	for _, id := range []string{"victim", "someone-else"} {
+		if err := s.PutUser(ctx, auth.User{
+			UserID: id, Username: id, Role: auth.RoleViewer,
+			CreatedAt: base, UpdatedAt: base,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mkSession := func(id, userID string, lastSeen time.Time) auth.Session {
+		return auth.Session{
+			SessionID: id, UserID: userID,
+			CreatedAt: base, ExpiresAt: base.Add(24 * time.Hour), LastSeen: lastSeen,
+		}
+	}
+	if err := s.PutSession(ctx, mkSession("stale-but-live", "victim", base.Add(-48*time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 250; i++ {
+		if err := s.PutSession(ctx, mkSession(
+			fmt.Sprintf("noise-%d", i), "someone-else", base.Add(time.Duration(i)*time.Second),
+		)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := s.ListSessions(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 251 {
+		t.Fatalf("limit 0 returned %d sessions, want all 251 -- a store that caps here leaves sessions unrevoked", len(all))
+	}
+	found := false
+	for _, sess := range all {
+		if sess.SessionID == "stale-but-live" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the least recently active session was missing; revocation would never see it")
+	}
+
+	// And an explicit positive limit is still honoured.
+	page, err := s.ListSessions(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page) != 10 {
+		t.Fatalf("limit 10 returned %d sessions, want 10", len(page))
+	}
 }
 
 // LastSeenBefore decides which tracks the stale sweep closes, so the two

@@ -225,6 +225,10 @@ type Store interface {
 	TouchSession(ctx context.Context, id string, lastSeen, expiresAt time.Time) error
 	DeleteSession(ctx context.Context, id string) error
 	DeleteUserSessions(ctx context.Context, userID string) (int64, error)
+	// ListSessions returns sessions newest-active first. A limit of zero or
+	// less means NO limit -- callers revoking sessions depend on seeing all
+	// of them, and a store that quietly caps instead leaves the ones it
+	// truncated alive.
 	ListSessions(ctx context.Context, limit int) ([]auth.Session, error)
 	PurgeExpiredSessions(ctx context.Context, now time.Time) (int64, error)
 
