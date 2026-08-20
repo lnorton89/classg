@@ -75,6 +75,94 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("HookRuleFired", func(t *testing.T) { testHookRuleFired(t, newStore) })
 	t.Run("LastSeenBefore", func(t *testing.T) { testLastSeenBefore(t, newStore) })
 	t.Run("SessionRevocation", func(t *testing.T) { testSessionRevocation(t, newStore) })
+	t.Run("HookRulesAndDeliveries", func(t *testing.T) { testHookRulesAndDeliveries(t, newStore) })
+}
+
+// Hook rules and deliveries were implemented in both stores with nothing
+// holding them to the same answers. The dispatcher reads rules on every event
+// and caches them, and deliveries are the audit trail an operator uses to work
+// out why a page did or did not arrive -- both are worth more than "it compiled
+// twice".
+//
+// The limit rule is the same one ListSessions got wrong: non-positive means no
+// limit, in both stores.
+func testHookRulesAndDeliveries(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	rule := hooks.Rule{
+		RuleID: "r-keep", Name: "keep", Enabled: true,
+		Event: "track.confirmed", Action: "webhook",
+		Config:    map[string]any{"url": "https://example.invalid/h"},
+		CreatedAt: base, UpdatedAt: base,
+	}
+	other := rule
+	other.RuleID, other.Name = "r-drop", "drop"
+	for _, r := range []hooks.Rule{rule, other} {
+		if err := s.PutHookRule(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rules, err := s.ListHookRules(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules) != 2 {
+		t.Fatalf("ListHookRules returned %d, want 2", len(rules))
+	}
+
+	if err := s.DeleteHookRule(ctx, "r-drop"); err != nil {
+		t.Fatal(err)
+	}
+	rules, err = s.ListHookRules(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rules) != 1 || rules[0].RuleID != "r-keep" {
+		t.Fatalf("after delete: %+v, want only r-keep", rules)
+	}
+	// Deleting something already gone must not report success in one store and
+	// an error in the other.
+	if err := s.DeleteHookRule(ctx, "r-drop"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("deleting a missing rule returned %v, want ErrNotFound", err)
+	}
+
+	for i := 0; i < 250; i++ {
+		d := hooks.Delivery{
+			DeliveryID: fmt.Sprintf("d-%d", i), RuleID: "r-keep", Event: "track.confirmed",
+			CreatedAt: base.Add(time.Duration(i) * time.Second), Status: "delivered", Attempts: 1,
+		}
+		if err := s.PutHookDelivery(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	all, err := s.ListHookDeliveries(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 250 {
+		t.Fatalf("limit 0 returned %d deliveries, want all 250", len(all))
+	}
+	if !all[0].CreatedAt.After(all[len(all)-1].CreatedAt) {
+		t.Error("deliveries must come back newest first")
+	}
+	page, err := s.ListHookDeliveries(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page) != 10 {
+		t.Fatalf("limit 10 returned %d deliveries, want 10", len(page))
+	}
+
+	n, err := s.PurgeHookDeliveries(ctx, base.Add(100*time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 100 {
+		t.Fatalf("purged %d deliveries, want the 100 strictly older than the cutoff", n)
+	}
 }
 
 // A non-positive limit to ListSessions means NO limit, and both stores must

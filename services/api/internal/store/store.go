@@ -245,6 +245,8 @@ type Store interface {
 	// an admin's concurrent edit with a worker's stale copy.
 	MarkHookRuleFired(ctx context.Context, ruleID string, at time.Time) error
 	PutHookDelivery(ctx context.Context, d hooks.Delivery) error
+	// ListHookDeliveries returns deliveries newest first. As with
+	// ListSessions, a limit of zero or less means NO limit.
 	ListHookDeliveries(ctx context.Context, limit int) ([]hooks.Delivery, error)
 
 	GetConfig(ctx context.Context, key string) (json.RawMessage, error)

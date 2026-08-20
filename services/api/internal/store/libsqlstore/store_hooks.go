@@ -123,8 +123,13 @@ func (s *Store) PutHookDelivery(ctx context.Context, d hooks.Delivery) error {
 }
 
 func (s *Store) ListHookDeliveries(ctx context.Context, limit int) ([]hooks.Delivery, error) {
+	// Non-positive means no limit, matching memstore. Nothing reaches this with
+	// zero today -- intParam rejects it at the handler -- but the identical
+	// "helpfully substitute 200" in ListSessions was an authentication bug,
+	// because the one caller passing 0 meant "all of them" and silently got
+	// the 200 most recent. Same shape, same store, so it goes the same way.
 	if limit <= 0 {
-		limit = 200
+		limit = -1 // SQLite: a negative LIMIT is no limit.
 	}
 	rows, err := s.q.ListHookDeliveries(ctx, int64(limit))
 	if err != nil {
