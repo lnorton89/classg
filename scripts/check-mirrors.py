@@ -28,7 +28,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from check_sensor_fields import sensor_field_names  # noqa: E402
+from check_sensor_fields import capture_field_names, sensor_field_names  # noqa: E402
 
 errors: list[str] = []
 
@@ -187,12 +187,29 @@ def check_sensor_health_fields() -> None:
     compare("sensor health", "api health.Sensor", go_fields, "ui SensorHealth", ts_fields)
 
 
+def check_capture_fields() -> None:
+    """api model.Capture -> UI Capture, by JSON field name.
+
+    Same shape of copy as the sensor fields above, and it had the same kind of
+    hole: model.Capture has always carried `error`, the reason a capture
+    failed, and the UI type never declared it. A failed capture therefore
+    rendered a red badge with nothing beside it while the explanation sat
+    unread in the response body. Extraction lives in check_sensor_fields.py.
+    """
+    go_fields, ts_fields, err = capture_field_names()
+    if err:
+        fail("capture fields", err)
+        return
+    compare("capture fields", "api model.Capture", go_fields, "ui Capture", ts_fields)
+
+
 def main() -> int:
     check_channel_plan()
     check_weights()
     check_corroborating_classes()
     check_channel_allowlist()
     check_sensor_health_fields()
+    check_capture_fields()
 
     if errors:
         for e in errors:
@@ -202,7 +219,8 @@ def main() -> int:
         print("divergence in scripts/check-mirrors.py with the reason it is correct.")
         return 1
     print("mirrors: channel plan, fusion weights, corroborating classes, the")
-    print("channel allowlist and the /health sensor fields all agree")
+    print("channel allowlist, the /health sensor fields and the capture fields")
+    print("all agree")
     return 0
 
 

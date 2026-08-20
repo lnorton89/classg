@@ -237,6 +237,14 @@ export interface Capture {
   duration_s: number
   size_bytes: number
   frame_count: number
+  /** Operator-supplied name for the capture, when one was given. */
+  label?: string
+  /**
+   * Why a capture failed. The API has always sent this on a failed capture and
+   * nothing here declared it, so the row rendered a red "failed" badge with the
+   * reason sitting unread in the response.
+   */
+  error?: string
   analysis?: CaptureAnalysisSummary
 }
 

@@ -177,6 +177,12 @@ function CaptureRow({ capture }: { capture: Capture }) {
             {format.bytes(capture.size_bytes)} · {capture.frame_count} frames ·{' '}
             {format.relative(capture.started_at)}
           </p>
+          {capture.error ? (
+            // A failed capture used to show only the badge. The API sends the
+            // reason; without it an operator sees that something went wrong and
+            // has nowhere to look for why.
+            <p className="text-down mt-1 text-xs">{capture.error}</p>
+          ) : null}
           <p className="text-muted-foreground font-mono text-2xs">
             {format.timestamp(capture.started_at)}
           </p>

@@ -196,6 +196,37 @@ describe('SensorsView', () => {
     expect(router.state.location.search).toEqual({ view: 'captures' })
   })
 
+  // A failed capture used to render a red badge and nothing else, because the
+  // UI's Capture type never declared `error` -- so the API's reason for the
+  // failure arrived on every response and was thrown away. scripts/check-mirrors.py
+  // now compares the two field lists so the type cannot silently fall behind again.
+  it('shows why a capture failed, not just that it did', async () => {
+    const user = userEvent.setup()
+    sensors = [sensor('wifi-0', 'wifi')]
+    captures = [
+      {
+        capture_id: 'cap-2',
+        iface: 'wlan1',
+        channel: 6,
+        duration_s: 120,
+        state: 'failed',
+        filename: 'wifi-0-doomed.pcap',
+        size_bytes: 0,
+        frame_count: 0,
+        started_at: '2026-08-18T00:00:00Z',
+        error: 'wlan1 is not in monitor mode',
+      },
+    ]
+
+    renderPage()
+    await screen.findByText('Channel occupancy')
+    await user.click(screen.getByRole('button', { name: /Captures/ }))
+
+    expect(await screen.findByText('wifi-0-doomed.pcap')).toBeVisible()
+    expect(screen.getByText('failed')).toBeVisible()
+    expect(screen.getByText('wlan1 is not in monitor mode')).toBeVisible()
+  })
+
   it('can return to the list and select a different sensor', async () => {
     const user = userEvent.setup()
     sensors = [sensor('wifi-0', 'wifi'), sensor('sdr-0', 'sdr')]
