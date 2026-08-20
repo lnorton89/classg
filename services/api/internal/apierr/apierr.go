@@ -8,6 +8,7 @@ package apierr
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 )
@@ -120,9 +121,25 @@ func Internal(message string) *Error {
 // Write emits err as the contract envelope. A nil or unrecognised error becomes
 // `internal` rather than an empty body, because a client that receives 500 with
 // no envelope has to special-case it and will get that wrong.
+//
+// errors.As rather than a type assertion. Nothing wraps an *Error today, but
+// the day something does -- fmt.Errorf("saving failed: %w", NotFound(...)) is
+// the obvious way to add context -- a bare assertion turns that 404 into a 500
+// and throws the message away. The unwrapping costs nothing and the failure it
+// prevents is silent.
 func Write(w http.ResponseWriter, err error) {
-	e, ok := err.(*Error)
-	if !ok || e == nil {
+	var e *Error
+	if !errors.As(err, &e) || e == nil {
+		// The one place in this service where information is destroyed rather
+		// than degraded: whatever this error said, the client is about to be
+		// told "unexpected server error" and nothing else will ever mention
+		// it. On a headless unit that is the difference between a diagnosable
+		// fault and a mystery, so it is logged on the way past.
+		if err != nil {
+			slog.Error("an error reached the client with no contract code; "+
+				"it was reported as internal and its text goes no further",
+				"err", err)
+		}
 		e = Internal("unexpected server error")
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
