@@ -149,7 +149,9 @@ export function StoragePanel() {
             The one field in this system that is personal data about a person rather than a
             measurement of an aircraft. It is included by default for this deployment, and this
             switch is the single place that decides — every read path honours it, and turning it
-            off strips it from tracks, detections, exports, the live stream and GraphQL alike.
+            off strips it from tracks, detections, exports, the live stream, GraphQL and
+            outgoing webhooks alike. Webhooks were missing from that list, and they are the one
+            path that sends it to somebody else&rsquo;s server rather than to this operator.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">

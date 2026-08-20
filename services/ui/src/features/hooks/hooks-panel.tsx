@@ -28,7 +28,12 @@ import { Alert, EmptyState, Skeleton } from '@/components/ui/misc'
 import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { ApiError, api } from '@/lib/api/client'
-import { hookDeliveriesQuery, hookRulesQuery, queryKeys } from '@/lib/api/queries'
+import {
+  hookDeliveriesQuery,
+  hookRulesQuery,
+  queryKeys,
+  settingsQuery,
+} from '@/lib/api/queries'
 import { SECRET_PLACEHOLDER } from '@/lib/api/types'
 import type {
   HookAction,
@@ -298,7 +303,8 @@ const ACTION_OPTIONS: { value: HookAction; label: string }[] = [
   { value: 'email', label: 'Email' },
 ]
 
-function RuleEditor({
+/** Exported for its own test; the panel renders it directly. */
+export function RuleEditor({
   rule,
   events,
   smtpConfigured,
@@ -310,6 +316,15 @@ function RuleEditor({
   onDone: () => void
 }) {
   const queryClient = useQueryClient()
+  const settings = useQuery(settingsQuery())
+  // A webhook is the only path out of this unit that reaches somebody else's
+  // server, and the pilot's ground position rides on it whenever this is on.
+  // The API types this one as a real boolean, but the settings store is
+  // stringly typed underneath and setting-fields.tsx reads it either way.
+  // Matching that is cheaper than being the one place that reads it wrong and
+  // quietly under-warns.
+  const exposesOperatorRaw = settings.data?.settings['api.expose_operator_location']?.value
+  const exposesOperator = exposesOperatorRaw === true || exposesOperatorRaw === 'true'
   const [name, setName] = useState(rule?.name ?? '')
   const [event, setEvent] = useState<HookEvent>(rule?.event ?? 'track.confirmed')
   const [action, setAction] = useState<HookAction>(rule?.action ?? 'webhook')
@@ -444,6 +459,33 @@ function RuleEditor({
 
       {action === 'webhook' ? (
         <div className="grid gap-3 sm:grid-cols-2">
+          {/* Nothing here said what actually leaves the unit. A track.confirmed
+              payload carries the aircraft's serial and position, and -- while
+              Settings > Data has the operator position switched on -- the
+              PILOT's ground position too. That switch reads as "include it in
+              responses", and an admin wiring up a chat webhook has no reason to
+              connect the two. docs/research/06-legal-and-ethics.md is the
+              reason this is worth a sentence in front of them rather than a
+              paragraph in a document. */}
+          <Alert
+            tone={exposesOperator ? 'warn' : 'info'}
+            title="What this sends"
+            className="sm:col-span-2"
+          >
+            A <span className="font-mono">track.confirmed</span> POST carries the track id,
+            confidence, the aircraft&rsquo;s serial and vendor where known, and its position.
+            {exposesOperator ? (
+              <>
+                {' '}
+                It also carries <span className="font-mono">operator_lat</span> and{' '}
+                <span className="font-mono">operator_lon</span> — the pilot&rsquo;s ground
+                position — because Settings &rsaquo; Data has that switched on. Turning it off
+                there removes it from webhooks as well.
+              </>
+            ) : (
+              ' The pilot’s ground position is not included: Settings › Data has it switched off.'
+            )}
+          </Alert>
           <FormField label="URL">
             {(props) => (
               <Input {...props} value={url} onChange={(e) => setUrl(e.target.value)} />
