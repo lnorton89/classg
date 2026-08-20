@@ -3,6 +3,9 @@ package fusion
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/santhosh-tekuri/jsonschema/v6"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -281,5 +284,70 @@ func TestPositionCarriesKinematics(t *testing.T) {
 	}
 	if *tr.Current.SpeedMPS != 14.5 || *tr.Current.TrackDeg != 271 {
 		t.Fatalf("speed/track = %v/%v", *tr.Current.SpeedMPS, *tr.Current.TrackDeg)
+	}
+}
+
+// What fusion PUBLISHES is a track, and until now nothing validated one against
+// track.schema.json -- the file this package cites in three comments.
+//
+// TestTrackMarshalsEvidenceAsSchemaArray checks the field that has actually
+// broken, by decoding into []Evidence. That is a check against our own idea of
+// the contract: it passes for any array, including one whose members are wrong,
+// and says nothing about the other thirteen properties. The API tolerates a
+// map here on purpose, so a publisher regression is invisible downstream too.
+func TestPublishedTrackSatisfiesTheSchema(t *testing.T) {
+	source, err := os.ReadFile("../../schemas/track.schema.json")
+	if err != nil {
+		t.Fatalf("read schema: %v", err)
+	}
+	doc, err := jsonschema.UnmarshalJSON(strings.NewReader(string(source)))
+	if err != nil {
+		t.Fatalf("parse schema: %v", err)
+	}
+	compiler := jsonschema.NewCompiler()
+	if err := compiler.AddResource("track.schema.json", doc); err != nil {
+		t.Fatalf("add schema: %v", err)
+	}
+	schema, err := compiler.Compile("track.schema.json")
+	if err != nil {
+		t.Fatalf("compile schema: %v", err)
+	}
+
+	// A track with enough on it to exercise the optional branches: two evidence
+	// classes, a position, and a confirmed state.
+	s := newTestStore()
+	now := time.Now().UTC()
+	s.Ingest(det("B", "SER1", "", now), now)
+	tr := s.Ingest(det("A", "SER1", "", now), now)
+
+	body, err := json.Marshal(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	instance, err := jsonschema.UnmarshalJSON(strings.NewReader(string(body)))
+	if err != nil {
+		t.Fatalf("decode published track: %v", err)
+	}
+	if err := schema.Validate(instance); err != nil {
+		t.Fatalf("fusion publishes a track track.schema.json rejects: %v (body: %s)", err, body)
+	}
+
+	// additionalProperties:false has to be doing work, or the check above
+	// passes for anything.
+	var loose map[string]any
+	if err := json.Unmarshal(body, &loose); err != nil {
+		t.Fatal(err)
+	}
+	loose["invented_field"] = true
+	extra, err := json.Marshal(loose)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad, err := jsonschema.UnmarshalJSON(strings.NewReader(string(extra)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(bad); err == nil {
+		t.Error("the schema accepted an invented field; this check proves nothing")
 	}
 }
