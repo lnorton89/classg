@@ -1,6 +1,8 @@
 package capture
 
 import (
+	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -153,5 +155,42 @@ func TestPathStaysInsideCaptureDir(t *testing.T) {
 				t.Fatalf("path escaped the capture directory: %s", got)
 			}
 		})
+	}
+}
+
+// The exclusion is per radio, not per manager. A single flag meant a capture
+// on the ALFA refused a capture on the TP-Link sweep adapter, for a collision
+// that cannot happen between two separate devices -- while still, correctly,
+// refusing a second capture on the same one.
+//
+// Driven through the claim itself rather than Start's full path: everything
+// after the claim needs a monitor-mode radio and tcpdump, and the claim is
+// what this is about.
+func TestBusyIsPerInterface(t *testing.T) {
+	m := NewManager(nil, Options{})
+
+	m.mu.Lock()
+	m.busy["wlan-alfa"] = true
+	m.mu.Unlock()
+
+	_, err := m.Start(context.Background(), Request{Iface: "wlan-alfa", Channel: 6, DurationS: 5})
+	if !errors.Is(err, ErrBusy) {
+		t.Errorf("a second capture on the same interface returned %v, want ErrBusy", err)
+	}
+
+	// The other adapter must get past the claim. It cannot get much further
+	// without hardware, so anything other than ErrBusy proves the gate opened.
+	_, err = m.Start(context.Background(), Request{Iface: "wlan-tplink", Channel: 6, DurationS: 5})
+	if errors.Is(err, ErrBusy) {
+		t.Error("a capture on the other adapter was refused as busy")
+	}
+
+	// And a failed claim must be released, or one bad request wedges the
+	// interface until the process restarts.
+	m.mu.Lock()
+	stillHeld := m.busy["wlan-tplink"]
+	m.mu.Unlock()
+	if stillHeld {
+		t.Error("wlan-tplink stayed claimed after the attempt failed")
 	}
 }

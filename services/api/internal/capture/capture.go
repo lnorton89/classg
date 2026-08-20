@@ -96,15 +96,27 @@ type Manager struct {
 
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
-	// busy is claimed by Start before any I/O and released when the capture's
-	// goroutine finishes, so two Starts cannot interleave. running alone is
-	// not enough: the id is only inserted after preflight, and that window is
-	// exactly where a second Start used to slip in.
-	busy bool
+	// busy holds the interfaces a capture currently owns. Claimed by Start
+	// before any I/O and released when the capture's goroutine finishes, so
+	// two Starts cannot interleave. running alone is not enough: the id is
+	// only inserted after preflight, and that window is exactly where a second
+	// Start used to slip in.
+	//
+	// Per interface, not one flag for the whole manager. The exclusion exists
+	// because a capture retunes a radio (see ErrBusy), and this unit now has
+	// two Wi-Fi receivers on separate radios -- a single flag made recording
+	// the TP-Link sweep adapter refuse while the ALFA was busy, for a
+	// collision that cannot happen between two different devices.
+	busy map[string]bool
 }
 
 func NewManager(st store.Store, opts Options) *Manager {
-	return &Manager{opts: opts, store: st, running: map[string]context.CancelFunc{}}
+	return &Manager{
+		opts:    opts,
+		store:   st,
+		running: map[string]context.CancelFunc{},
+		busy:    map[string]bool{},
+	}
 }
 
 // ErrPrivileges means the machine cannot capture, not that the request was bad.
@@ -114,7 +126,7 @@ var ErrPrivileges = errors.New("privileges required")
 // single exclusive resource: a second capture would retune the shared radio
 // under the first AND under the wifi sensor's channel hopper. Sweeps grew an
 // ErrBusy gate for exactly this collision; captures get the same one.
-var ErrBusy = errors.New("a capture is already running")
+var ErrBusy = errors.New("a capture is already running on this interface")
 
 // commandTimeout bounds the iw invocations. A wedged mt7921u can hang iw
 // inside the kernel, and without a deadline that pinned the handler goroutine
@@ -185,18 +197,18 @@ func (m *Manager) Start(ctx context.Context, req Request) (model.Capture, error)
 		return model.Capture{}, err
 	}
 
-	// Claim the radio before any I/O. Released by fail() below on every error
-	// path, or by run()'s defer once the capture ends.
+	// Claim this interface's radio before any I/O. Released by fail() below on
+	// every error path, or by run()'s defer once the capture ends.
 	m.mu.Lock()
-	if m.busy {
+	if m.busy[req.Iface] {
 		m.mu.Unlock()
 		return model.Capture{}, ErrBusy
 	}
-	m.busy = true
+	m.busy[req.Iface] = true
 	m.mu.Unlock()
 	fail := func(err error) (model.Capture, error) {
 		m.mu.Lock()
-		m.busy = false
+		delete(m.busy, req.Iface)
 		m.mu.Unlock()
 		return model.Capture{}, err
 	}
@@ -276,7 +288,7 @@ func (m *Manager) run(ctx context.Context, c model.Capture) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.running, c.CaptureID)
-		m.busy = false
+		delete(m.busy, c.Iface)
 		m.mu.Unlock()
 	}()
 

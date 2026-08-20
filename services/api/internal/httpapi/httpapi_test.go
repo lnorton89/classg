@@ -574,7 +574,7 @@ func TestSecondWiFiSensorUsesCompanionUnit(t *testing.T) {
 	}
 }
 
-func TestCaptureInterfaceMustMatchEnvironment(t *testing.T) {
+func TestCaptureRejectsAnInterfaceNoSensorIsReading(t *testing.T) {
 	h := newHarness(t, map[string]string{"CLASSG_WIFI_INTERFACE": "wlan-test"})
 	w := h.do(t, "POST", "/api/v1/captures", `{"iface":"wlan0","channel":6,"duration_s":5}`)
 	if w.Code != http.StatusBadRequest {
@@ -583,6 +583,64 @@ func TestCaptureInterfaceMustMatchEnvironment(t *testing.T) {
 	err := decodeErr(t, w)
 	if err.Error.Field != "iface" || !strings.Contains(err.Error.Message, "wlan-test") {
 		t.Fatalf("unexpected error: %+v", err.Error)
+	}
+}
+
+// Each Wi-Fi card must offer its OWN adapter. capture.wifi_interface is a
+// single global, so a capture started from the wifi-1 card recorded the other
+// receiver's adapter -- while the field sat read-only in the browser "so a
+// browser cannot silently point capture at another device". The heartbeat
+// already says which interface each sensor is reading.
+func TestEachWiFiSensorOffersItsOwnCaptureInterface(t *testing.T) {
+	h := newHarness(t, map[string]string{"CLASSG_WIFI_INTERFACE": "wlan1"})
+	now := time.Now()
+	h.reg.Heartbeat(health.Heartbeat{SensorID: "wifi-0", SensorKind: "wifi", Healthy: true, TS: now,
+		Detail: map[string]any{"iface": "wlan-alfa"}})
+	h.reg.Heartbeat(health.Heartbeat{SensorID: "wifi-1", SensorKind: "wifi", Healthy: true, TS: now,
+		Detail: map[string]any{"iface": "wlan-tplink"}})
+	// No iface in its detail: the configured value must still be used, so a
+	// sensor kind that reports none behaves exactly as it did before.
+	h.reg.Heartbeat(health.Heartbeat{SensorID: "wifi-2", SensorKind: "wifi", Healthy: true, TS: now})
+
+	w := h.do(t, "GET", "/api/v1/sensors", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status %d", w.Code)
+	}
+	var resp struct {
+		Sensors []struct {
+			SensorID string `json:"sensor_id"`
+			Config   struct {
+				Capture struct {
+					Interface string `json:"interface"`
+				} `json:"capture"`
+			} `json:"config"`
+		} `json:"sensors"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, s := range resp.Sensors {
+		got[s.SensorID] = s.Config.Capture.Interface
+	}
+	want := map[string]string{"wifi-0": "wlan-alfa", "wifi-1": "wlan-tplink", "wifi-2": "wlan1"}
+	for id, iface := range want {
+		if got[id] != iface {
+			t.Errorf("%s offered capture on %q, want %q", id, got[id], iface)
+		}
+	}
+
+	// And the gate must accept what the card offers, or the button is a 400.
+	// Past the iface check is as far as this can go without a radio; anything
+	// but an iface-field 400 proves the gate let it through.
+	for _, iface := range []string{"wlan-alfa", "wlan-tplink", "wlan1"} {
+		body := fmt.Sprintf(`{"iface":%q,"channel":6,"duration_s":5}`, iface)
+		w := h.do(t, "POST", "/api/v1/captures", body)
+		if w.Code == http.StatusBadRequest {
+			if e := decodeErr(t, w); e.Error.Field == "iface" {
+				t.Errorf("capture on %s was refused by the interface gate: %s", iface, e.Error.Message)
+			}
+		}
 	}
 }
 

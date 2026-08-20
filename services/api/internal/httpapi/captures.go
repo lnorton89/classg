@@ -1,11 +1,14 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/classg/api/internal/apierr"
 	"github.com/classg/api/internal/capture"
@@ -37,16 +40,51 @@ func (s *Server) handleGetCapture(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, c)
 }
 
+// captureIfaces is the set of interfaces a capture request may name.
+//
+// The gate this backs is not about validity -- capture.Validate already
+// rejects anything that is not an interface name -- it is about a browser not
+// being able to point tcpdump at an arbitrary device on the host. That still
+// holds here: the set is the unit's own configured interface plus whichever
+// interfaces its Wi-Fi sensors report reading, and nothing a client sends can
+// add to it.
+//
+// It was a single global compared with ==, which made the whole capture
+// feature single-adapter. Two receivers now run at once, so at most one of
+// them could ever be captured from; and since capture.wifi_interface ships
+// "wlan1" while deploy/udev/70-classg-wifi.rules renames the adapters to
+// wlan-alfa and wlan-tplink, a default install could capture from neither.
+//
+// The configured value stays in the set even when no sensor reports it: a
+// capture on an adapter whose sensor is down is exactly how an operator
+// diagnoses the adapter.
+func (s *Server) captureIfaces(ctx context.Context) []string {
+	out := []string{}
+	if s.cfg.WifiInterface != "" {
+		out = append(out, s.cfg.WifiInterface)
+	}
+	for _, sensor := range s.Health(ctx).Sensors {
+		if sensor.SensorKind != "wifi" {
+			continue
+		}
+		if iface, ok := sensor.Detail["iface"].(string); ok && iface != "" && !slices.Contains(out, iface) {
+			out = append(out, iface)
+		}
+	}
+	return out
+}
+
 func (s *Server) handleStartCapture(w http.ResponseWriter, r *http.Request) {
 	var req capture.Request
 	if err := decodeBody(r, &req); err != nil {
 		fail(w, err)
 		return
 	}
-	if req.Iface != s.cfg.WifiInterface {
+	if allowed := s.captureIfaces(r.Context()); !slices.Contains(allowed, req.Iface) {
 		fail(w, apierr.InvalidParameter(
 			"iface",
-			fmt.Sprintf("iface must match CLASSG_WIFI_INTERFACE (%s)", s.cfg.WifiInterface),
+			fmt.Sprintf("iface must be one of %s (CLASSG_WIFI_INTERFACE, or an interface a Wi-Fi sensor is reading)",
+				strings.Join(allowed, ", ")),
 		))
 		return
 	}

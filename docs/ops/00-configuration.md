@@ -211,10 +211,23 @@ Command-line flags still override Wi-Fi sensor defaults. Systemd should use
 therefore remain authoritative over automatic dotenv loading.
 
 The Sensors page reads its capture controls from the API's resolved
-`CLASSG_WIFI_INTERFACE`, `CLASSG_WIFI_CHANNEL`, `CLASSG_CAPTURE_DURATION_S`, and
-`CLASSG_CAPTURE_LABEL` values. The interface is read-only in the browser. Sensor
-restart uses `CLASSG_SENSOR_RESTART_COMMAND`; when that executable is not
-available in the API runtime, the UI disables restart and shows the reason
+`CLASSG_WIFI_CHANNEL`, `CLASSG_CAPTURE_DURATION_S`, and `CLASSG_CAPTURE_LABEL`
+values.
+
+The **interface is per sensor**, taken from the `iface` each Wi-Fi sensor
+reports on its own heartbeat, and `CLASSG_WIFI_INTERFACE` is the fallback for a
+sensor that reports none. It has to be: that setting is one value, this unit
+runs two Wi-Fi receivers, and its default (`wlan1`) is a name
+`deploy/udev/70-classg-wifi.rules` renames away from — so a single global was
+wrong for one adapter on a configured unit and for both on a fresh one.
+`POST /captures` accepts any interface in that set and nothing else, so the
+browser still cannot point capture at an arbitrary device. Captures on
+different adapters run concurrently; a second capture on the *same* adapter is
+refused with 409, because that one would retune a radio out from under the
+first.
+
+Sensor restart uses `CLASSG_SENSOR_RESTART_COMMAND`; when that executable is
+not available in the API runtime, the UI disables restart and shows the reason
 instead of reporting a false success.
 
 ## Production checklist

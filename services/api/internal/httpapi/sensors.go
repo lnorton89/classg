@@ -37,6 +37,30 @@ type sensorsResponse struct {
 	Sensors []sensorEntry `json:"sensors"`
 }
 
+// captureIface is the interface a capture started from this sensor's card
+// should record on, preferring what the sensor says it is reading.
+//
+// capture.wifi_interface is one global for what is now two Wi-Fi receivers, so
+// it is wrong for at least one of them by construction: a capture started from
+// the wifi-1 card recorded wlan-alfa, the other adapter, while its own card
+// showed the interface as read-only "so a browser cannot silently point
+// capture at another device". On a default install it is wrong for both --
+// the setting ships "wlan1" and deploy/udev/70-classg-wifi.rules renames the
+// adapters to wlan-alfa and wlan-tplink, so every capture from the UI failed
+// preflight on an interface that does not exist.
+//
+// The heartbeat carries the answer. `detail` is deliberately free-form
+// (schemas/heartbeat.schema.json), so this reads it as a hint and keeps the
+// configured value whenever the sensor does not offer one -- a sensor kind
+// that reports no iface, or a wifi sensor too old to send it, behaves exactly
+// as before.
+func captureIface(sensor health.Sensor, configured string) string {
+	if iface, ok := sensor.Detail["iface"].(string); ok && iface != "" {
+		return iface
+	}
+	return configured
+}
+
 func (s *Server) handleListSensors(w http.ResponseWriter, r *http.Request) {
 	rep := s.Health(r.Context())
 	expected := map[string]bool{}
@@ -49,7 +73,7 @@ func (s *Server) handleListSensors(w http.ResponseWriter, r *http.Request) {
 	for _, sensor := range rep.Sensors {
 		capture := captureConfig{Supported: sensor.SensorKind == "wifi"}
 		if capture.Supported {
-			capture.Interface = s.cfg.WifiInterface
+			capture.Interface = captureIface(sensor, s.cfg.WifiInterface)
 			capture.Channel = s.cfg.WifiChannel
 			capture.DurationS = s.cfg.CaptureDurationS
 			capture.Label = s.cfg.CaptureLabel

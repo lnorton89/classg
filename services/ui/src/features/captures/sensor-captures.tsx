@@ -43,8 +43,10 @@ export function SensorCaptureControl({ sensor }: { sensor: SensorHealth }) {
       </summary>
       <div className="mt-3 space-y-3">
         <p className="text-muted-foreground text-xs leading-relaxed">
-          Interface and defaults come from the API&apos;s centralized <code>.env</code>. The
-          interface is locked here so a browser cannot silently point capture at another device.
+          Records {sensor.sensor_id}&apos;s own adapter — the interface it reports on its
+          heartbeat, falling back to <code>CLASSG_WIFI_INTERFACE</code> when it reports none. It
+          is locked here so a browser cannot silently point capture at another device. Channel
+          and defaults come from the API&apos;s centralized <code>.env</code>.
         </p>
 
         {error?.isPrivilegesRequired ? (
@@ -64,7 +66,7 @@ export function SensorCaptureControl({ sensor }: { sensor: SensorHealth }) {
             start.mutate({ iface, channel, duration_s: duration, label })
           }}
         >
-          <FormField label="Interface" hint="CLASSG_WIFI_INTERFACE">
+          <FormField label="Interface" hint={`read by ${sensor.sensor_id}`}>
             {(props) => <Input {...props} value={iface} readOnly className="font-mono" />}
           </FormField>
           <FormField label="Channel" hint="CLASSG_WIFI_CHANNEL">

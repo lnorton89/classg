@@ -186,7 +186,8 @@ var Defs = []Def{
 
 	// --- Capture
 	{Key: "capture.wifi_interface", Env: "CLASSG_WIFI_INTERFACE", Kind: KindString,
-		Default: "wlan1", Mutable: true, Doc: "monitor-mode interface used for captures"},
+		Default: "wlan1", Mutable: true,
+		Doc: "fallback capture interface. Each Wi-Fi sensor's capture card uses the iface it reports on its own heartbeat; this covers a sensor that reports none"},
 	{Key: "capture.wifi_channel", Env: "CLASSG_WIFI_CHANNEL", Kind: KindInt,
 		Default: "6", Mutable: true, Doc: "default capture channel"},
 	{Key: "capture.duration_s", Env: "CLASSG_CAPTURE_DURATION_S", Kind: KindInt,
