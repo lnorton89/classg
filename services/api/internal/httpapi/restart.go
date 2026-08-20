@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/classg/api/internal/proc"
 )
 
 // errRestartUnavailable means the machine cannot restart units, as opposed to
@@ -81,7 +83,7 @@ func (s SystemdSensors) Restart(sensorID string, sensorKind string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), restartTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, argv[0], argv[1:]...).CombinedOutput()
+	out, err := proc.Command(ctx, argv[0], argv[1:]...).CombinedOutput()
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		return fmt.Errorf("restarting %s timed out after %s; systemd may be wedged", unit, restartTimeout)
 	}

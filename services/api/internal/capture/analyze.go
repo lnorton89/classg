@@ -8,12 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/classg/api/internal/model"
+	"github.com/classg/api/internal/proc"
 	"github.com/classg/api/internal/store"
 )
 
@@ -109,24 +109,11 @@ func (m *Manager) Analyze(ctx context.Context, id string) (json.RawMessage, mode
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, m.opts.PythonBin, script, path)
+	cmd := proc.Command(runCtx, m.opts.PythonBin, script, path)
 	cmd.Dir = m.opts.SensorWifiDir // so `import classg_wifi` resolves
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-
-	// Without this the deadline above does not actually bound anything, which
-	// a test caught after the timeout was already written: CommandContext
-	// kills the direct child, but Stdout and Stderr are buffers rather than
-	// files, so Wait also waits for the copy goroutines -- and any grandchild
-	// that inherited the pipe holds them open. A killed interpreter whose own
-	// child is still running left Wait blocked for the full run, deadline and
-	// all. WaitDelay closes the pipes and returns instead.
-	//
-	// Five seconds because a healthy analyzer's output is already flushed by
-	// the time it exits; this only ever elapses when something is holding a
-	// pipe it should not be.
-	cmd.WaitDelay = 5 * time.Second
 
 	if err := cmd.Run(); err != nil {
 		// Say which of the two happened. "analyzer unavailable: signal: killed"

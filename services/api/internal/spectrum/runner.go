@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/classg/api/internal/model"
+	"github.com/classg/api/internal/proc"
 	"github.com/classg/api/internal/store"
 )
 
@@ -97,7 +98,7 @@ func (c CommandSweeper) run(ctx context.Context, timeout time.Duration, args ...
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, c.Bin, args...)
+	cmd := proc.Command(ctx, c.Bin, args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

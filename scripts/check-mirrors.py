@@ -235,6 +235,30 @@ def check_shell_state_files() -> None:
         compare(label, sh_file, sh, f"api deploy.{go_name}", go)
 
 
+def check_exec_sites() -> None:
+    """Every subprocess goes through internal/proc.
+
+    Not style. exec.CommandContext's deadline kills the direct child and then
+    waits for the output pipes to close, which a grandchild -- or a process
+    stuck in an uninterruptible kernel wait on a wedged USB device -- keeps
+    open indefinitely. Measured: a 300ms deadline held a request goroutine for
+    120 seconds. internal/proc sets WaitDelay, which is the only thing that
+    makes any of those timeouts real, and a direct exec anywhere else is a
+    bound that the exact failure it was written for can outlast.
+    """
+    offenders = []
+    for path in sorted((REPO / "services").rglob("*.go")):
+        rel = path.relative_to(REPO).as_posix()
+        if rel.endswith("_test.go") or "/internal/proc/" in rel:
+            continue
+        body = path.read_text(encoding="utf-8")
+        for n, line in enumerate(body.splitlines(), 1):
+            if "exec.CommandContext(" in line or "exec.Command(" in line:
+                offenders.append(f"{rel}:{n}")
+    for site in offenders:
+        fail("subprocess launch", f"{site} starts a process without proc.Command")
+
+
 def main() -> int:
     check_channel_plan()
     check_weights()
@@ -242,6 +266,7 @@ def main() -> int:
     check_channel_allowlist()
     check_go_ts_fields()
     check_shell_state_files()
+    check_exec_sites()
 
     if errors:
         for e in errors:
@@ -252,7 +277,8 @@ def main() -> int:
         return 1
     print("mirrors: channel plan, fusion weights, corroborating classes and the")
     print(f"channel allowlist agree; so do {len(GO_TS_PAIRS)} Go/TypeScript response shapes")
-    print(f"and {len(SHELL_GO_PAIRS)} hand-written state documents")
+    print(f"and {len(SHELL_GO_PAIRS)} hand-written state documents; every subprocess")
+    print("goes through internal/proc")
     return 0
 
 

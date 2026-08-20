@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/classg/api/internal/model"
+	"github.com/classg/api/internal/proc"
 	"github.com/classg/api/internal/store"
 	"github.com/classg/api/internal/ulid"
 )
@@ -280,7 +281,7 @@ func (m *Manager) preflight(ctx context.Context, iface string) error {
 	// iw against a wedged adapter can hang in the kernel.
 	iwCtx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
-	out, err := exec.CommandContext(iwCtx, "iw", "dev", iface, "info").CombinedOutput()
+	out, err := proc.Command(iwCtx, "iw", "dev", iface, "info").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: cannot read %s (%v)", ErrPrivileges, iface, err)
 	}
@@ -305,7 +306,7 @@ func (m *Manager) run(ctx context.Context, c model.Capture) {
 	// and it is receive-side tuning: it changes what the radio listens to, not
 	// what it emits. Bounded like preflight's iw call, and for the same wedge.
 	tuneCtx, cancelTune := context.WithTimeout(ctx, commandTimeout)
-	out, err := exec.CommandContext(tuneCtx, "iw", "dev", c.Iface, "set", "channel",
+	out, err := proc.Command(tuneCtx, "iw", "dev", c.Iface, "set", "channel",
 		fmt.Sprint(c.Channel)).CombinedOutput()
 	cancelTune()
 	if err != nil {
@@ -316,7 +317,7 @@ func (m *Manager) run(ctx context.Context, c model.Capture) {
 	deadline, cancel := context.WithTimeout(ctx, time.Duration(c.DurationS)*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(deadline, "tcpdump",
+	cmd := proc.Command(deadline, "tcpdump",
 		"-i", c.Iface,
 		"-w", path,
 		"-s", "0",
