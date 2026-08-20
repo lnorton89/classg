@@ -81,3 +81,64 @@ describe('partitionTracks', () => {
     expect(result.unidentified).toEqual([])
   })
 })
+
+/**
+ * tier.ts says it MIRRORS corroboratingOnlyClasses in services/fusion/track.go,
+ * and a mirror with nothing holding it flat is just a second implementation.
+ * These pin the class list against fusion's, so the two cannot drift quietly.
+ *
+ * The empty case deliberately does NOT mirror Go, and that is worth a test of
+ * its own so nobody "fixes" it into agreement. The two answer different
+ * questions: fusion's identified() decides whether to PROMOTE a track, so
+ * absence must not promote; this decides whether to DISPLAY one as identified,
+ * and demoting on absence would hide a real aircraft whenever a response
+ * arrives trimmed. Opposite defaults, each conservative for its own job.
+ */
+describe('identification mirrors fusion', () => {
+  const base = {
+    schema_version: '1.0',
+    track_id: 'T1',
+    state: 'CONFIRMED',
+    first_seen: '2026-08-10T00:00:00Z',
+    last_seen: '2026-08-10T00:00:01Z',
+    detection_count: 1,
+    confidence: 0.5,
+    adsb_correlated: false,
+  } as unknown as Track
+
+  function withEvidence(classes: string[]): Track {
+    return {
+      ...base,
+      evidence: classes.map((c) => ({
+        class: c,
+        sensor_kind: 'wifi',
+        weight: 0.5,
+        count: 1,
+      })),
+    } as unknown as Track
+  }
+
+  it('counts only the corroborating-only classes as insufficient', () => {
+    // C, D and H corroborate but never identify -- the same three fusion lists
+    // in corroboratingOnlyClasses.
+    for (const c of ['C', 'D', 'H']) {
+      const { active, unidentified } = partitionTracks([withEvidence([c])])
+      expect(active, `class ${c} must not identify a track on its own`).toHaveLength(0)
+      expect(unidentified).toHaveLength(1)
+    }
+    for (const c of ['A', 'B']) {
+      const { active } = partitionTracks([withEvidence([c])])
+      expect(active, `class ${c} identifies a track`).toHaveLength(1)
+    }
+    // One identifying class is enough, alongside any number of corroborators.
+    expect(partitionTracks([withEvidence(['C', 'D', 'A'])]).active).toHaveLength(1)
+  })
+
+  it('shows a track with no evidence rather than hiding it', () => {
+    // Deliberately the opposite of fusion's identified(), which returns false
+    // here. See tier.ts: absence is missing data, not weak data, and this side
+    // is choosing what an operator sees.
+    expect(partitionTracks([{ ...base, evidence: [] }]).active).toHaveLength(1)
+    expect(partitionTracks([base]).active).toHaveLength(1)
+  })
+})
