@@ -200,6 +200,23 @@ func safeReturn(s string) string {
 	if s == "" || !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") {
 		return "/"
 	}
+	// A backslash is a forward slash to a browser. The WHATWG URL parser
+	// normalises it for special schemes, so "/\evil.example" resolves exactly
+	// as "//evil.example" does -- protocol-relative, off this origin, and past
+	// the check above, which only looks for the slash spelling. Chrome and
+	// Firefox both do this.
+	if strings.Contains(s, "\\") {
+		return "/"
+	}
+	// Control characters have no business in a path and every business in a
+	// Location header: some parsers strip them before resolving, so a path
+	// containing a tab or newline can become protocol-relative after the
+	// check above has already passed it.
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f {
+			return "/"
+		}
+	}
 	return s
 }
 
