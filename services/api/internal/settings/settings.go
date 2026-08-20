@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -293,11 +294,64 @@ type Value struct {
 
 // Settings is the resolved Tier 2 set.
 type Settings struct {
+	// mu guards values. Reads are almost all at startup -- the running config
+	// is assembled once into config.Config and everything else reads that --
+	// but GET /config/settings reads this on every request and Update writes
+	// it, so the two need separating.
+	mu     sync.RWMutex
 	values map[string]Value
+}
+
+// Update re-resolves values that have just been written to the store.
+//
+// Without this, a stored setting was invisible until the process restarted:
+// PutMany wrote it to the database and the resolved set this serves stayed at
+// whatever startup assembled, so GET /config/settings kept returning the old
+// value. An operator saved a setting, refreshed, saw the previous value, and
+// concluded the save had failed -- while the new one sat correctly in the
+// database the whole time. A console that reports its own state wrongly is the
+// failure this project exists to not have, and it had it about its own
+// settings page.
+//
+// What this does NOT do is apply anything. The running configuration is still
+// the one assembled at startup, which is why the PUT answers
+// restart_required. Stored and running are different facts and both are now
+// reported honestly, rather than the stored one being hidden to imply the
+// running one.
+//
+// An env-held key is skipped rather than overwritten: the environment outranks
+// the database (ADR-0007), and the handler refuses such a write before ever
+// reaching here.
+func (s *Settings) Update(stored map[string]string) error {
+	byKey := defByKey()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, raw := range stored {
+		current, known := s.values[key]
+		if !known || current.Source == SourceEnv {
+			continue
+		}
+		d, ok := byKey[key]
+		if !ok {
+			continue
+		}
+		typed, err := parse(d, raw)
+		if err != nil {
+			return fmt.Errorf("%s: %w", key, err)
+		}
+		s.values[key] = Value{
+			Key: key, Value: typed, Raw: raw,
+			Source: SourceDB, Mutable: d.Mutable, Doc: d.Doc,
+		}
+	}
+	return nil
 }
 
 // Keys returns every key, sorted, so output is deterministic.
 func (s *Settings) Keys() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	out := make([]string, 0, len(s.values))
 	for k := range s.values {
 		out = append(out, k)
@@ -308,6 +362,8 @@ func (s *Settings) Keys() []string {
 
 // All returns the resolved set for GET /config/settings.
 func (s *Settings) All() map[string]Value {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	out := make(map[string]Value, len(s.values))
 	for k, v := range s.values {
 		out[k] = v
@@ -316,6 +372,8 @@ func (s *Settings) All() map[string]Value {
 }
 
 func (s *Settings) get(key string) Value {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	v, ok := s.values[key]
 	if !ok {
 		// A typo in a key name is a programming error, not operator input, and

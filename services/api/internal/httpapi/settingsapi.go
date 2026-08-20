@@ -89,6 +89,13 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 		fail(w, apierr.Internal("saving settings failed"))
 		return
 	}
+	// Re-resolve, or the value this endpoint reports stays at whatever startup
+	// assembled and the next GET tells the operator their save did not happen.
+	// The store already has it either way; this is about not lying about that.
+	if err := s.settings.Update(updates); err != nil {
+		fail(w, apierr.Internal("re-reading the saved settings failed: "+err.Error()))
+		return
+	}
 
 	// The process holds its assembled config in memory, so most changes need a
 	// restart. Saying so plainly beats a success message that implies otherwise.
