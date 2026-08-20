@@ -76,6 +76,37 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("LastSeenBefore", func(t *testing.T) { testLastSeenBefore(t, newStore) })
 	t.Run("SessionRevocation", func(t *testing.T) { testSessionRevocation(t, newStore) })
 	t.Run("HookRulesAndDeliveries", func(t *testing.T) { testHookRulesAndDeliveries(t, newStore) })
+	t.Run("CaptureOrdering", func(t *testing.T) { testCaptureOrdering(t, newStore) })
+}
+
+// ListCaptures is newest first in both stores. The nil-versus-empty difference
+// between them is absorbed by the handler, but the ORDER is not -- a captures
+// page that lists oldest first in one store and newest first in the other is a
+// difference an operator sees and no test would have caught.
+func testCaptureOrdering(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	for i, id := range []string{"old", "middle", "newest"} {
+		if err := s.PutCapture(ctx, model.Capture{
+			CaptureID: id, State: "done", Iface: "wlan-alfa",
+			StartedAt: base.Add(time.Duration(i) * time.Hour),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	list, err := s.ListCaptures(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("got %d captures, want 3", len(list))
+	}
+	if list[0].CaptureID != "newest" || list[2].CaptureID != "old" {
+		t.Fatalf("order was %s,%s,%s; want newest first",
+			list[0].CaptureID, list[1].CaptureID, list[2].CaptureID)
+	}
 }
 
 // Hook rules and deliveries were implemented in both stores with nothing
@@ -232,6 +263,32 @@ func testSessionRevocation(t *testing.T, newStore Factory) {
 	}
 	if len(page) != 10 {
 		t.Fatalf("limit 10 returned %d sessions, want 10", len(page))
+	}
+
+	// The deletes revocation actually calls. DeleteSession on something already
+	// gone must be ErrNotFound from both -- revokeExcept tolerates exactly that
+	// error and would surface any other as a failed password change.
+	if err := s.DeleteSession(ctx, "stale-but-live"); err != nil {
+		t.Fatalf("deleting a live session: %v", err)
+	}
+	if err := s.DeleteSession(ctx, "stale-but-live"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("deleting a missing session returned %v, want ErrNotFound", err)
+	}
+
+	n, err := s.DeleteUserSessions(ctx, "someone-else")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 250 {
+		t.Fatalf("DeleteUserSessions removed %d, want all 250 for that user", n)
+	}
+	// And only that user's.
+	left, err := s.ListSessions(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("%d sessions left, want 0", len(left))
 	}
 }
 
