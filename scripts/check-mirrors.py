@@ -235,40 +235,84 @@ def check_shell_state_files() -> None:
         compare(label, sh_file, sh, f"api deploy.{go_name}", go)
 
 
+# Four hand-rolled copies of the identifier format, in four languages.
+#
+# (name, file, regex capturing the alphabet)
+ULID_ALPHABETS = [
+    ("api internal/ulid", "services/api/internal/ulid/ulid.go",
+     r'const crockford = "([^"]+)"'),
+    ("fusion id.go", "services/fusion/id.go",
+     r'const crockford = "([^"]+)"'),
+    ("sensor-sdr ulid.rs", "services/sensor-sdr/src/ulid.rs",
+     r'const CROCKFORD: &\[u8; 32\] = b"([^"]+)"'),
+    ("sensor-wifi detection.py", "services/sensor-wifi/classg_wifi/detection.py",
+     r'_ULID_ALPHABET = "([^"]+)"'),
+]
+
+
 def check_ulid_alphabet() -> None:
-    """api internal/ulid -> fusion id.go.
+    """Every copy of the identifier alphabet, in every language.
 
-    Two hand-rolled copies of the same identifier format, in two Go modules
-    that cannot import each other. api mints capture and hook-rule ids, fusion
-    mints track and detection ids, and they land in the same tables and the
-    same keyset cursors.
+    Four implementations -- two Go modules that cannot import each other, a
+    Rust sensor and a Python one -- all minting ids that land in the same
+    tables and the same keyset cursors. Nothing shares code, so nothing shares
+    a compiler either.
 
-    The property both packages claim is that ids sort by creation time. That
-    holds only while the alphabet is identical and in ascending byte order --
-    a copy that gained a character, reordered one, or moved to a different
-    base32 variant would still produce plausible ids, and pages over the mixed
-    set would skip rows or repeat them. Which reads as a quiet sky.
+    The property all four claim is that ids sort by creation time. It holds
+    only while the alphabet is identical AND in ascending byte order: a copy
+    that gained a character, reordered one, or moved to a different base32
+    variant would still produce plausible ids, and paging over the mixed set
+    would skip rows or repeat them. Which reads as a quiet sky.
     """
-    alphabets = []
-    for name, rel in (
-        ("api internal/ulid", "services/api/internal/ulid/ulid.go"),
-        ("fusion id.go", "services/fusion/id.go"),
-    ):
-        m = re.search(r'const crockford = "([^"]+)"', read(rel))
+    found = []
+    for name, rel, pattern in ULID_ALPHABETS:
+        m = re.search(pattern, read(rel))
         if not m:
-            fail("ulid alphabet", f"could not find the alphabet in {name}")
+            fail("ulid alphabet", f"could not find the alphabet in {name} ({rel})")
             return
-        alphabets.append((name, m.group(1)))
+        found.append((name, m.group(1)))
 
-    compare("ulid alphabet", alphabets[0][0], [alphabets[0][1]], alphabets[1][0], [alphabets[1][1]])
+    first_name, first = found[0]
+    for name, alphabet in found[1:]:
+        compare("ulid alphabet", first_name, [first], name, [alphabet])
 
-    alphabet = alphabets[0][1]
-    if len(alphabet) != 32 or list(alphabet) != sorted(alphabet):
+    if len(first) != 32 or list(first) != sorted(first):
         fail(
             "ulid alphabet",
-            f"{alphabet!r} is not 32 characters in ascending byte order, so byte order "
+            f"{first!r} is not 32 characters in ascending byte order, so byte order "
             "no longer recovers creation order and keyset pagination is unsound",
         )
+
+
+# Each copy has to refuse a timestamp before the epoch, or it emits an id
+# beginning ZZZZZ that sorts after every real one -- and one such row sits at
+# the end of every keyset page for good. Reachable on this hardware: a Pi has
+# no RTC, so an unsynchronised clock is the ordinary first-boot state.
+#
+# (name, file, the expression that does the clamping)
+ULID_EPOCH_CLAMPS = [
+    ("api internal/ulid", "services/api/internal/ulid/ulid.go", "if milli < 0 {"),
+    ("sensor-sdr ulid.rs", "services/sensor-sdr/src/ulid.rs", "epoch_ms.max(0)"),
+    ("sensor-wifi detection.py", "services/sensor-wifi/classg_wifi/detection.py",
+     "ts_ms = max(ts_ms, 0)"),
+]
+
+
+def check_ulid_epoch_clamp() -> None:
+    """The pre-epoch guard, in each copy that takes a timestamp from a caller.
+
+    fusion is absent deliberately: NewULID reads the clock itself and takes no
+    argument, so there is no caller-supplied value to clamp. If it ever grows
+    one, add it here.
+    """
+    for name, rel, needle in ULID_EPOCH_CLAMPS:
+        if needle not in read(rel):
+            fail(
+                "ulid epoch clamp",
+                f"{name} no longer clamps a pre-epoch timestamp (looked for {needle!r}). "
+                "Without it a clock before 1970 mints ids beginning ZZZZZ, which sort "
+                "after every real identifier.",
+            )
 
 
 def check_world_extract_zoom() -> None:
@@ -396,6 +440,7 @@ def main() -> int:
     check_shell_state_files()
     check_exec_sites()
     check_ulid_alphabet()
+    check_ulid_epoch_clamp()
     check_world_extract_zoom()
     check_basemap_provider()
 

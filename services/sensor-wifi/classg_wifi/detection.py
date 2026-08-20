@@ -36,9 +36,22 @@ _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
 
 def _ulid(rand_bytes: bytes, ts_ms: int | None = None) -> str:
-    """Minimal ULID: 48-bit timestamp + 80 bits of randomness, Crockford base32."""
+    """Minimal ULID: 48-bit timestamp + 80 bits of randomness, Crockford base32.
+
+    Clamped at the epoch, matching sensor-sdr's ulid.rs and the API's
+    internal/ulid. A negative ts_ms is not simply a smaller number here:
+    Python's integers sign-extend for ever, so ``value & 0x1F`` yields 0x1F all
+    the way up and the id comes out ``ZZZZ...`` -- which sorts after every real
+    identifier and so sits at the end of every keyset page for good. Measured,
+    not assumed: ts_ms of -1 gives ``ZZZZZZZZZZ000...``.
+
+    A Pi has no RTC, which is why ulid.rs guards the same case. The detection's
+    own ``ts`` still carries whatever the clock said, which is the honest place
+    for a wrong time to show.
+    """
     if ts_ms is None:
         ts_ms = int(datetime.now(UTC).timestamp() * 1000)
+    ts_ms = max(ts_ms, 0)
     value = (ts_ms << 80) | int.from_bytes(rand_bytes[:10].ljust(10, b"\x00"), "big")
     out = []
     for _ in range(26):
