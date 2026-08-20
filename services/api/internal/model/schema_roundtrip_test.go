@@ -14,7 +14,20 @@ import (
 // services share cannot drift apart silently again.
 func compileDetectionSchema(t *testing.T) *jsonschema.Schema {
 	t.Helper()
-	source, err := os.ReadFile("../../../../schemas/detection.schema.json")
+	return compileSchema(t, "detection.schema.json")
+}
+
+// compileTrackSchema loads track.schema.json, which nothing executable checked
+// against until now -- the package referred to it in four comments and verified
+// it nowhere.
+func compileTrackSchema(t *testing.T) *jsonschema.Schema {
+	t.Helper()
+	return compileSchema(t, "track.schema.json")
+}
+
+func compileSchema(t *testing.T, name string) *jsonschema.Schema {
+	t.Helper()
+	source, err := os.ReadFile("../../../../schemas/" + name)
 	if err != nil {
 		t.Fatalf("read schema: %v", err)
 	}
@@ -23,10 +36,10 @@ func compileDetectionSchema(t *testing.T) *jsonschema.Schema {
 		t.Fatalf("parse schema: %v", err)
 	}
 	compiler := jsonschema.NewCompiler()
-	if err := compiler.AddResource("detection.schema.json", doc); err != nil {
+	if err := compiler.AddResource(name, doc); err != nil {
 		t.Fatalf("add schema: %v", err)
 	}
-	schema, err := compiler.Compile("detection.schema.json")
+	schema, err := compiler.Compile(name)
 	if err != nil {
 		t.Fatalf("compile schema: %v", err)
 	}
@@ -153,5 +166,71 @@ func TestStoredDetectionWithSpuriousAtHealsOnTheWayOut(t *testing.T) {
 	}
 	if err := schema.Validate(instance); err != nil {
 		t.Errorf("re-served stored detection does not satisfy the schema:\n%s\n%v", out, err)
+	}
+}
+
+// A Track is what the map renders and what an alert rule fires on, and until
+// this test nothing in any of the four languages validated one against
+// track.schema.json -- the contract was referenced in comments and checked
+// nowhere.
+//
+// The shape that matters most here is `evidence`. The schema says an ARRAY;
+// fusion holds it as a map keyed by class and used to publish it that way, so
+// the API normalises. A regression there is invisible to every other test
+// because model.DecodeTrack deliberately accepts both.
+func TestTrackRoundTripsThroughTheSchema(t *testing.T) {
+	src := `{
+	  "schema_version": "1.0",
+	  "track_id": "01J8XQ0000000000000000000T",
+	  "state": "CONFIRMED",
+	  "first_seen": "2026-08-11T14:23:11.482Z",
+	  "last_seen": "2026-08-11T14:24:02.100Z",
+	  "detection_count": 42,
+	  "confidence": 0.82,
+	  "adsb_correlated": false,
+	  "identity": {"serial": "1596F3B24C5D7E8F9A0B"},
+	  "evidence": {
+	    "A": {"class": "A", "sensor_kind": "wifi", "weight": 0.6, "count": 30,
+	          "last_seen": "2026-08-11T14:24:02.100Z"},
+	    "B": {"class": "B", "sensor_kind": "wifi", "weight": 0.3, "count": 12,
+	          "last_seen": "2026-08-11T14:23:59.000Z"}
+	  },
+	  "current": {"lat": 47.3769, "lon": 8.5417, "alt_geodetic_m": 510.0,
+	              "at": "2026-08-11T14:24:02.100Z"}
+	}`
+
+	// DecodeTrack, not json.Unmarshal: the map-to-array normalisation lives
+	// there, and it is the path the bus subscriber actually uses. Decoding any
+	// other way tests a shape nothing receives.
+	tr, err := DecodeTrack([]byte(src))
+	if err != nil {
+		t.Fatalf("decoding a fusion track: %v", err)
+	}
+
+	out, merr := json.Marshal(tr)
+	if merr != nil {
+		t.Fatalf("re-marshalling: %v", merr)
+	}
+
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("parsing what we emit: %v", err)
+	}
+	if err := compileTrackSchema(t).Validate(doc); err != nil {
+		t.Fatalf("the API emits a track track.schema.json rejects: %v (emitted: %s)", err, out)
+	}
+
+	// The normalisation is the point: fusion's map must leave as the schema's
+	// array, not as an object the schema happens not to look inside.
+	var round map[string]any
+	if err := json.Unmarshal(out, &round); err != nil {
+		t.Fatal(err)
+	}
+	ev, ok := round["evidence"].([]any)
+	if !ok {
+		t.Fatalf("evidence came out as %T, want an array", round["evidence"])
+	}
+	if len(ev) != 2 {
+		t.Fatalf("evidence has %d entries, want 2", len(ev))
 	}
 }
