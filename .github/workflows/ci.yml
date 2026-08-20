@@ -236,6 +236,34 @@ jobs:
           print("sensor-sdr output conforms to detection.schema.json")
           PY
 
+      # The heartbeat schema exists to stop the two sensors disagreeing about the
+      # timestamp format -- sensor-wifi used to send epoch seconds where this one
+      # sends RFC3339. Only sensor-wifi had a test holding it to the schema, which
+      # left the half that was already right unguarded.
+      - name: Heartbeat schema conformance
+        run: |
+          cargo run --quiet -- --emit-sample-heartbeat > /tmp/sdr-heartbeat.json
+          python - <<'PY'
+          import json, pathlib, sys
+          from jsonschema import Draft202012Validator
+
+          schema = json.loads(pathlib.Path("../../schemas/heartbeat.schema.json").read_text())
+          sample = json.loads(pathlib.Path("/tmp/sdr-heartbeat.json").read_text())
+          v = Draft202012Validator(schema)
+
+          errs = sorted(v.iter_errors(sample), key=lambda e: list(e.path))
+          if errs:
+              for e in errs:
+                  print(f"::error::sensor-sdr emits an invalid heartbeat at "
+                        f"{'/'.join(str(p) for p in e.path) or '(root)'}: {e.message}")
+              sys.exit(1)
+
+          if not list(v.iter_errors({**sample, "invented_field": True})):
+              print("::error::additionalProperties:false is not being enforced")
+              sys.exit(1)
+          print("sensor-sdr heartbeat conforms to heartbeat.schema.json")
+          PY
+
   # ---------------------------------------------------------------------------
   # Schemas are the cross-language contract (ADR-0001). A typo here breaks all
   # four services silently, so validate the schema itself is well-formed and

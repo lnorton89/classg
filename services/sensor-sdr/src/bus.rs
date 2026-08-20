@@ -82,20 +82,14 @@ impl Bus for DetectionPublisher {
     /// is dead" -- the single most important operational property (ADR-0003),
     /// and the reason ADR-0008 calls it out again for this sensor specifically.
     fn heartbeat(&self, healthy: bool, detail: serde_json::Value) {
-        let msg = json!({
-            "schema_version": "1.0",
-            // RFC3339, as schemas/heartbeat.schema.json requires. The Wi-Fi
-            // sensor used to send epoch seconds here -- a divergence only the
-            // API's FlexTime papered over -- until the heartbeat schema pinned
-            // every emitter to this format.
-            "ts": clock::now_rfc3339(),
-            "sensor_id": self.sensor_id,
-            "sensor_kind": "sdr",
-            "healthy": healthy,
-            "published": self.socket.published(),
-            "dropped": self.socket.dropped(),
-            "detail": detail,
-        });
+        let msg = heartbeat_message(
+            &self.sensor_id,
+            &clock::now_rfc3339(),
+            healthy,
+            self.socket.published(),
+            self.socket.dropped(),
+            detail,
+        );
         let topic = format!("{}sdr", self.heartbeat_topic);
         match serde_json::to_vec(&msg) {
             Ok(body) => {
@@ -111,6 +105,47 @@ impl Bus for DetectionPublisher {
     fn subscribers(&self) -> usize {
         self.socket.peers()
     }
+}
+
+/// The one place this sensor's heartbeat shape is written.
+///
+/// Shared with `--emit-sample-heartbeat` deliberately: a sample built
+/// separately from the real emitter validates a document nothing actually
+/// sends, which is worse than no check at all because it reads as one.
+pub fn heartbeat_message(
+    sensor_id: &str,
+    ts: &str,
+    healthy: bool,
+    published: u64,
+    dropped: u64,
+    detail: serde_json::Value,
+) -> serde_json::Value {
+    json!({
+        "schema_version": "1.0",
+        // RFC3339, as schemas/heartbeat.schema.json requires. The Wi-Fi sensor
+        // used to send epoch seconds here -- a divergence only the API's
+        // FlexTime papered over -- until the heartbeat schema pinned every
+        // emitter to this format.
+        "ts": ts,
+        "sensor_id": sensor_id,
+        "sensor_kind": "sdr",
+        "healthy": healthy,
+        "published": published,
+        "dropped": dropped,
+        "detail": detail,
+    })
+}
+
+/// One schema-shaped heartbeat, for the CI conformance check.
+pub fn sample_heartbeat() -> serde_json::Value {
+    heartbeat_message(
+        "sdr-0",
+        "2026-08-11T14:23:11.482Z",
+        true,
+        1234,
+        0,
+        json!({"connected": true, "messages_read": 8099, "source": "127.0.0.1:30003"}),
+    )
 }
 
 #[cfg(test)]

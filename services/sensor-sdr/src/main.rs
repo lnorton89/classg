@@ -46,6 +46,20 @@ fn main() {
     // contract gets checked for Rust: the CI `schemas` job validates this output
     // against schemas/detection.schema.json, closing the gap that left this the
     // only one of the four services whose wire format nothing verified.
+    // Same contract check, for the other document this sensor puts on the bus.
+    // The heartbeat schema exists to stop the two sensors disagreeing about the
+    // timestamp format, and only one of them was being held to it.
+    if args.iter().any(|a| a == "--emit-sample-heartbeat") {
+        match serde_json::to_string_pretty(&bus::sample_heartbeat()) {
+            Ok(json) => println!("{json}"),
+            Err(err) => {
+                eprintln!("serialising the sample heartbeat failed: {err}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     if args.iter().any(|a| a == "--emit-sample-detection") {
         match serde_json::to_string_pretty(&detection::sample_detection()) {
             Ok(json) => println!("{json}"),
@@ -104,6 +118,7 @@ fn usage() {
     println!("  sweep [--band NAME]       measure a band's spectrum and noise floor");
     println!("       [--json]             emit the whole measurement, bins included");
     println!("  --emit-sample-detection   print one schema-shaped detection and exit");
+    println!("  --emit-sample-heartbeat   print one schema-shaped heartbeat and exit");
     println!("  (no argument)             print the band plan and the tuner limits");
     println!("\nConfiguration is environment-driven (ADR-0007); `adsb` prints every");
     println!("effective value and where it came from at startup.");
