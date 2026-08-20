@@ -241,11 +241,24 @@ instead of reporting a false success.
   redeploy somewhere the pilot's ground position should not be shown.
 - Declare every expected sensor in `CLASSG_EXPECTED_SENSORS` so a sensor that
   never starts appears as unhealthy rather than disappearing. The form is
-  `id:kind[:optional]`, e.g. `wifi-0:wifi,sdr-0:sdr:optional`. Mark hardware
-  this unit may not have fitted as `optional` — it stops `/health` sitting at
-  `degraded` forever on a build with no SDR, without hiding the failure of one
-  that is fitted: once a sensor has heartbeated, going quiet degrades health
-  whether it was declared optional or not.
+  `id:kind[:optional]`. For the reference build — ALFA, TP-Link sweep receiver,
+  RTL-SDR — that is:
+
+  ```
+  CLASSG_EXPECTED_SENSORS=wifi-0:wifi,wifi-1:wifi:optional,sdr-0:sdr:optional
+  ```
+
+  Mark hardware this unit may not have fitted as `optional` — it stops
+  `/health` sitting at `degraded` forever on a build with no SDR or no second
+  adapter, without hiding the failure of one that is fitted: once a sensor has
+  heartbeated, going quiet degrades health whether it was declared optional or
+  not.
+
+  **An undeclared sensor is worse than an unhealthy one.** It is listed only
+  while it is alive; when it stops it does not go unhealthy, it disappears, and
+  overall health stays `ok` with one fewer receiver. Nothing announces that
+  moment — which is why the Sensors page now warns on any sensor that is
+  heartbeating without being declared.
 - Keep the ZMQ endpoints bound to loopback or a trusted private network. The
   Compose files publish fusion's ingest port as `127.0.0.1:5556` by default —
   the bus has no authentication, so a LAN-reachable 5556 lets any device on
