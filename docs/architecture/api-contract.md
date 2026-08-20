@@ -105,7 +105,10 @@ else's database. Operator positions are pilot ground positions and personal data
 ([legal and ethics](../research/06-legal-and-ethics.md)); [ADR-0006](adr/0006-storage-turso-libsql.md)
 records that this deployment accepts syncing them, which is a decision about this unit and not a
 reason to export whatever a sensor happens to publish. A key that is not named in
-`sensorDetailMetrics` is not exported, and a test enforces it.
+`sensormetrics.Allowed` is not exported, and two tests enforce it — one per consumer of the
+blob, because there are two: `TestMetricsDoesNotExportUnlistedDetailKeys` for this endpoint
+and `TestSampleRecordsHostAndSensorState` for the telemetry sampler, which is the path that
+reaches a Turso replica.
 
 ### `GET /system`
 
