@@ -4,8 +4,14 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/classg/api/internal/model"
+	"github.com/classg/api/internal/store/memstore"
 )
 
 // TestValidate is the guard on the only request body that reaches an exec
@@ -192,5 +198,106 @@ func TestBusyIsPerInterface(t *testing.T) {
 	m.mu.Unlock()
 	if stillHeld {
 		t.Error("wlan-tplink stayed claimed after the attempt failed")
+	}
+}
+
+// Analysis is the most expensive thing this API does and it was the one
+// subprocess in this package with no deadline. The other two are bounded with
+// a stated reason -- "a wedged mt7921u can hang iw inside the kernel, and
+// without a deadline that pinned the handler goroutine forever" -- which
+// applies here with more force: this one parses a file the unit did not write,
+// runs for minutes rather than milliseconds, and the api sets no WriteTimeout,
+// so the request context is only cancelled when the client goes away. A
+// polling client never does.
+func TestAnalyzeIsBounded(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no shell to stand in for the analyzer")
+	}
+	dir := t.TempDir()
+	name := "2026-08-11-120000-wedged.pcap"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("not really a pcap"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// An "interpreter" that genuinely blocks. Standing in with `sh` was not a
+	// test: sh exits immediately on a Python file, so the run finished on its
+	// own and the deadline proved nothing. This one does not return until it
+	// is killed.
+	sleeper := filepath.Join(dir, "sleeper.sh")
+	if err := os.WriteFile(sleeper, []byte("#!/bin/sh\nsleep 120\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	st := memstore.New()
+	m := NewManager(st, Options{
+		Dir:            dir,
+		PythonBin:      sleeper,
+		SensorWifiDir:  dir,
+		AnalyzeTimeout: 300 * time.Millisecond,
+	})
+	c := modelCapture(name)
+	c.State = model.CaptureCompleted
+	if err := st.PutCapture(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	_, _, err := m.Analyze(context.Background(), c.CaptureID)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("a wedged analyzer returned no error")
+	}
+	// The child sleeps 120s. Anything near that means it ran to completion and
+	// the deadline did nothing.
+	if elapsed > 30*time.Second {
+		t.Fatalf("Analyze ran for %s; the deadline did not fire", elapsed)
+	}
+	if !strings.Contains(err.Error(), "was abandoned") {
+		t.Errorf("the error does not say it timed out, so an operator reads it as a "+
+			"broken Python environment: %v", err)
+	}
+	// And the claim must be released, or one wedge locks the capture out for
+	// the life of the process.
+	m.mu.Lock()
+	held := m.analysing[c.CaptureID]
+	m.mu.Unlock()
+	if held {
+		t.Error("the capture stayed claimed after the analyzer failed")
+	}
+}
+
+// A second click while the first is still running must be told to wait, not
+// answered with a second scapy pass over the same file on the same four cores.
+func TestAnalyzeRefusesToStack(t *testing.T) {
+	dir := t.TempDir()
+	name := "2026-08-11-120000-busy.pcap"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	st := memstore.New()
+	m := NewManager(st, Options{Dir: dir, PythonBin: "sh", SensorWifiDir: dir})
+	c := modelCapture(name)
+	c.State = model.CaptureCompleted
+	if err := st.PutCapture(context.Background(), c); err != nil {
+		t.Fatal(err)
+	}
+
+	m.mu.Lock()
+	m.analysing[c.CaptureID] = true
+	m.mu.Unlock()
+
+	if _, _, err := m.Analyze(context.Background(), c.CaptureID); !errors.Is(err, ErrAnalyzing) {
+		t.Fatalf("a second analysis returned %v, want ErrAnalyzing", err)
+	}
+
+	// A different capture is unaffected: the contention this models is per
+	// file, and refusing everything would make one slow parse block the page.
+	other := modelCapture("2026-08-11-130000-other.pcap")
+	other.State = model.CaptureCompleted
+	if err := st.PutCapture(context.Background(), other); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := m.Analyze(context.Background(), other.CaptureID); errors.Is(err, ErrAnalyzing) {
+		t.Error("an unrelated capture was refused as already being analysed")
 	}
 }

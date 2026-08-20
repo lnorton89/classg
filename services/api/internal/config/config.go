@@ -151,6 +151,7 @@ type Config struct {
 	PythonBin                string
 	SDRBin                   string
 	SweepTimeout             time.Duration
+	AnalyzeTimeout           time.Duration
 	CaptureAllowUnprivileged bool
 	WifiInterface            string
 	WifiChannel              int
@@ -396,6 +397,7 @@ func Assemble(b *Bootstrap, s *settings.Settings) (*Config, error) {
 		PythonBin:                s.String("capture.python_bin"),
 		SDRBin:                   s.String("spectrum.sdr_bin"),
 		SweepTimeout:             s.Duration("spectrum.sweep_timeout"),
+		AnalyzeTimeout:           s.Duration("capture.analyze_timeout"),
 		CaptureAllowUnprivileged: s.Bool("capture.allow_unprivileged"),
 		WifiInterface:            s.String("capture.wifi_interface"),
 		WifiChannel:              s.Int("capture.wifi_channel"),

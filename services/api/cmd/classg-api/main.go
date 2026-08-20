@@ -169,6 +169,7 @@ func run() error {
 		AllowUnprivileged: cfg.CaptureAllowUnprivileged,
 		PythonBin:         cfg.PythonBin,
 		SensorWifiDir:     cfg.SensorWifiDir,
+		AnalyzeTimeout:    cfg.AnalyzeTimeout,
 		OnUpdate: func(c model.Capture) {
 			cc := c
 			h.Broadcast(hub.Frame{Type: hub.TypeCaptureStatus, Capture: &cc})

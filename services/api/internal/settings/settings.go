@@ -200,6 +200,12 @@ var Defs = []Def{
 		Default: "false", Mutable: true, Doc: "attempt capture without elevated privileges"},
 	{Key: "capture.sensor_wifi_dir", Env: "CLASSG_SENSOR_WIFI_DIR", Kind: KindString,
 		Default: "../sensor-wifi", Doc: "path to the sensor-wifi checkout used for analysis"},
+	{Key: "capture.analyze_timeout", Env: "CLASSG_ANALYZE_TIMEOUT", Kind: KindDuration,
+		Default: "5m", Mutable: true,
+		Doc: "how long the Python analyzer may spend on one capture before it is abandoned. " +
+			"Minutes, because a busy 2.4 GHz capture is tens of megabytes and this is a Pi -- " +
+			"but bounded, because the alternative is a wedged parse holding a request " +
+			"goroutine and a Python process forever"},
 	{Key: "capture.python_bin", Env: "CLASSG_PYTHON", Kind: KindString,
 		Default: "python3", Doc: "python interpreter used to run the analyzer"},
 

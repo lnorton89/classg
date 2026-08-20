@@ -5,11 +5,13 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/classg/api/internal/model"
 	"github.com/classg/api/internal/store"
@@ -21,6 +23,26 @@ var analyzeAdapter []byte
 // ErrAnalyzerUnavailable means the Wi-Fi sensor's Python environment is not
 // usable from here -- a machine problem, not a bad request.
 var ErrAnalyzerUnavailable = fmt.Errorf("capture analyzer unavailable")
+
+// ErrAnalyzing means this capture is already being analysed.
+//
+// A 409 rather than a second subprocess. Analysis is the most expensive thing
+// this API does -- a scapy pass over tens of megabytes, on the same four cores
+// that are decoding Wi-Fi frames on a deadline -- and the request that starts
+// it has no visible progress, so an operator who waits ten seconds and clicks
+// again is the expected behaviour, not the unusual one.
+var ErrAnalyzing = errors.New("this capture is already being analysed")
+
+// defaultAnalyzeTimeout is used when Options.AnalyzeTimeout is unset.
+//
+// The other subprocesses in this package are bounded for a stated reason: "a
+// wedged mt7921u can hang iw inside the kernel, and without a deadline that
+// pinned the handler goroutine forever". That reason applies here with more
+// force, not less. This one is the longest-running of the three, it parses a
+// file this unit did not write, and the api sets no WriteTimeout (it would cut
+// the WebSocket stream), so the request context is only cancelled when the
+// client goes away -- which a polling client never does.
+const defaultAnalyzeTimeout = 5 * time.Minute
 
 // analysisReport is only the subset the captures list summary needs. The full
 // report is stored and served verbatim, so adding a field to the Python
@@ -55,19 +77,66 @@ func (m *Manager) Analyze(ctx context.Context, id string) (json.RawMessage, mode
 		return nil, model.CaptureAnalysis{}, fmt.Errorf("%w: capture file %s is missing", store.ErrNotFound, c.Filename)
 	}
 
+	// One analysis per capture. Claimed after the checks above so a bad
+	// request cannot leave a capture permanently "already being analysed",
+	// and released by the defer whatever happens next.
+	m.mu.Lock()
+	if m.analysing[id] {
+		m.mu.Unlock()
+		return nil, model.CaptureAnalysis{}, ErrAnalyzing
+	}
+	if m.analysing == nil {
+		m.analysing = map[string]bool{}
+	}
+	m.analysing[id] = true
+	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		delete(m.analysing, id)
+		m.mu.Unlock()
+	}()
+
 	script, cleanup, err := m.materialiseAdapter()
 	if err != nil {
 		return nil, model.CaptureAnalysis{}, err
 	}
 	defer cleanup()
 
-	cmd := exec.CommandContext(ctx, m.opts.PythonBin, script, path)
+	timeout := m.opts.AnalyzeTimeout
+	if timeout <= 0 {
+		timeout = defaultAnalyzeTimeout
+	}
+	runCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(runCtx, m.opts.PythonBin, script, path)
 	cmd.Dir = m.opts.SensorWifiDir // so `import classg_wifi` resolves
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
+	// Without this the deadline above does not actually bound anything, which
+	// a test caught after the timeout was already written: CommandContext
+	// kills the direct child, but Stdout and Stderr are buffers rather than
+	// files, so Wait also waits for the copy goroutines -- and any grandchild
+	// that inherited the pipe holds them open. A killed interpreter whose own
+	// child is still running left Wait blocked for the full run, deadline and
+	// all. WaitDelay closes the pipes and returns instead.
+	//
+	// Five seconds because a healthy analyzer's output is already flushed by
+	// the time it exits; this only ever elapses when something is holding a
+	// pipe it should not be.
+	cmd.WaitDelay = 5 * time.Second
+
 	if err := cmd.Run(); err != nil {
+		// Say which of the two happened. "analyzer unavailable: signal: killed"
+		// is what a timeout looks like otherwise, and it sends an operator
+		// looking for a missing Python environment that is working fine.
+		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+			return nil, model.CaptureAnalysis{}, fmt.Errorf(
+				"%w: analysing %s took longer than %s and was abandoned; raise capture.analyze_timeout if the capture is large",
+				ErrAnalyzerUnavailable, c.Filename, timeout)
+		}
 		return nil, model.CaptureAnalysis{}, fmt.Errorf("%w: %v: %s",
 			ErrAnalyzerUnavailable, err, firstLine(stderr.String()))
 	}

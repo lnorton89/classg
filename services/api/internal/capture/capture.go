@@ -86,6 +86,8 @@ type Options struct {
 	AllowUnprivileged bool
 	PythonBin         string
 	SensorWifiDir     string
+	// AnalyzeTimeout bounds one analyzer run. Zero means defaultAnalyzeTimeout.
+	AnalyzeTimeout time.Duration
 	// OnUpdate publishes capture.status frames.
 	OnUpdate func(model.Capture)
 }
@@ -108,14 +110,19 @@ type Manager struct {
 	// the TP-Link sweep adapter refuse while the ALFA was busy, for a
 	// collision that cannot happen between two different devices.
 	busy map[string]bool
+	// analysing holds the capture ids with an analyzer running. Separate from
+	// busy: that one is about radios, this one is about CPU, and the two
+	// contend for nothing in common.
+	analysing map[string]bool
 }
 
 func NewManager(st store.Store, opts Options) *Manager {
 	return &Manager{
-		opts:    opts,
-		store:   st,
-		running: map[string]context.CancelFunc{},
-		busy:    map[string]bool{},
+		opts:      opts,
+		store:     st,
+		running:   map[string]context.CancelFunc{},
+		busy:      map[string]bool{},
+		analysing: map[string]bool{},
 	}
 }
 

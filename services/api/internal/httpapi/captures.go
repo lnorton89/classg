@@ -134,6 +134,9 @@ func (s *Server) handleAnalyzeCapture(w http.ResponseWriter, r *http.Request) {
 		writeJSONRaw(w, http.StatusOK, report)
 	case errors.Is(err, store.ErrNotFound):
 		fail(w, apierr.NotFound("no capture with id "+id))
+	case errors.Is(err, capture.ErrAnalyzing):
+		// 409, not 503: nothing is broken and the answer is to wait.
+		fail(w, apierr.Conflict(err.Error()))
 	case errors.Is(err, capture.ErrAnalyzerUnavailable):
 		// The Wi-Fi sensor's Python environment is a separate deployment
 		// artefact (ADR-0001); its absence is a machine problem, and
