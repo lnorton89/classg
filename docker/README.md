@@ -90,6 +90,11 @@ agree when you switch:
    `VITE_SATELLITE_TILE_ORIGIN` (dev).
 3. `services/ui/src/features/map/style.ts` — `BASEMAP_MAX_ZOOM`.
 
+`scripts/check-mirrors.py` checks all three against each other, and checks the
+ceiling against the upstream actually being proxied. Its `KNOWN_TILE_CEILINGS`
+is the list of sources whose real ceiling has been measured; adding one means
+measuring it, by the method below, rather than trusting the provider's docs.
+
 `CLASSG_SATELLITE_TILE_URL` overrides the build-time preloader only; it does not change what
 nginx proxies at runtime. To confirm a candidate's real ceiling before committing to it,
 request tiles directly and watch for the status flip or a suspiciously small, identical

@@ -184,7 +184,11 @@ as a degraded state with an operator-visible reason, not an exception.
   2.4/5.8 GHz. No antenna or gain fixes this. Wi-Fi is the DJI sensor.
 - **Basemap zoom ceilings are per-source.** Esri serves a grey placeholder at
   HTTP 200 past z19 rather than a 404, so an over-set `BASEMAP_MAX_ZOOM` blanks
-  the map instead of blurring it. Three files must agree — see the docker README.
+  the map instead of blurring it. Three files must agree — see the docker
+  README. `scripts/check-mirrors.py` now enforces it: switch the upstream in
+  `nginx.conf` without switching `vite.config.ts`, or set a ceiling the
+  upstream does not carry, and it fails by name. A source whose real ceiling is
+  not yet recorded there has to be measured, not guessed.
 - **Don't publish an image built with a preload bbox.** It redistributes Esri
   imagery. Runtime caching is fine; shipping the cache is not.
 

@@ -235,6 +235,98 @@ def check_shell_state_files() -> None:
         compare(label, sh_file, sh, f"api deploy.{go_name}", go)
 
 
+def check_world_extract_zoom() -> None:
+    """style.ts WORLD_MAX_ZOOM -> scripts/fetch-basemap.sh --maxzoom.
+
+    The style lays a bboxless whole-world archive under a local extract, and
+    declares the zoom at which to stop asking it for tiles. If the script that
+    builds that archive stops at a different zoom, the map either asks for
+    tiles the file does not contain or stops asking before the file runs out.
+    style.ts says "Must match `--maxzoom` for the world extract in
+    scripts/fetch-basemap.sh" and nothing checked that it did.
+    """
+    ts = re.search(
+        r"export const WORLD_MAX_ZOOM = (\d+)",
+        read("services/ui/src/features/map/style.ts"),
+    )
+    sh = re.search(
+        r'"\$PMTILES" extract "\$SOURCE" "\$WORLD_OUT" --maxzoom=(\d+)',
+        read("scripts/fetch-basemap.sh"),
+    )
+    if not ts or not sh:
+        fail("world extract zoom", "could not parse a copy; has the shape changed?")
+        return
+    compare(
+        "world extract zoom",
+        "style.ts WORLD_MAX_ZOOM",
+        [int(ts.group(1))],
+        "fetch-basemap.sh --maxzoom",
+        [int(sh.group(1))],
+    )
+
+
+# The tile provider, and the zoom it actually carries imagery to.
+#
+# Esri answers PAST its ceiling with a grey placeholder at HTTP 200 rather than
+# a 404, so an over-set ceiling blanks the map instead of blurring it -- and
+# nothing in the request tells you. The ceiling is therefore a property of the
+# upstream, not a free choice, and the upstream is named in two files that must
+# agree with each other and with the number.
+KNOWN_TILE_CEILINGS = {
+    # service path fragment -> the zoom it has real pixels to
+    "World_Imagery": 19,
+    "USGSImageryOnly": 16,
+}
+
+
+def check_basemap_provider() -> None:
+    """nginx.conf, vite.config.ts and style.ts BASEMAP_MAX_ZOOM.
+
+    docker/README.md calls this out as three places that must agree, and
+    CLAUDE.md lists it as a repo trap. Dev and production requesting different
+    upstreams also makes the tile cache built by one useless to the other,
+    which is the failure the vite proxy's own comment describes.
+    """
+    nginx = read("services/ui/nginx.conf")
+    vite = read("services/ui/vite.config.ts")
+    style = read("services/ui/src/features/map/style.ts")
+
+    def service_of(src: str) -> str | None:
+        m = re.search(r"/ArcGIS/rest/services/([A-Za-z_]+)/MapServer/tile", src)
+        return m.group(1) if m else None
+
+    def host_of(src: str) -> str | None:
+        m = re.search(r"https://(services\.arcgisonline\.com|basemap\.nationalmap\.gov)", src)
+        return m.group(1) if m else None
+
+    n_service, v_service = service_of(nginx), service_of(vite)
+    n_host, v_host = host_of(nginx), host_of(vite)
+    ceiling = re.search(r"export const BASEMAP_MAX_ZOOM = (\d+)", style)
+
+    if not n_service or not v_service or not ceiling:
+        fail("basemap provider", "could not parse a copy; has the shape changed?")
+        return
+
+    compare("basemap provider", "nginx.conf", [n_host, n_service], "vite.config.ts", [v_host, v_service])
+
+    want = KNOWN_TILE_CEILINGS.get(n_service)
+    if want is None:
+        fail(
+            "basemap provider",
+            f"nginx proxies {n_service}, whose real zoom ceiling is not recorded in "
+            "KNOWN_TILE_CEILINGS. Measure it -- request tiles directly and watch for the "
+            "status flip or an identical placeholder body -- and record it here.",
+        )
+        return
+    if int(ceiling.group(1)) != want:
+        fail(
+            "basemap provider",
+            f"BASEMAP_MAX_ZOOM is {ceiling.group(1)} but nginx proxies {n_service}, which "
+            f"carries imagery to z{want}. Set too high, this source answers past its "
+            "ceiling with a placeholder at HTTP 200, so the map goes blank rather than blurry.",
+        )
+
+
 def check_exec_sites() -> None:
     """Every subprocess goes through internal/proc.
 
@@ -267,6 +359,8 @@ def main() -> int:
     check_go_ts_fields()
     check_shell_state_files()
     check_exec_sites()
+    check_world_extract_zoom()
+    check_basemap_provider()
 
     if errors:
         for e in errors:
@@ -278,7 +372,7 @@ def main() -> int:
     print("mirrors: channel plan, fusion weights, corroborating classes and the")
     print(f"channel allowlist agree; so do {len(GO_TS_PAIRS)} Go/TypeScript response shapes")
     print(f"and {len(SHELL_GO_PAIRS)} hand-written state documents; every subprocess")
-    print("goes through internal/proc")
+    print("goes through internal/proc, and the basemap ceiling matches its source")
     return 0
 
 
