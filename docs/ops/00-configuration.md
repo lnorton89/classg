@@ -67,12 +67,19 @@ them rather than through `curl`:
 | `map.receiver_position`, the channel plan, fusion weights | Settings → Calibration |
 | `fusion.net_adsb*`, `fusion.terrain*`, `sensors.oui_registry`, `fusion.aircraft_db` | Settings → External data |
 | `hooks.allow_private_targets` | Administration → Outbound |
+| `sensors.expected` | Settings → Calibration |
 | `monitoring.enabled` | The status control in the header |
 
 The rest are deployment topology — bus endpoints, directories, binary paths, the sensor
-restart template, the expected-sensor list — and are deliberately not editable from a web page.
-A text box that can point the bus somewhere wrong is a way to make a unit unreachable from the
-unit.
+restart template — and are deliberately not editable from a web page. A text box that can
+point the bus somewhere wrong is a way to make a unit unreachable from the unit.
+
+`sensors.expected` used to be in that group and is not topology: the worst a wrong value does
+is misdescribe which radios this unit should have, and it cannot make anything unreachable. It
+had to move, because it had no control anywhere and `CLASSG_EXPECTED_SENSORS` does not reach
+the container on the Compose deployment (Tier 1 only, by design) — so the production
+checklist's "declare every expected sensor" could not be followed as written, and the live
+unit had two undeclared.
 
 ## Tier 3 — `config/defaults.yaml`: the seed
 
@@ -239,14 +246,19 @@ instead of reporting a false success.
 - `CLASSG_EXPOSE_OPERATOR_LOCATION` defaults to **true** for this deployment
   ([ADR-0006](../architecture/adr/0006-storage-turso-libsql.md)). Set it `false` if you
   redeploy somewhere the pilot's ground position should not be shown.
-- Declare every expected sensor in `CLASSG_EXPECTED_SENSORS` so a sensor that
-  never starts appears as unhealthy rather than disappearing. The form is
-  `id:kind[:optional]`. For the reference build — ALFA, TP-Link sweep receiver,
-  RTL-SDR — that is:
+- Declare every expected sensor so one that never starts appears as unhealthy
+  rather than disappearing. The form is `id:kind[:optional]`. For the reference
+  build — ALFA, TP-Link sweep receiver, RTL-SDR — that is:
 
   ```
-  CLASSG_EXPECTED_SENSORS=wifi-0:wifi,wifi-1:wifi:optional,sdr-0:sdr:optional
+  wifi-0:wifi,wifi-1:wifi:optional,sdr-0:sdr:optional
   ```
+
+  **Set it in Settings › Calibration › Expected sensors**, not in `.env`.
+  `CLASSG_EXPECTED_SENSORS` works for a bare `classg-api` run, but
+  `docker/docker-compose.yml` passes Tier 1 only by design (ADR-0007), so on
+  the Compose deployment that variable never reaches the container and the
+  setting stays at whatever the database holds.
 
   Mark hardware this unit may not have fitted as `optional` — it stops
   `/health` sitting at `degraded` forever on a build with no SDR or no second

@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import type { SettingsResponse } from '@/lib/api/types'
 
-import { ChannelPlanEditor, ReceiverPositionEditor } from './calibration'
+import { ChannelPlanEditor, ExpectedSensorsCard, ReceiverPositionEditor } from './calibration'
 
 const API = '*/api/v1'
 
@@ -15,6 +15,11 @@ const settings: SettingsResponse = {
   settings: {
     'map.receiver_position': {
       value: { lat: 51.4775, lon: -0.0014 },
+      source: 'db',
+      mutable: true,
+    },
+    'sensors.expected': {
+      value: 'wifi-0:wifi',
       source: 'db',
       mutable: true,
     },
@@ -115,6 +120,26 @@ describe('ReceiverPositionEditor', () => {
 // The fusion weights card next to it had already been made honest about the
 // identical situation; this one still promised an operator that restarting
 // would apply an edit that it would silently discard.
+// sensors.expected had no control anywhere, and CLASSG_EXPECTED_SENSORS does
+// not reach the API container on the Compose deployment -- docker-compose.yml
+// passes Tier 1 only, by design. So the production checklist's "declare every
+// expected sensor" could not be followed as written on the deployment this
+// project ships, and the live unit had two sensors undeclared: either could
+// stop and simply vanish from /health while overall status stayed ok.
+describe('ExpectedSensorsCard', () => {
+  it('offers the setting, seeded from what the unit has stored', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <ExpectedSensorsCard />
+      </QueryClientProvider>,
+    )
+
+    expect(await screen.findByText('Expected sensors')).toBeVisible()
+    expect(await screen.findByDisplayValue('wifi-0:wifi')).toBeVisible()
+  })
+})
+
 describe('ChannelPlanEditor', () => {
   function renderPlan() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

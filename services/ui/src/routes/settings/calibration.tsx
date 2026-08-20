@@ -70,10 +70,58 @@ function CalibrationSettings() {
         physical constants — revise them against measured results rather than intuition.
       </Alert>
       <ReceiverPositionEditor />
+      <ExpectedSensorsCard />
       <DetectionTimingCard />
       <ChannelPlanEditor />
       <FusionWeightsEditor />
     </>
+  )
+}
+
+/**
+ * Which sensors this unit is supposed to have.
+ *
+ * This had no field anywhere, and no reachable way to set it on the deployment
+ * the project actually ships. The production checklist says to declare every
+ * sensor in CLASSG_EXPECTED_SENSORS -- but docker/docker-compose.yml passes
+ * Tier 1 only by design (ADR-0007), so that variable never reaches the
+ * container, and nothing else offered the setting. Following the instruction
+ * as written left the unit undeclared.
+ *
+ * It matters more than most settings on this page because of how it fails. An
+ * undeclared sensor is listed only while it is alive: when it stops it does not
+ * turn unhealthy, it disappears, and overall health stays `ok` with one fewer
+ * receiver. Nothing announces that moment, so a unit can be down a radio for
+ * days with a green console.
+ */
+export function ExpectedSensorsCard() {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Expected sensors</CardTitle>
+        <p className="text-muted-foreground text-xs">
+          The sensors this unit should have, as <code className="font-mono">id:kind</code> or{' '}
+          <code className="font-mono">id:kind:optional</code>, comma separated. Declaring one
+          means it is reported unhealthy when it stops instead of vanishing from the list. Mark
+          hardware the unit may not have fitted as <code className="font-mono">optional</code>:
+          that keeps health out of a permanent <span className="font-mono">degraded</span> on a
+          build without it, and still degrades once the sensor has heartbeated and then goes
+          quiet.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <SettingsGroup
+          fields={[
+            {
+              key: 'sensors.expected',
+              label: 'Declared sensors',
+              kind: 'text',
+              hint: 'Reference build: wifi-0:wifi,wifi-1:wifi:optional,sdr-0:sdr:optional',
+            },
+          ]}
+        />
+      </CardContent>
+    </Card>
   )
 }
 

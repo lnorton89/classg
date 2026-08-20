@@ -21,7 +21,7 @@
  * track's detail view, just without leaving the page.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import {
   ArchiveIcon,
   ArrowLeftIcon,
@@ -394,7 +394,11 @@ function SensorDetail({
             {sensor.sensor_id}:{sensor.sensor_kind}
             {sensor.optional ? ':optional' : ''}
           </code>{' '}
-          to <code className="font-mono">CLASSG_EXPECTED_SENSORS</code>.
+          under{' '}
+          <Link to="/settings/calibration" className="underline underline-offset-2">
+            Settings &rsaquo; Calibration
+          </Link>
+          .
         </Alert>
       ) : null}
 
