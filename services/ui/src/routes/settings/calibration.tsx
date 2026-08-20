@@ -306,7 +306,8 @@ export function ReceiverPositionEditor() {
   )
 }
 
-function ChannelPlanEditor() {
+/** Exported for its own test; the page renders it directly. */
+export function ChannelPlanEditor() {
   const queryClient = useQueryClient()
   const { data } = useQuery(channelPlanQuery())
   const [draftOverride, setDraft] = useState<ChannelPlan | null>(null)
@@ -356,6 +357,20 @@ function ChannelPlanEditor() {
           most of them, so dwell time is allocated in proportion to these weights. The share
           column is what actually matters.
         </p>
+        {/* This card used to promise a restart would apply the plan. It does
+            not, and never did: sensors publish and subscribe to nothing
+            (ADR-0002), and the hopper reads its channel file from disk at
+            startup — so a restart re-reads that file, not this. Nor is there
+            one file: the deployed units run a different plan each. Saying so
+            here rather than leaving an operator to conclude the receiver is
+            broken when the scan does not match the table in front of them. */}
+        <p className="text-warn mt-2 text-xs">
+          Recorded, not applied — including after a restart. Each receiver reads its own file at
+          startup and nothing here reaches it:{' '}
+          <code className="font-mono">config/channels-primary.yaml</code> on wifi-0,{' '}
+          <code className="font-mono">config/channels-sweep.yaml</code> on the wifi-1 sweep
+          receiver. Editing this records the intended plan.
+        </p>
       </CardHeader>
       <CardContent>
         {apiError ? (
@@ -367,11 +382,11 @@ function ChannelPlanEditor() {
         {notice ? (
           <Alert
             tone={notice === 'saved-restart' ? 'warn' : 'info'}
-            title={notice === 'saved-restart' ? 'Saved — restart required' : 'Saved'}
+            title={notice === 'saved-restart' ? 'Saved — not applied' : 'Saved'}
             className="mb-3"
           >
             {notice === 'saved-restart'
-              ? 'The sensor must be restarted for this to take effect.'
+              ? 'Stored as the intended plan. The receivers keep scanning their own files.'
               : 'Applied without a restart.'}
           </Alert>
         ) : null}

@@ -79,7 +79,9 @@
           "title": "Configuration and references",
           "description": "Channel weights are hypotheses that must be revised from capture evidence.",
           "items": [
-            { "title": "Channel plan", "body": "Weighted hopping favors observed Remote ID channels while continuing to survey the supported bands.", "path": "services/sensor-wifi/config/channels.yaml" },
+            { "title": "Channel plan (primary receiver)", "body": "What wifi-0 actually scans. Weighted hard toward the measured Remote ID channel without parking on it: parking produced zero frames across 116,788 dwells on this unit, which is indistinguishable from a dead antenna. Recorded, not applied -- the receiver reads this file at startup and nothing saved in Settings reaches it.", "path": "services/sensor-wifi/config/channels-primary.yaml" },
+            { "title": "Channel plan (sweep receiver)", "body": "What wifi-1 scans on units fitted with the second TP-Link adapter. Channel 6 is deliberately absent because the primary receiver already covers it, so the two adapters widen coverage instead of duplicating it.", "path": "services/sensor-wifi/config/channels-sweep.yaml" },
+            { "title": "Channel plan (full reference)", "body": "Every channel the hopper knows about, and the file it loads when no --channels argument is given (make sense). The API seeds a fresh database's channel plan from a copy of this one; scripts/check-mirrors.py keeps the two in step.", "path": "services/sensor-wifi/config/channels.yaml" },
             { "title": "Protocol references", "body": "Wire formats and calibration notes are documented separately.", "path": "docs/research/03-protocol-remote-id.md" }
           ]
         }

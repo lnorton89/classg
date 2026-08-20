@@ -115,9 +115,18 @@ func (s *Server) handlePutChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// restart_required is true because the api has no way to push a plan to a
-	// sensor: sensors subscribe to nothing, they only publish (ADR-0002), and
-	// the hopper reads channels.yaml once at startup. It becomes false the day
-	// sensors gain a config subscription. Flagged in api-implementation.md.
+	// sensor: sensors subscribe to nothing, they only publish (ADR-0002). It
+	// becomes false the day sensors gain a config subscription. Flagged in
+	// api-implementation.md.
+	//
+	// Understating it, in the same way the weights endpoint below does: a
+	// restart re-reads the receiver's channel FILE, which nothing here writes,
+	// so it does not apply this plan either. Nor is there one file to write --
+	// the deployed units run config/channels-primary.yaml on wifi-0 and
+	// config/channels-sweep.yaml on the wifi-1 sweep receiver, deliberately
+	// split so the two adapters do not duplicate each other's coverage. The
+	// calibration page says "recorded, not applied" rather than repeating this
+	// flag as though a restart were enough.
 	writeJSON(w, http.StatusOK, configResponse{Value: plan, RestartRequired: true})
 }
 
