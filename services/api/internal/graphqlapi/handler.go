@@ -152,25 +152,91 @@ func checkCost(query string, variables map[string]any) error {
 		return nil
 	}
 
+	// Named fragments are resolved rather than skipped. Treating a spread as a
+	// leaf meant every limit here could be stepped around by moving the
+	// expensive part into one:
+	//
+	//     query { tracks(limit: 1000) { tracks { ...d } } }
+	//     fragment d on Track { detections { detection_id } }
+	//
+	// selectionSubtreeHas stopped at the spread, found no detections, and let
+	// the thousand-parent page through -- a thousand sequential store queries
+	// on the single connection, which is the exact fan-out
+	// MaxTracksWithDetections exists to refuse, in two lines of query.
+	frags := map[string]*ast.FragmentDefinition{}
+	for _, def := range doc.Definitions {
+		if f, ok := def.(*ast.FragmentDefinition); ok && f.Name != nil {
+			frags[f.Name.Value] = f
+		}
+	}
+
 	for _, def := range doc.Definitions {
 		op, ok := def.(*ast.OperationDefinition)
 		if !ok || op.SelectionSet == nil {
 			continue
 		}
-		if n := len(op.SelectionSet.Selections); n > MaxAliases {
+		if n := countSelections(op.SelectionSet, frags, map[string]bool{}); n > MaxAliases {
 			return errors.New("this query asks for " + strconv.Itoa(n) +
 				" top-level fields; this unit executes at most " + strconv.Itoa(MaxAliases))
 		}
-		if d := depth(op.SelectionSet, 1); d > MaxDepth {
+		if d := depth(op.SelectionSet, 1, frags, map[string]bool{}); d > MaxDepth {
 			return errors.New("this query is " + strconv.Itoa(d) +
 				" levels deep; this unit executes at most " + strconv.Itoa(MaxDepth) +
 				". Ask for what you need in two queries rather than one walk of the graph")
 		}
-		if err := checkFanOut(op.SelectionSet, variables); err != nil {
+		if err := checkFanOut(op.SelectionSet, variables, frags, map[string]bool{}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// countSelections counts the top-level fields an operation asks for, expanding
+// spreads: a query whose only selection is one fragment still runs as many
+// resolvers as that fragment names.
+func countSelections(set *ast.SelectionSet, frags map[string]*ast.FragmentDefinition, seen map[string]bool) int {
+	n := 0
+	for _, sel := range set.Selections {
+		switch s := sel.(type) {
+		case *ast.Field:
+			n++
+		case *ast.InlineFragment:
+			if s.SelectionSet != nil {
+				n += countSelections(s.SelectionSet, frags, seen)
+			}
+		case *ast.FragmentSpread:
+			if f := enterFragment(s, frags, seen); f != nil {
+				n += countSelections(f.SelectionSet, frags, seen)
+				delete(seen, s.Name.Value)
+			}
+		}
+	}
+	return n
+}
+
+// enterFragment resolves a spread, or returns nil for one that is unknown or
+// already on the path being walked.
+//
+// The cycle guard is not belt-and-braces. checkCost runs BEFORE graphql.Do,
+// which is where validation lives, so a document reaching these walkers has
+// not yet been rejected for a fragment cycle -- and a pair that spread each
+// other would recurse until the stack ran out. Refusing a repeat on the
+// current path costs a legal document nothing: the same fragment used twice
+// in different places is entered both times.
+func enterFragment(s *ast.FragmentSpread, frags map[string]*ast.FragmentDefinition, seen map[string]bool) *ast.FragmentDefinition {
+	if s.Name == nil {
+		return nil
+	}
+	name := s.Name.Value
+	if seen[name] {
+		return nil
+	}
+	f, ok := frags[name]
+	if !ok || f.SelectionSet == nil {
+		return nil
+	}
+	seen[name] = true
+	return f
 }
 
 // checkFanOut applies MaxTracksWithDetections: any `tracks` field whose
@@ -178,13 +244,24 @@ func checkCost(query string, variables map[string]any) error {
 // Like depth(), named fragment spreads are treated as leaves -- a bounded,
 // documented under-count -- so a client that hides `detections` inside one
 // gets the old behaviour rather than a false refusal.
-func checkFanOut(set *ast.SelectionSet, variables map[string]any) error {
+func checkFanOut(set *ast.SelectionSet, variables map[string]any, frags map[string]*ast.FragmentDefinition, seen map[string]bool) error {
 	for _, sel := range set.Selections {
 		var inner *ast.SelectionSet
 		switch s := sel.(type) {
+		case *ast.FragmentSpread:
+			f := enterFragment(s, frags, seen)
+			if f == nil {
+				continue
+			}
+			err := checkFanOut(f.SelectionSet, variables, frags, seen)
+			delete(seen, s.Name.Value)
+			if err != nil {
+				return err
+			}
+			continue
 		case *ast.Field:
 			inner = s.SelectionSet
-			if s.Name != nil && s.Name.Value == "tracks" && inner != nil && selectionSubtreeHas(inner, "detections") {
+			if s.Name != nil && s.Name.Value == "tracks" && inner != nil && selectionSubtreeHas(inner, "detections", frags, map[string]bool{}) {
 				if limit := limitArgument(s.Arguments, variables); limit > MaxTracksWithDetections {
 					return errors.New("this query asks for detections under " + strconv.Itoa(limit) +
 						" tracks, which is " + strconv.Itoa(limit) + "+ store queries in one request; " +
@@ -198,7 +275,7 @@ func checkFanOut(set *ast.SelectionSet, variables map[string]any) error {
 			continue
 		}
 		if inner != nil {
-			if err := checkFanOut(inner, variables); err != nil {
+			if err := checkFanOut(inner, variables, frags, seen); err != nil {
 				return err
 			}
 		}
@@ -206,18 +283,28 @@ func checkFanOut(set *ast.SelectionSet, variables map[string]any) error {
 	return nil
 }
 
-func selectionSubtreeHas(set *ast.SelectionSet, name string) bool {
+func selectionSubtreeHas(set *ast.SelectionSet, name string, frags map[string]*ast.FragmentDefinition, seen map[string]bool) bool {
 	for _, sel := range set.Selections {
 		switch s := sel.(type) {
 		case *ast.Field:
 			if s.Name != nil && s.Name.Value == name {
 				return true
 			}
-			if s.SelectionSet != nil && selectionSubtreeHas(s.SelectionSet, name) {
+			if s.SelectionSet != nil && selectionSubtreeHas(s.SelectionSet, name, frags, seen) {
 				return true
 			}
 		case *ast.InlineFragment:
-			if s.SelectionSet != nil && selectionSubtreeHas(s.SelectionSet, name) {
+			if s.SelectionSet != nil && selectionSubtreeHas(s.SelectionSet, name, frags, seen) {
+				return true
+			}
+		case *ast.FragmentSpread:
+			f := enterFragment(s, frags, seen)
+			if f == nil {
+				continue
+			}
+			found := selectionSubtreeHas(f.SelectionSet, name, frags, seen)
+			delete(seen, s.Name.Value)
+			if found {
 				return true
 			}
 		}
@@ -265,11 +352,10 @@ func limitArgument(args []*ast.Argument, variables map[string]any) int {
 // `... on Track { detections }` selects at the same depth the fragment sits at
 // -- so it recurses without incrementing.
 //
-// Named fragments are not followed: a spread is counted as a leaf, which
-// under-counts a query that hides depth in one. That is a known gap and it is
-// bounded, because fragment cycles are illegal and rejected by validation, so
-// the worst case is a fixed multiple of MaxDepth rather than an unbounded walk.
-func depth(set *ast.SelectionSet, at int) int {
+// A named fragment spread is treated the same way: it counts where its
+// contents were written, not as a level of its own. Spreads used to be counted
+// as leaves, which let a query hide its whole shape inside one.
+func depth(set *ast.SelectionSet, at int, frags map[string]*ast.FragmentDefinition, seen map[string]bool) int {
 	deepest := at
 	for _, sel := range set.Selections {
 		var d int
@@ -278,12 +364,19 @@ func depth(set *ast.SelectionSet, at int) int {
 			if s.SelectionSet == nil {
 				continue
 			}
-			d = depth(s.SelectionSet, at+1)
+			d = depth(s.SelectionSet, at+1, frags, seen)
 		case *ast.InlineFragment:
 			if s.SelectionSet == nil {
 				continue
 			}
-			d = depth(s.SelectionSet, at)
+			d = depth(s.SelectionSet, at, frags, seen)
+		case *ast.FragmentSpread:
+			f := enterFragment(s, frags, seen)
+			if f == nil {
+				continue
+			}
+			d = depth(f.SelectionSet, at, frags, seen)
+			delete(seen, s.Name.Value)
 		default:
 			continue
 		}
