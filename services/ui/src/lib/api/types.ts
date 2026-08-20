@@ -39,6 +39,16 @@ export interface SensorHealth {
   /** Present when `healthy` is false. */
   reason?: string
   detail?: Record<string, unknown>
+  /**
+   * Declared as hardware this unit may not have fitted -- the BLE sensor is the
+   * standing example. Absent means a sensor that is expected to be there, so an
+   * unhealthy one is a fault; present and true means its absence is a choice.
+   *
+   * The API has sent this since it was added and nothing here declared it, so
+   * the distinction was arriving and being discarded. scripts/check-mirrors.py
+   * now compares this interface against the Go struct that fills it.
+   */
+  optional?: boolean
   /** `GET /sensors` returns the same shape "with full config". */
   config?: SensorRuntimeConfig
 }

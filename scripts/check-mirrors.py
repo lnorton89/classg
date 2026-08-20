@@ -22,9 +22,14 @@ with their reasoning, so that reconciling one by accident fails too.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from check_sensor_fields import sensor_field_names  # noqa: E402
+
 errors: list[str] = []
 
 
@@ -166,11 +171,28 @@ def check_channel_allowlist() -> None:
     compare("channel allowlist", lists[0][0], lists[0][1], lists[1][0], lists[1][1])
 
 
+def check_sensor_health_fields() -> None:
+    """api health.Sensor -> UI SensorHealth, by JSON field name.
+
+    The /health sensors array is hand-described in TypeScript and nothing
+    checked it. Go grew `optional` -- whether a sensor is hardware the unit
+    may not have fitted -- and the UI type never learned about it, so the
+    difference between broken and never-fitted arrived on every response and
+    was discarded. Extraction lives in check_sensor_fields.py.
+    """
+    go_fields, ts_fields, err = sensor_field_names()
+    if err:
+        fail("sensor health", err)
+        return
+    compare("sensor health", "api health.Sensor", go_fields, "ui SensorHealth", ts_fields)
+
+
 def main() -> int:
     check_channel_plan()
     check_weights()
     check_corroborating_classes()
     check_channel_allowlist()
+    check_sensor_health_fields()
 
     if errors:
         for e in errors:
@@ -179,8 +201,8 @@ def main() -> int:
         print("These are hand-maintained copies. Update every copy, or record the")
         print("divergence in scripts/check-mirrors.py with the reason it is correct.")
         return 1
-    print("mirrors: channel plan, fusion weights, corroborating classes and the")
-    print("channel allowlist all agree across their copies")
+    print("mirrors: channel plan, fusion weights, corroborating classes, the")
+    print("channel allowlist and the /health sensor fields all agree")
     return 0
 
 
