@@ -85,9 +85,18 @@ function bandFor(freqMHz: number): BandKey {
   return '6'
 }
 
-/** The Wi-Fi sensor's occupancy reading, or why there isn't one. */
-export function surveyState(sensors: SensorHealth[] | undefined): SurveyState {
-  const sensor = (sensors ?? []).find((s) => s.sensor_kind === 'wifi')
+/**
+ * One Wi-Fi sensor's occupancy reading, or why there isn't one.
+ *
+ * `sensorId` picks which. It used to take the first Wi-Fi sensor it found,
+ * which was the same thing while there was only one; with two receivers that
+ * meant selecting wifi-1 rendered an occupancy card describing wifi-0's radio.
+ * Falling back to the first keeps the no-argument behaviour for callers that
+ * have no particular sensor in mind.
+ */
+export function surveyState(sensors: SensorHealth[] | undefined, want?: string): SurveyState {
+  const wifi = (sensors ?? []).filter((s) => s.sensor_kind === 'wifi')
+  const sensor = want ? wifi.find((s) => s.sensor_id === want) : wifi[0]
   if (!sensor) return { kind: 'no-sensor' }
 
   const sensorId = sensor.sensor_id

@@ -4,9 +4,9 @@ import type { SensorHealth } from '@/lib/api/types'
 
 import { busiest, groupByBand, surveyState, transmitting } from './wifi-survey'
 
-function wifi(detail: Record<string, unknown>): SensorHealth {
+function wifi(detail: Record<string, unknown>, sensorID = 'wifi-0'): SensorHealth {
   return {
-    sensor_id: 'wifi-0',
+    sensor_id: sensorID,
     sensor_kind: 'wifi',
     healthy: true,
     last_heartbeat: '2026-08-18T00:00:00Z',
@@ -41,6 +41,24 @@ describe('surveyState', () => {
     expect(surveyState([wifi({ survey_available: false })]).kind).toBe('unsupported')
     expect(surveyState([wifi({ survey_available: true })]).kind).toBe('warming')
     expect(surveyState([wifi({})]).kind).toBe('unknown')
+  })
+
+  // Two receivers now. Taking the first Wi-Fi sensor found was the same thing
+  // while there was only one, and became wrong the day a second arrived:
+  // selecting wifi-1 rendered a card measuring wifi-0's radio under wifi-1's
+  // heading. Nothing on screen distinguished the two.
+  it('reads the sensor it was asked about, not the first Wi-Fi sensor', () => {
+    const both = [
+      wifi({ survey_available: false }, 'wifi-0'),
+      wifi({ survey_available: true, survey: [CHANNEL_6] }, 'wifi-1'),
+    ]
+
+    expect(surveyState(both, 'wifi-1').kind).toBe('ready')
+    expect(surveyState(both, 'wifi-0').kind).toBe('unsupported')
+    // No id: the first, as before.
+    expect(surveyState(both).kind).toBe('unsupported')
+    // An id nothing is reporting under is a missing sensor, not the wrong one.
+    expect(surveyState(both, 'wifi-9').kind).toBe('no-sensor')
   })
 
   it('reads a published window', () => {

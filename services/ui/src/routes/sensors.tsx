@@ -356,11 +356,14 @@ function SensorDetail({
   const restartFailed = restart.isError && restart.variables === sensor.sensor_id
 
   // The SDR sweep is the SDR sensor's own measurement and Wi-Fi occupancy is
-  // the Wi-Fi sensor's -- see the file header. Neither panel takes a sensor
-  // prop because each already scopes itself to the one sensor of that kind.
+  // the Wi-Fi sensor's -- see the file header. The occupancy panel is told
+  // WHICH Wi-Fi sensor: it used to take the first one it found, which was the
+  // same thing while there was only one, and became wrong the day a second
+  // receiver arrived -- selecting wifi-1 rendered a card measuring wifi-0's
+  // radio, under wifi-1's heading. There is still only one SDR.
   const spectrum =
     sensor.sensor_kind === 'wifi' ? (
-      <WifiOccupancyPanel />
+      <WifiOccupancyPanel sensorId={sensor.sensor_id} />
     ) : sensor.sensor_kind === 'sdr' ? (
       <SpectrumPanel />
     ) : null

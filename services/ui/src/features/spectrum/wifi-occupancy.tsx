@@ -35,9 +35,9 @@ import {
   type ChannelOccupancy,
 } from './wifi-survey'
 
-export function WifiOccupancyPanel() {
+export function WifiOccupancyPanel({ sensorId }: { sensorId?: string } = {}) {
   const sensors = useQuery(sensorsQuery())
-  const state = surveyState(sensors.data)
+  const state = surveyState(sensors.data, sensorId)
 
   return (
     <Card>
