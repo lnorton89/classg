@@ -12,7 +12,7 @@ import {
 
 import { api } from './client'
 import { trackWithDetections } from './graphql'
-import type { DetectionsQuery, TracksQuery } from './types'
+import type { Detection, DetectionsQuery, TracksQuery } from './types'
 
 export const queryKeys = {
   health: ['health'] as const,
@@ -24,6 +24,7 @@ export const queryKeys = {
   trackHistory: ['tracks', 'history'] as const,
   track: (trackId: string) => ['tracks', 'detail', trackId] as const,
   trackDetections: (trackId: string) => ['tracks', 'detections', trackId] as const,
+  trackPath: (trackId: string) => ['tracks', 'path', trackId] as const,
   detections: (query: DetectionsQuery = {}) => ['detections', query] as const,
   captures: ['captures'] as const,
   authMe: ['auth', 'me'] as const,
@@ -159,6 +160,41 @@ export const trackQuery = (trackId: string, queryClient?: QueryClient) =>
       const { track, detections } = await trackWithDetections(trackId, 500)
       queryClient?.setQueryData(queryKeys.trackDetections(trackId), detections)
       return track
+    },
+    staleTime: 5_000,
+  })
+
+/**
+ * Every positioned detection for a track, followed across pages.
+ *
+ * Separate from `trackDetectionsQuery` on purpose, under its own key. That one
+ * is seeded from the GraphQL response `trackQuery` already fetches, so it holds
+ * whatever single page that call asked for -- enough for the RSSI chart, and
+ * not necessarily the whole flight. Reusing it here would mean either making
+ * the seed useless or drawing a path from a partial page.
+ *
+ * The page walk is bounded. `PATH_MAX_PAGES` pages of `MAX_LIMIT` is roughly
+ * fifty minutes of flight at the rate a real one produces detections, which is
+ * past the endurance of anything this watches; a track that somehow exceeds it
+ * draws the part that was fetched rather than hanging the page. It stops early
+ * on the first page without a cursor, which is the normal case.
+ */
+const MAX_LIMIT = 1000
+const PATH_MAX_PAGES = 10
+
+export const trackPathQuery = (trackId: string) =>
+  queryOptions({
+    queryKey: queryKeys.trackPath(trackId),
+    queryFn: async () => {
+      const all: Detection[] = []
+      let cursor: string | undefined
+      for (let page = 0; page < PATH_MAX_PAGES; page++) {
+        const res = await api.trackDetections(trackId, { limit: MAX_LIMIT, cursor })
+        all.push(...res.detections)
+        cursor = res.next_cursor ?? undefined
+        if (!cursor) break
+      }
+      return all
     },
     staleTime: 5_000,
   })

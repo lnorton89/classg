@@ -21,6 +21,7 @@ import { bearingDegrees, distanceMetres } from '@/features/map/geo'
 import { TrackMap } from '@/features/map/track-map'
 import { ConfidenceBar, EvidenceBreakdown, TrackStateBadge } from '@/features/tracks/evidence'
 import { RssiChart } from '@/features/tracks/rssi-chart'
+import { flightPath } from '@/features/tracks/flight-path'
 import { samplesFromDetections } from '@/features/tracks/rssi-samples'
 import {
   SortableTrackDetailGrid,
@@ -28,7 +29,7 @@ import {
 } from '@/features/tracks/sortable-detail-grid'
 import { ShareTrack } from '@/features/tracks/share/share-track'
 import { ApiError } from '@/lib/api/client'
-import { trackDetectionsQuery, trackQuery } from '@/lib/api/queries'
+import { trackDetectionsQuery, trackPathQuery, trackQuery } from '@/lib/api/queries'
 import type { Position } from '@/lib/api/types'
 import { EMPTY } from '@/lib/format'
 import { PageContainer } from '@/components/layout/page-container'
@@ -58,6 +59,7 @@ function TrackDetail() {
   const queryClient = useQueryClient()
   const { data: track } = useQuery(trackQuery(trackId, queryClient))
   const { data: detectionsData } = useQuery(trackDetectionsQuery(trackId))
+  const { data: pathDetections } = useQuery(trackPathQuery(trackId))
   const format = useFormat()
   useTicker(5000)
 
@@ -68,7 +70,10 @@ function TrackDetail() {
   const serial = format.splitSerial(track.identity?.serial)
   const current = track.current
   const operator = track.operator
-  const history = track.history ?? []
+  // The track's own history is a ring buffer that drops its oldest points on a
+  // long flight, so a detail page that reads it shows a route with the start
+  // missing. Rebuilt from the detections instead -- see flightPath.
+  const history = flightPath(pathDetections ?? [], track.history ?? [])
   const peakRssi = format.rssi(
     rssiSamples.length ? Math.max(...rssiSamples.map((sample) => sample.rssi)) : null,
   )
@@ -177,7 +182,7 @@ function TrackDetail() {
       contentClassName: 'p-0 pt-0',
       content: (
         <>
-          <TrackMap track={track} />
+          <TrackMap track={track} path={history} />
           <PositionHistory history={history} />
         </>
       ),
@@ -342,8 +347,27 @@ function TrackDetail() {
   )
 }
 
+/**
+ * How many rows this panel will draw.
+ *
+ * Every point is rendered twice -- once as a card for narrow screens, once as a
+ * table row for wide ones, with `lg:hidden` choosing between them in CSS rather
+ * than in React. The panel is a <details>, and its contents mount whether or
+ * not it is open, so that cost is paid on every page load.
+ *
+ * That was tolerable when the path was capped at a few hundred points. Now that
+ * it is rebuilt from detections it can be thousands, and reading down a table of
+ * thousands is not something anybody does -- the map is how you look at a path.
+ * The count in the summary stays the true total, so the number is never a lie
+ * about what was recorded; only the drawing is bounded.
+ */
+const HISTORY_ROWS = 500
+
 function PositionHistory({ history }: { history: Position[] }) {
   const format = useFormat()
+  // Reversed once, here, instead of separately in each of the two renderings.
+  const rows = [...history].reverse().slice(0, HISTORY_ROWS)
+  const hidden = history.length - rows.length
 
   return (
     <details className="group border-border border-t">
@@ -354,7 +378,10 @@ function PositionHistory({ history }: { history: Position[] }) {
         />
         <HistoryIcon className="text-muted-foreground size-4 shrink-0" aria-hidden />
         <span className="font-medium">Position history</span>
-        <span className="text-muted-foreground text-xs">{history.length} reported points</span>
+        <span className="text-muted-foreground text-xs">
+          {history.length} reported points
+          {hidden > 0 ? ` (newest ${HISTORY_ROWS} listed)` : ''}
+        </span>
         {/* The order is not obvious from a table of timestamps alone, and
             reading it backwards inverts every climb and descent. */}
         <span className="text-muted-foreground ml-auto hidden text-xs sm:inline">
@@ -373,7 +400,7 @@ function PositionHistory({ history }: { history: Position[] }) {
                 The time and the position lead, because those are what somebody
                 scrubbing a track's history is reading down. */}
             <ul className="space-y-2 pr-1 pb-2 lg:hidden">
-              {[...history].reverse().map((position, index) => (
+              {rows.map((position, index) => (
                 <li
                   key={`${position.at ?? index}-${position.lat}`}
                   className="border-border/60 rounded-md border px-2.5 py-2 font-mono text-2xs"
@@ -434,7 +461,7 @@ function PositionHistory({ history }: { history: Position[] }) {
                 {/* Zebra rather than rules: six columns is wide enough that the
                     eye drifts a row between the timestamp and the heading. */}
                 <tbody className="font-mono">
-                  {[...history].reverse().map((position, index) => (
+                  {rows.map((position, index) => (
                     <tr
                       key={`${position.at ?? index}-${position.lat}`}
                       className="odd:bg-foreground/[0.035] hover:bg-accent/40"

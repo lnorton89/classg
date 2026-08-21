@@ -1,13 +1,23 @@
 import { UserIcon } from 'lucide-react'
 
-import type { Track } from '@/lib/api/types'
+import type { Position, Track } from '@/lib/api/types'
 
 import { plottablePoints } from './geo'
 import { LiveMap } from './live-map'
 
-export function TrackMap({ track }: { track: Track }) {
-  const historyCount = track.history?.length ?? 0
-  const hasLocation = plottablePoints([track]).length > 0
+/**
+ * `path` overrides the track's own history for drawing.
+ *
+ * The detail page rebuilds the route from detections, because a track's history
+ * is a ring buffer that drops its start on a long flight. Substituting it into
+ * the track handed to LiveMap keeps the map itself unaware of where a path came
+ * from -- it draws `history`, as it does for a live aircraft.
+ */
+export function TrackMap({ track, path }: { track: Track; path?: Position[] }) {
+  const plotted =
+    path && path.length > (track.history?.length ?? 0) ? { ...track, history: path } : track
+  const historyCount = plotted.history?.length ?? 0
+  const hasLocation = plottablePoints([plotted]).length > 0
 
   if (!hasLocation) {
     return (
@@ -21,7 +31,7 @@ export function TrackMap({ track }: { track: Track }) {
     <div className="relative overflow-hidden">
       <LiveMap
         className="h-[22rem] min-h-72 w-full sm:h-[26rem]"
-        tracks={[track]}
+        tracks={[plotted]}
         adsb={[]}
         selectedTrackId={track.track_id}
         coverageBroken={false}
