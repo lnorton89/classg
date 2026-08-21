@@ -1,0 +1,23 @@
+[Unit]
+Description=ClassG: snapshot the detection database on a schedule
+Documentation=https://github.com/lnorton89/classg/blob/main/docs/ops/13-backup-and-restore.md
+
+[Timer]
+# Hourly, because the loss window IS the interval and what is inside it cannot
+# be regenerated -- the sky does not re-run. A snapshot costs a few seconds and
+# ~3MB compressed, so the cheap answer and the safe answer are the same one.
+OnCalendar=hourly
+
+# Spread across the hour so a fleet of units does not all wake and hit their
+# cards at :00, and so the snapshot is unlikely to land on the same minute as
+# the auto-deploy tick.
+RandomizedDelaySec=10min
+
+# A unit that was powered off through its slot backs up on the next boot rather
+# than skipping the window entirely. This matters here more than for most
+# timers: an off unit is usually one that was in a field all day, which is
+# precisely when it collected the data worth keeping.
+Persistent=true
+
+[Install]
+WantedBy=timers.target

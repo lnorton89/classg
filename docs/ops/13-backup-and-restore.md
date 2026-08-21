@@ -14,20 +14,99 @@ is blunt about why it matters: the sky does not re-run, so recorded
 detections cannot be regenerated from anything.
 
 **The default posture, stated plainly: with `CLASSG_TURSO_URL` empty — which
-is how a fresh install comes up, and how this unit ran until sync was
-configured — the SD card is the only copy of everything above.** On this
-unit the `classg-data` volume was created fresh on 2026-08-16, so nothing
-older than that exists anywhere in any case.
+is how a fresh install comes up — the SD card is the only copy of everything
+above.** On this unit the `classg-data` volume was created fresh on
+2026-08-16, so nothing older than that exists anywhere in any case.
+
+**This unit, as of 2026-08-20:** Turso sync is **off**, and hourly local
+snapshots are on. Sync was disabled because the mode it ran in put every
+write on the network — see [the ADR's correction
+note](../architecture/adr/0006-storage-turso-libsql.md) — and turning it off
+took end-to-end detection latency from a median of 86s to 0.5s. The
+credentials are still in `.env`, commented, if you want it back.
 
 Also on the card and *not* in the database: the capture corpus in
 `captures/` (gitignored, per its README), and `.env` with its secrets.
 
-## Replication with Turso
+## Hourly local snapshots
 
-The chosen backup path for this deployment is libSQL's embedded replica:
-the local file stays authoritative for writes and replicates continuously to
-a Turso database. The compose file already passes the three variables
-through; configuring it is filling them in.
+The default backup path, and the only one that needs no account, no
+credentials and no uplink.
+
+```bash
+./scripts/install-backup-timer.sh
+```
+
+That installs a systemd timer that runs [`scripts/backup-db.sh`](../../scripts/backup-db.sh)
+every hour, keeps the newest 48, and takes one immediately so a broken
+install fails in front of you instead of silently an hour later. Each
+snapshot is a single self-contained file — no `-wal`, no `-info`, nothing to
+recover — produced with `VACUUM INTO` and checked with `PRAGMA
+integrity_check` and a row count before it is kept. Measured on this unit: a
+22MB database takes 3.4s and compresses to ~3MB.
+
+It does **not** stop the api container to do this. That matters more than it
+sounds: the API is the process subscribed to the sensor bus, so a backup that
+takes the API down is a backup that costs you detections every time it runs.
+
+Run one by hand any time:
+
+```bash
+./scripts/backup-db.sh                          # -> ~/classg-backups
+CLASSG_BACKUP_DIR=/mnt/usb ./scripts/backup-db.sh
+```
+
+### The part that is easy to skip
+
+A snapshot in `~/classg-backups` is on the same SD card as the database it
+came from. **That protects you from a corrupted table and not from the card
+failing**, and the card is what actually fails. Either point
+`CLASSG_BACKUP_DIR` at mounted external storage, or pull them off on a
+schedule from somewhere else:
+
+```bash
+rsync -a admin@pisdr:classg-backups/ ~/classg-backups/
+```
+
+### Restoring one
+
+```bash
+gunzip -k classg-20260821T012139Z.db.gz
+docker compose --env-file .env -f docker/docker-compose.yml stop api
+docker cp classg-20260821T012139Z.db classg-api:/data/classg.db
+docker exec classg-api sh -c 'rm -f /data/classg.db-wal /data/classg.db-shm /data/classg.db-info'
+docker compose --env-file .env -f docker/docker-compose.yml start api
+```
+
+Removing the sidecars matters: a stale `-wal` replayed against a database it
+does not belong to is corruption, and a leftover `-info` makes the store
+think it is still a replica of a database it no longer matches.
+
+Check what you are about to restore *before* you overwrite anything —
+`users` at zero means restoring puts you back at the first-run setup screen
+with no way in:
+
+```bash
+sqlite3 classg-20260821T012139Z.db \
+  'select (select count(*) from detections), (select count(*) from tracks), (select count(*) from users)'
+```
+
+## Off-site replication with Turso (optional)
+
+Snapshots handle a dead card only if you have moved them off the card.
+Replication does that continuously, without anyone remembering to.
+
+> **Read this before enabling it.** Use a build that opens the database with
+> `NewSyncedDatabaseConnector`. The similarly named `NewEmbeddedReplicaConnector`
+> — which this repo used until 2026-08-20 — writes **through to the remote
+> primary**, so every detection insert becomes an internet round trip and the
+> local file is only a read cache. On this unit that measured ~250ms per
+> insert, a 42s API startup, and detections surfacing 86s late while heartbeats
+> starved behind them. The
+> [ADR](../architecture/adr/0006-storage-turso-libsql.md) has the detail.
+
+The compose file already passes the three variables through; configuring it
+is filling them in.
 
 ### 1. Create the database
 
@@ -115,8 +194,8 @@ order of increasing confidence:
 docker logs classg-api 2>&1 | grep libSQL
 ```
 
-- `libSQL embedded replica: syncing to Turso` — sync is configured and the
-  connector opened.
+- `libSQL synced database: writes are local, replicating to Turso` — sync is
+  configured and the connector opened.
 - `libSQL local database: no sync configured` — the variables did not reach
   the process; check `.env` and that the container was recreated.
 - A typo'd URL **fails startup on purpose** rather than silently downgrading
@@ -163,11 +242,16 @@ needs:
 | monitor-mode / adapter host config | Redo [02-wifi-adapter.md](02-wifi-adapter.md) |
 | `classg-tile-cache` volume | Refills itself from use; losing it costs bandwidth, not data |
 
-## Backing up without Turso
+## The cold copy, and why it is not the recipe here
 
-A cold copy of the volume works and is better than nothing. Stop the writer
-first — the database uses WAL, and copying under a live writer risks a torn
-copy that looks fine until it is opened:
+Stopping the api container and taring the volume is the obvious backup, and
+this document used to recommend it. It is correct and it is still the right
+move for a one-off before something risky — but not on a timer, because the
+API is the bus subscriber and every second it is stopped is detections nobody
+records. `scripts/backup-db.sh` exists to get the same consistency without
+the downtime.
+
+If you want one anyway — before a migration, say:
 
 ```bash
 docker compose --env-file .env -f docker/docker-compose.yml stop api
@@ -177,8 +261,6 @@ docker compose --env-file .env -f docker/docker-compose.yml start api
 ```
 
 Restore by unpacking into the volume before the api container's first start.
-This is a point-in-time copy that is stale the moment it finishes, which is
-why it is the fallback and Turso is the plan.
 
 ## Container logs and the card
 
@@ -197,7 +279,7 @@ irreversible line — everything above it is recoverable from the repo.
 ```bash
 # host agents and sensors
 sudo systemctl disable --now classg-watchdog.timer classg-autodeploy.timer \
-  classg-sweep-agent.service classg-sensor-wifi classg-sensor-sdr
+  classg-backup.timer classg-sweep-agent.service classg-sensor-wifi classg-sensor-sdr
 sudo rm -f /etc/systemd/system/classg-*.service /etc/systemd/system/classg-*.timer
 sudo systemctl daemon-reload
 

@@ -37,6 +37,15 @@ without it — see [docs/ops/07-external-data.md](../docs/ops/07-external-data.m
 | `fetch-aircraft-db.sh [out]` | OpenSky aircraft database, to name ADS-B contacts (`make data-aircraft`) |
 | `fetch-basemap.sh <bbox> [z]` | A Protomaps `.pmtiles` basemap for the operator UI |
 
+Two more keep the data alive. The database is the one thing on the card that
+cannot be regenerated -- see
+[docs/ops/13-backup-and-restore.md](../docs/ops/13-backup-and-restore.md).
+
+| Script | Purpose |
+|---|---|
+| `backup-db.sh` | One verified, self-contained snapshot of the database, with no downtime |
+| `install-backup-timer.sh` | Install that on an hourly systemd timer |
+
 Start with:
 
 ```bash

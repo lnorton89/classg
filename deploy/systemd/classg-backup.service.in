@@ -1,0 +1,22 @@
+[Unit]
+Description=ClassG: take a verified snapshot of the detection database
+Documentation=https://github.com/lnorton89/classg/blob/main/docs/ops/13-backup-and-restore.md
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+User=@RUNAS@
+WorkingDirectory=@CLASSG_HOME@
+ExecStart=@CLASSG_HOME@/scripts/backup-db.sh
+
+# The snapshot is an online copy through docker cp plus a VACUUM INTO, measured
+# at ~3.4s against a 22MB database on a Pi 4. Five minutes is a ceiling for a
+# card that has gone slow, not an expectation.
+TimeoutStartSec=5min
+
+Environment=CLASSG_BACKUP_DIR=@BACKUP_DIR@
+Environment=CLASSG_BACKUP_KEEP=@BACKUP_KEEP@
+
+[Install]
+WantedBy=multi-user.target
