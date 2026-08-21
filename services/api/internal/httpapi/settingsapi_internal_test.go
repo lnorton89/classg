@@ -165,3 +165,58 @@ func TestSavingStillReportsThatARestartIsNeeded(t *testing.T) {
 		t.Error("restart_required went false; the assembled config is still the old one")
 	}
 }
+
+// Pausing recording writes the new state through the settings tier, and its
+// own comment says why: "so anything reading configuration sees the live
+// state". Writing the store alone did not achieve that -- GET /config/settings
+// kept answering with whatever startup assembled, so an audit of this unit's
+// configuration reported recording as ON while it was paused.
+//
+// The same seam as the settings page, on the one control that decides whether
+// flights are captured at all.
+func TestPausingRecordingIsVisibleInStoredConfiguration(t *testing.T) {
+	s := settingsServer(t)
+
+	if before := getSetting(t, s, "monitoring.enabled"); before.Value != true {
+		t.Fatalf("this unit starts recording; setting reads %#v", before.Value)
+	}
+
+	r := httptest.NewRequest(http.MethodPut, "/api/v1/monitoring",
+		strings.NewReader(`{"enabled":false,"reason":"testing"}`))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT monitoring: %d (%s)", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "warning") {
+		t.Errorf("the change reported a warning: %s", w.Body.String())
+	}
+
+	// The live switch is the authority on what is happening now...
+	if s.monitoring.Enabled() {
+		t.Error("recording did not actually pause")
+	}
+	// ...and stored configuration must not contradict it.
+	after := getSetting(t, s, "monitoring.enabled")
+	if after.Value != false {
+		t.Errorf("stored configuration reports monitoring.enabled=%#v while recording is "+
+			"paused; an audit of this unit would say it is capturing when it is not", after.Value)
+	}
+	if after.Source != settings.SourceDB {
+		t.Errorf("source is %q, want %q", after.Source, settings.SourceDB)
+	}
+
+	// And resuming has to come back the same way.
+	r = httptest.NewRequest(http.MethodPut, "/api/v1/monitoring",
+		strings.NewReader(`{"enabled":true}`))
+	r.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	s.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("resume: %d (%s)", w.Code, w.Body.String())
+	}
+	if got := getSetting(t, s, "monitoring.enabled"); got.Value != true {
+		t.Errorf("after resuming, stored configuration reports %#v", got.Value)
+	}
+}

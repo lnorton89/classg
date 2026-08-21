@@ -59,16 +59,36 @@ func (s *Server) handlePutMonitoring(w http.ResponseWriter, r *http.Request) {
 	// Persist through the settings tier so anything reading configuration sees
 	// the live state. A failure here is not fatal: the running state is already
 	// correct, and startup does not consult the stored value anyway.
+	//
+	// Both halves, or the sentence above is not true. Writing the store alone
+	// left GET /config/settings answering with whatever startup assembled, so
+	// an audit of this unit's configuration reported recording as on while it
+	// was paused -- the same seam the settings page had, on the one control
+	// that decides whether flights are captured at all.
 	value := "false"
 	if req.Enabled {
 		value = "true"
 	}
+	stored := map[string]string{SettingMonitoringEnabled: value}
 	if err := settings.PutOne(r.Context(), s.store, SettingMonitoringEnabled, value); err != nil {
 		writeJSON(w, http.StatusOK, struct {
 			State   any    `json:"state"`
 			Warning string `json:"warning"`
 		}{state, "recording state changed but could not be saved; the change is in effect, and stored configuration now reports the wrong value"})
 		return
+	}
+	if s.settings != nil {
+		// The store already has it; a failure here can only mean the value we
+		// just wrote does not parse, which is a programming error rather than
+		// an operator one. Reported as a warning beside a state that is
+		// nonetheless correct, rather than failing a request that worked.
+		if err := s.settings.Update(stored); err != nil {
+			writeJSON(w, http.StatusOK, struct {
+				State   any    `json:"state"`
+				Warning string `json:"warning"`
+			}{state, "recording state changed and saved, but stored configuration still reports the previous value: " + err.Error()})
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, state)
 }
