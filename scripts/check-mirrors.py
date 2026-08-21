@@ -431,6 +431,72 @@ def check_exec_sites() -> None:
         fail("subprocess launch", f"{site} starts a process without proc.Command")
 
 
+def check_history_depth() -> None:
+    """fusion's HistoryDepth vs the API's fusion.max_history.
+
+    Both trim the same trail, in series: fusion holds a ring buffer and the API
+    trims again on the way to storage. Whichever is SMALLER is the real limit,
+    and only one of them is the one anybody reads. Set the API's below fusion's
+    and the map quietly loses the start of a flight that fusion is still holding
+    -- which is exactly what shipped, at 512 points: a real flight ran out of
+    trail after 2m43s and the line began eating its own tail while recording.
+
+    So this is not an equality check. The API's cap must simply never be the
+    tighter of the two.
+    """
+    fusion_src = read("services/fusion/track.go")
+    m = re.search(r"^	HistoryDepth\s*=\s*(\d+)", fusion_src, re.M)
+    if not m:
+        fail("history depth", "could not find HistoryDepth in services/fusion/track.go")
+        return
+    depth = int(m.group(1))
+
+    settings_src = read("services/api/internal/settings/settings.go")
+    m = re.search(
+        r'Key:\s*"fusion\.max_history".*?Default:\s*"(\d+)"', settings_src, re.S
+    )
+    if not m:
+        fail("history depth", "could not find the fusion.max_history default in settings.go")
+        return
+    setting = int(m.group(1))
+
+    seed_src = read("config/defaults.yaml")
+    m = re.search(r"^\s*max_history:\s*(\d+)", seed_src, re.M)
+    if not m:
+        fail("history depth", "could not find max_history in config/defaults.yaml")
+        return
+    seed = int(m.group(1))
+
+    migrate_src = read("scripts/migrate-env.sh")
+    m = re.search(r'"CLASSG_MAX_HISTORY\|fusion\.max_history\|(\d+)\|', migrate_src)
+    if not m:
+        fail("history depth", "could not find CLASSG_MAX_HISTORY in scripts/migrate-env.sh")
+        return
+    migrate = int(m.group(1))
+    if migrate != setting:
+        fail(
+            "history depth",
+            f"scripts/migrate-env.sh calls the default {migrate}, settings.go says {setting}. "
+            "That table decides what counts as 'already the default', and a stale entry "
+            "silently DELETES an operator's explicit setting during migration.",
+        )
+
+    if setting != seed:
+        fail(
+            "history depth",
+            f"settings.go default ({setting}) and config/defaults.yaml ({seed}) disagree; "
+            "the seed is what a fresh unit gets, so they have to match",
+        )
+    for name, value in (("settings.go default", setting), ("config/defaults.yaml", seed)):
+        if value < depth:
+            fail(
+                "history depth",
+                f"{name} is {value}, below fusion's HistoryDepth of {depth}. The API "
+                "would trim a trail fusion still holds, and the map would lose the "
+                "start of a flight that is still being recorded.",
+            )
+
+
 def main() -> int:
     check_channel_plan()
     check_weights()
@@ -443,6 +509,7 @@ def main() -> int:
     check_ulid_epoch_clamp()
     check_world_extract_zoom()
     check_basemap_provider()
+    check_history_depth()
 
     if errors:
         for e in errors:
@@ -455,6 +522,7 @@ def main() -> int:
     print(f"channel allowlist agree; so do {len(GO_TS_PAIRS)} Go/TypeScript response shapes")
     print(f"and {len(SHELL_GO_PAIRS)} hand-written state documents; every subprocess")
     print("goes through internal/proc, and the basemap ceiling matches its source")
+    print("and the API never trims a track trail tighter than fusion keeps it")
     return 0
 
 

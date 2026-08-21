@@ -68,7 +68,10 @@ sensors:
 # --- Fusion ----------------------------------------------------------------
 fusion:
   track_ttl: 5m
-  max_history: 512
+  # Matches fusion's own HistoryDepth. Set BELOW it and this silently becomes
+  # the real limit: fusion sends a full trail and the API trims it on the way
+  # to storage, so the map loses the start of a flight that fusion still has.
+  max_history: 4096
 
   # --- Optional external data. All off; see docs/ops/07-external-data.md.
   #

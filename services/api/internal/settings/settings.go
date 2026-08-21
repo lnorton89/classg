@@ -114,7 +114,7 @@ var Defs = []Def{
 	{Key: "fusion.track_ttl", Env: "CLASSG_FUSION_TRACK_TTL", Kind: KindDuration,
 		Default: "5m", Mutable: true, Doc: "age after which a track with no update is closed"},
 	{Key: "fusion.max_history", Env: "CLASSG_MAX_HISTORY", Kind: KindInt,
-		Default: "512", Mutable: true, Doc: "position history points retained per track"},
+		Default: "4096", Mutable: true, Doc: "position history points retained per track"},
 
 	// --- Fusion: optional external data (docs/ops/07-external-data.md).
 	//

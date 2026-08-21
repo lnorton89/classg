@@ -30,6 +30,10 @@ type Ingestor struct {
 	// MaxHistory bounds the position history persisted per track. fusion keeps
 	// a ring buffer of its own; this stops a long-lived track from growing the
 	// stored document without limit on an SD card.
+	//
+	// Keep it at or above fusion's HistoryDepth. Below it, this trim -- not
+	// fusion's -- is what an operator actually sees, and the trail goes missing
+	// from the map and from storage while fusion is still holding the points.
 	MaxHistory int
 	// ExposeOperatorLocation gates whether operator positions reach clients.
 	ExposeOperatorLocation bool

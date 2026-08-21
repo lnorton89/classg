@@ -139,7 +139,7 @@ func TestAssembleDefaults(t *testing.T) {
 	if !cfg.ExposeOperatorLocation {
 		t.Fatal("operator location is included by default for this deployment (ADR-0006)")
 	}
-	if cfg.MaxHistory != 512 {
+	if cfg.MaxHistory != 4096 {
 		t.Fatalf("MaxHistory = %d", cfg.MaxHistory)
 	}
 	if cfg.RetentionDetections != 168*time.Hour {

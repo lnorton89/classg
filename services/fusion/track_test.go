@@ -137,7 +137,7 @@ func TestMACTrackPromotedToSerialKeepsHistory(t *testing.T) {
 	mac := "aa:bb:cc:dd:ee:ff"
 
 	first := s.Ingest(det("A", "", mac, now), now)
-	first.addPosition(Position{Lat: 47.0, Lon: 8.0, At: now}, HistoryDepth)
+	first.addPosition(Position{Lat: 47.0, Lon: 8.0, At: now}, DefaultLifecycle())
 
 	second := s.Ingest(det("A", "SER9", mac, now.Add(time.Second)), now)
 
@@ -516,5 +516,130 @@ func TestAClosedTrackNeverTakesAnotherDetection(t *testing.T) {
 	}
 	if first.State != StateClosed {
 		t.Errorf("the closed track changed state to %s", first.State)
+	}
+}
+
+// --- Trail decimation -------------------------------------------------------
+//
+// The trail used to record a point per detection. At the rate a real flight
+// produces them that filled the 512-point ring buffer in 2m43s, and from then
+// on the map lost the beginning of a flight that was still being flown.
+
+// atPos builds a positioned detection at a chosen time, which `positioned`
+// cannot do -- its timestamp is baked into the body.
+func atPos(t *testing.T, serial string, lat, lon float64, ts time.Time) Detection {
+	t.Helper()
+	body := fmt.Sprintf(`{
+      "schema_version":"1.0","detection_id":"01J0000000000000000000000A",
+      "ts":%q,"sensor_id":"wifi-0","sensor_kind":"wifi",
+      "detection_class":"A","identity":{"serial":%q},
+      "position":{"lat":%f,"lon":%f}}`,
+		ts.UTC().Format(time.RFC3339Nano), serial, lat, lon)
+	d, err := ParseDetection([]byte(body))
+	if err != nil {
+		t.Fatalf("parse detection: %v", err)
+	}
+	return d
+}
+
+// metresNorth converts a distance to a latitude delta. Good to well under a
+// percent at these scales, which is far tighter than the thresholds under test.
+func metresNorth(m float64) float64 { return m / 111_320.0 }
+
+func TestAHoverDoesNotFillTheTrail(t *testing.T) {
+	s := newTestStore()
+	start := time.Now().UTC()
+
+	// Twenty detections inside one HistoryMinInterval, all from the same spot:
+	// a hovering aircraft, sampled at the rate a real sensor produces.
+	var tr *Track
+	for i := 0; i < 20; i++ {
+		ts := start.Add(time.Duration(i) * 50 * time.Millisecond)
+		tr = s.Ingest(atPos(t, "1596F3AAAAAAAAAAAAAA", 47.6062, -122.3321, ts), ts)
+	}
+
+	if len(tr.History) != 1 {
+		t.Fatalf("a hover recorded %d trail points; it went nowhere, so one is right",
+			len(tr.History))
+	}
+	// The marker must still track the aircraft at full rate even so.
+	if tr.Current == nil || !tr.Current.At.Equal(start.Add(19*50*time.Millisecond)) {
+		t.Fatalf("Current did not follow the latest detection: %+v", tr.Current)
+	}
+}
+
+func TestAStationaryAircraftIsStillRecordedPeriodically(t *testing.T) {
+	s := newTestStore()
+	start := time.Now().UTC()
+
+	// Same spot, but spread over four HistoryMinInterval windows. A hover is a
+	// real thing to have recorded; it must not vanish from its own history.
+	var tr *Track
+	for i := 0; i < 5; i++ {
+		ts := start.Add(time.Duration(i) * HistoryMinInterval)
+		tr = s.Ingest(atPos(t, "1596F3AAAAAAAAAAAAAA", 47.6062, -122.3321, ts), ts)
+	}
+
+	if len(tr.History) != 5 {
+		t.Fatalf("a %v hover recorded %d points, want one per interval",
+			4*HistoryMinInterval, len(tr.History))
+	}
+}
+
+func TestRealMovementIsNeverDropped(t *testing.T) {
+	s := newTestStore()
+	start := time.Now().UTC()
+
+	// Well clear of HistoryMinMoveM, and fast enough that the interval rule
+	// cannot be what keeps them: every point here is kept on movement alone.
+	const step = HistoryMinMoveM * 3
+	var tr *Track
+	for i := 0; i < 25; i++ {
+		ts := start.Add(time.Duration(i) * 100 * time.Millisecond)
+		tr = s.Ingest(atPos(t, "1596F3AAAAAAAAAAAAAA",
+			47.6062+metresNorth(float64(i)*step), -122.3321, ts), ts)
+	}
+
+	if len(tr.History) != 25 {
+		t.Fatalf("moving aircraft recorded %d of 25 positions", len(tr.History))
+	}
+}
+
+// The regression. Measured on a real flight on 2026-08-21: detections at
+// 3.15/s, aircraft averaging 3.35 m/s. Under the old rule the trail was full
+// after 512 points -- 2m43s -- and every later point cost the operator the
+// start of their flight.
+func TestATwentyMinuteFlightKeepsItsTakeoffPoint(t *testing.T) {
+	s := newTestStore()
+	start := time.Now().UTC()
+
+	const (
+		flight   = 20 * time.Minute
+		interval = 317 * time.Millisecond // 3.15 detections/second
+		speed    = 3.35                   // metres/second, measured
+	)
+
+	var tr *Track
+	for elapsed := time.Duration(0); elapsed < flight; elapsed += interval {
+		ts := start.Add(elapsed)
+		metres := speed * elapsed.Seconds()
+		tr = s.Ingest(atPos(t, "1596F3AAAAAAAAAAAAAA",
+			47.6062+metresNorth(metres), -122.3321, ts), ts)
+	}
+
+	if len(tr.History) == 0 {
+		t.Fatal("no history at all")
+	}
+	if len(tr.History) > HistoryDepth {
+		t.Fatalf("history %d exceeds the cap %d", len(tr.History), HistoryDepth)
+	}
+	// The point that matters: the aircraft took off at the start latitude, and
+	// after twenty minutes the trail must still begin there.
+	if got := tr.History[0].Lat; got != 47.6062 {
+		t.Fatalf("the takeoff point was dropped: trail now starts at %.6f, "+
+			"%.0fm along the flight", got, (got-47.6062)*111_320.0)
+	}
+	if !tr.History[0].At.Equal(start) {
+		t.Fatalf("trail starts at %v, flight started at %v", tr.History[0].At, start)
 	}
 }

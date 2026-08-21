@@ -28,6 +28,8 @@ type Lifecycle struct {
 	CoastAfter           time.Duration
 	CloseAfter           time.Duration
 	HistoryDepth         int
+	HistoryMinMoveM      float64
+	HistoryMinInterval   time.Duration
 }
 
 func DefaultLifecycle() Lifecycle {
@@ -37,6 +39,8 @@ func DefaultLifecycle() Lifecycle {
 		CoastAfter:           CoastAfter,
 		CloseAfter:           CloseAfter,
 		HistoryDepth:         HistoryDepth,
+		HistoryMinMoveM:      HistoryMinMoveM,
+		HistoryMinInterval:   HistoryMinInterval,
 	}
 }
 
@@ -48,7 +52,38 @@ const (
 	ConfirmMinSpan       = 2 * time.Second
 	CoastAfter           = 30 * time.Second
 	CloseAfter           = 300 * time.Second
-	HistoryDepth         = 512
+)
+
+// How much of a flight the trail remembers.
+//
+// A track document carries its whole history and is republished on every
+// detection, so these two numbers set the size of every track message, every
+// websocket frame, and every row rewrite. They are chosen against a measured
+// flight rather than picked round.
+//
+// The measurement (2026-08-21, DJI, 163s of a real flight): detections arrived
+// at 3.15/s, the aircraft averaged 3.35 m/s, and consecutive recorded positions
+// were a median of 0.42m apart -- with 54% of them less than 0.5m from the
+// previous one and a quarter of them not moving at all. At 512 points that
+// filled in 2m43s, after which the ring buffer dropped the start of the flight
+// while it was still being flown: the trail visibly ate its own tail.
+const (
+	// Positions closer together than this are the same place as far as a map
+	// is concerned. At the zoom an operator actually watches a flight at, 2m is
+	// under a pixel, so nothing visible is lost -- while roughly half the
+	// points, which were GPS jitter around a slow-moving aircraft, are.
+	HistoryMinMoveM = 2.0
+
+	// ...but a stationary aircraft must not vanish from its own history. A
+	// hover is a real thing to have recorded, so a point still lands on this
+	// interval however little the aircraft moved.
+	HistoryMinInterval = 2 * time.Second
+
+	// 4096 points at >=2m apart is >=8km of flight path, which outlasts the
+	// battery of anything this system is meant to watch. The cap remains for
+	// the case the thresholds cannot bound -- a track that never closes -- and
+	// dropping the oldest point is still the right behaviour there.
+	HistoryDepth = 4096
 )
 
 // Evidence classes that corroborate an identification but must never make one
@@ -207,11 +242,32 @@ func (t *Track) updateState(now time.Time, lifecycle Lifecycle) {
 	}
 }
 
-func (t *Track) addPosition(p Position, historyDepth int) {
+// addPosition updates the live position always, and extends the trail only when
+// the aircraft has actually gone somewhere.
+//
+// Current and History answer different questions. Current is "where is it now",
+// and is replaced on every detection so the marker tracks the aircraft at full
+// rate. History is "where has it been", and a point that repeats the previous
+// one to within GPS noise adds nothing to that answer while costing the same
+// bytes in every subsequent message. See HistoryMinMoveM for the measurement.
+func (t *Track) addPosition(p Position, lc Lifecycle) {
 	t.Current = &p
+
+	if len(t.History) > 0 && lc.HistoryMinMoveM > 0 {
+		last := t.History[len(t.History)-1]
+		moved := horizontalDistanceM(last.Lat, last.Lon, p.Lat, p.Lon)
+		// Not p.At.Sub(last.At): detections can arrive out of order, and a
+		// negative interval would read as "no time passed" and suppress the
+		// point rather than keep it.
+		elapsed := p.At.Sub(last.At).Abs()
+		if moved < lc.HistoryMinMoveM && elapsed < lc.HistoryMinInterval {
+			return
+		}
+	}
+
 	t.History = append(t.History, p)
-	if len(t.History) > historyDepth {
-		t.History = t.History[len(t.History)-historyDepth:]
+	if lc.HistoryDepth > 0 && len(t.History) > lc.HistoryDepth {
+		t.History = t.History[len(t.History)-lc.HistoryDepth:]
 	}
 }
 
@@ -439,7 +495,7 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 				p.TerrainElevationM = &ground
 			}
 		}
-		t.addPosition(p, s.lifecycle.HistoryDepth)
+		t.addPosition(p, s.lifecycle)
 	}
 	if d.Operator != nil {
 		t.Operator = &Position{Lat: d.Operator.Lat, Lon: d.Operator.Lon, At: d.TS}

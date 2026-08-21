@@ -81,7 +81,7 @@ it is **never silent**:
 // GET /config
 { "retention_detections": { "value": "168h", "source": "env",  "mutable": false },
   "sensor_stale_after":   { "value": "30s",  "source": "db",   "mutable": true  },
-  "max_history":          { "value": 512,    "source": "seed", "mutable": true  } }
+  "max_history":          { "value": 4096,   "source": "seed", "mutable": true  } }
 ```
 
 The UI renders `source: "env"` settings as read-only with the reason. This is the actual fix:

@@ -55,7 +55,7 @@ MOVED_KEYS=(
     "CLASSG_EXPECTED_SENSORS|sensors.expected|wifi-0:wifi|yes"
     "CLASSG_SENSOR_STALE_AFTER|sensors.stale_after|30s|yes"
     "CLASSG_SENSOR_RESTART_COMMAND|sensors.restart_command|systemctl restart %s|yes"
-    "CLASSG_MAX_HISTORY|fusion.max_history|512|yes"
+    "CLASSG_MAX_HISTORY|fusion.max_history|4096|yes"
     "CLASSG_RETENTION_DETECTIONS|retention.detections|168h|yes"
     "CLASSG_RETENTION_TRACKS|retention.tracks|2160h|yes"
     "CLASSG_RETENTION_INTERVAL|retention.interval|1h|yes"
