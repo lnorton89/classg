@@ -358,11 +358,42 @@ cd "$REPO_DIR" || die "cannot enter $REPO_DIR"
 # Checked before fetching, so the common "nothing to do" case is one HTTP call
 # and no network round trip to GitHub.
 busy_reason() {
-    local body
+    local body tok
     body=$(curl -sS --max-time 10 "$API/api/v1/captures" 2>/dev/null) || return 0
     case "$body" in *'"state":"running"'*) echo "a capture is running"; return 0 ;; esac
     body=$(curl -sS --max-time 10 "$API/api/v1/spectrum/sweeps" 2>/dev/null) || return 0
     case "$body" in *'"state":"running"'*) echo "a band sweep is running"; return 0 ;; esac
+
+    # An aircraft in the air is the measurement this guard exists to protect,
+    # and it was the one thing not checked. Only a PCAP capture and a band
+    # sweep counted, so flying without recording a capture read as an idle
+    # unit -- and a deploy restarted all three sensors mid-flight. That
+    # happened, to a real flight, which is why this is here.
+    #
+    # Tracks first, because a live track is the direct statement that
+    # something is being followed right now. Viewer-level, so the local agent
+    # token this API publishes for host tools is exactly the right credential;
+    # a unit whose API predates it simply falls through to the next check.
+    tok=$(cat "$STATE_DIR/local-api-token" 2>/dev/null || true)
+    if [ -n "$tok" ]; then
+        body=$(curl -sS --max-time 10 -H "Authorization: Bearer $tok" \
+            "$API/api/v1/tracks" 2>/dev/null) || body=""
+        case "$body" in
+            *'"state":"CONFIRMED"'*|*'"state":"TENTATIVE"'*|*'"state":"COASTING"'*)
+                echo "an aircraft is being tracked"; return 0 ;;
+        esac
+    fi
+
+    # And recent detections, from the public endpoint, as the backstop. A
+    # track can close while the aircraft is still up -- and this catches the
+    # window either side of one, where restarting the radios still costs the
+    # operator the thing they came out to measure. Erring toward waiting is
+    # cheap: the next tick is ten minutes away.
+    body=$(curl -sS --max-time 10 "$API/api/v1/health" 2>/dev/null) || return 0
+    if printf '%s' "$body" | grep -qE '"detections_5m":[1-9]'; then
+        echo "a sensor has detected something in the last five minutes"
+        return 0
+    fi
     return 0
 }
 
