@@ -34,10 +34,18 @@ The default backup path, and the only one that needs no account, no
 credentials and no uplink.
 
 ```bash
-./scripts/install-backup-timer.sh
+./scripts/install-backup-timer.sh           # system unit, needs sudo
+./scripts/install-backup-timer.sh --user    # user unit, needs no password
 ```
 
-That installs a systemd timer that runs [`scripts/backup-db.sh`](../../scripts/backup-db.sh)
+Use `--user` when you administer the unit over SSH with no TTY: the snapshot
+needs no privilege of its own — `docker cp` reaches the volume through the
+daemon — so the sudo password would be the only privileged thing about the
+whole arrangement. It enables lingering, because a timer that runs only while
+someone is logged in is not a backup. Do not install both; you would get two
+timers taking two snapshots an hour.
+
+Either way it installs a systemd timer that runs [`scripts/backup-db.sh`](../../scripts/backup-db.sh)
 every hour, keeps the newest 48, and takes one immediately so a broken
 install fails in front of you instead of silently an hour later. Each
 snapshot is a single self-contained file — no `-wal`, no `-info`, nothing to
