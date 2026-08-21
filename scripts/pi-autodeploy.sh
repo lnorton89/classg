@@ -389,8 +389,28 @@ busy_reason() {
     # window either side of one, where restarting the radios still costs the
     # operator the thing they came out to measure. Erring toward waiting is
     # cheap: the next tick is ten minutes away.
+    #
+    # The SDR is excluded, and that exclusion is the whole point of the loop
+    # below. It receives ADS-B from every airliner within range, continuously
+    # and forever: 537 detections in five minutes on this unit with nothing
+    # flying and nobody watching. Counting those made the guard say "busy" on
+    # every tick of every day, which does not protect a flight -- it just
+    # stops the unit ever deploying again. Ambient traffic is not a
+    # measurement. What the SDR does on purpose is a capture or a band sweep,
+    # and both are already checked above.
+    #
+    # Anything that is NOT the SDR still counts, rather than listing the kinds
+    # that do. A sensor kind added later is then cautious by default: it
+    # postpones a deploy it need not have, which costs ten minutes, instead of
+    # silently dropping out of a guard that exists because a deploy once
+    # restarted the radios mid-flight.
     body=$(curl -sS --max-time 10 "$API/api/v1/health" 2>/dev/null) || return 0
-    if printf '%s' "$body" | grep -qE '"detections_5m":[1-9]'; then
+    # One line per sensor. `detail` opens a nested object, but sensor_kind and
+    # detections_5m are both emitted before it -- Go writes struct fields in
+    # declaration order -- so splitting on `{` keeps them together.
+    if printf '%s' "$body" | tr '{' '\n' \
+        | grep -v '"sensor_kind":"sdr"' \
+        | grep -qE '"detections_5m":[1-9]'; then
         echo "a sensor has detected something in the last five minutes"
         return 0
     fi
