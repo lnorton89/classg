@@ -40,7 +40,20 @@ func open(opts Options) (*sql.DB, func() error, bool, error) {
 		libOpts = append(libOpts, libsql.WithSyncInterval(opts.SyncInterval))
 	}
 
-	connector, err := libsql.NewEmbeddedReplicaConnector(opts.Path, opts.SyncURL, libOpts...)
+	// NewSyncedDatabaseConnector, NOT NewEmbeddedReplicaConnector. The two are
+	// identical apart from one flag they pass down to the native library:
+	// `offline`, false for the former and true for the latter. That flag decides
+	// where a write goes. With offline=false every INSERT is an HTTP round trip
+	// to the primary in whichever AWS region the database lives, and the local
+	// file is only a read cache -- so a detector that is supposed to work with
+	// no uplink at all was putting the internet in the path of every detection
+	// it recorded. Measured on the unit: ~250ms per insert, and API startup took
+	// 42s because it blocked on the initial sync. With offline=true, writes land
+	// in the local file at local-disk speed and sync pushes them up afterwards,
+	// which is the "sync is a backup, never a dependency" contract this ADR
+	// promised (docs/architecture/adr/0006-storage-turso-libsql.md) and the
+	// behaviour the paragraph below already assumed.
+	connector, err := libsql.NewSyncedDatabaseConnector(opts.Path, opts.SyncURL, libOpts...)
 	if err != nil {
 		// Loud, but NOT fatal. This was fatal on the reasoning that an operator
 		// who configured sync and got a typo'd URL should be told rather than

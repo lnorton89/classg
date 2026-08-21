@@ -441,7 +441,8 @@ func openStore(ctx context.Context, boot *config.Bootstrap) (store.Store, error)
 		return nil, err
 	}
 	if st.Synced() {
-		slog.Info("libSQL embedded replica: syncing to Turso", "interval", boot.TursoSyncInterval)
+		slog.Info("libSQL synced database: writes are local, replicating to Turso",
+			"interval", boot.TursoSyncInterval)
 	} else {
 		slog.Info("libSQL local database: no sync configured", "path", boot.DBPath)
 	}

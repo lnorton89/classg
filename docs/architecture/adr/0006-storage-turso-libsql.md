@@ -13,7 +13,15 @@ connectivity**, recording data that must not be lost.
 
 ## Decision
 
-**libSQL via `github.com/tursodatabase/go-libsql`, in embedded-replica mode.**
+**libSQL via `github.com/tursodatabase/go-libsql`, in synced-database mode.**
+
+> **Corrected 2026-08-20.** This ADR said "embedded-replica mode" from the start, and the code
+> called `NewEmbeddedReplicaConnector` to match. That name is misleading: in this library an
+> *embedded replica* writes **through to the remote primary** and keeps the local file only as a
+> read cache. So the local-first guarantee stated below was never what ran. The mode that
+> actually delivers it is `NewSyncedDatabaseConnector`, which differs by exactly one flag
+> (`offline=true`). The code now uses it; the rest of this ADR describes the intent, unchanged,
+> and is finally accurate.
 
 - **libSQL, not "Turso Database".** libSQL is the production-ready SQLite fork. Turso's newer
   from-scratch Rust rewrite is promising but too young for a system that runs unattended and
@@ -24,7 +32,7 @@ connectivity**, recording data that must not be lost.
   unset, the service runs against a purely local libSQL file with no degraded functionality.
   This is the default path and is tested as such.
 
-The genuine win over plain SQLite is embedded replicas: local-first writes that survive total
+The genuine win over plain SQLite is a synced database: local-first writes that survive total
 connectivity loss, with the option of syncing to a durable remote when a network appears. That
 maps onto "Pi in a field, occasionally brought home" almost exactly.
 

@@ -1,9 +1,14 @@
 // Package libsqlstore implements store.Store on libSQL.
 //
-// One database. With CLASSG_TURSO_URL set it is opened as an embedded replica
-// that syncs to Turso; without it, it is a plain local file and the process
-// makes no network calls at all. Offline is the default and the fully
+// One database. With CLASSG_TURSO_URL set it is opened as a synced database
+// that replicates to Turso; without it, it is a plain local file and the
+// process makes no network calls at all. Offline is the default and the fully
 // functional path -- a Pi in a field with no uplink records everything.
+//
+// Synced does NOT mean writes go to Turso. Both modes write to the local file
+// first; sync pushes afterwards. The distinction is the whole reason
+// open_libsql.go picks NewSyncedDatabaseConnector over the similarly-named
+// NewEmbeddedReplicaConnector, which writes through to the remote primary.
 //
 // The SQL in this file compiles everywhere because it only uses database/sql.
 // Only opening the driver is platform-gated -- see open_libsql.go.
@@ -67,8 +72,8 @@ type Store struct {
 	synced      bool
 }
 
-// Synced reports whether this database is an embedded replica rather than a
-// purely local file.
+// Synced reports whether this database replicates to a remote primary rather
+// than being a purely local file. Either way its writes land locally first.
 func (s *Store) Synced() bool { return s.synced }
 
 func Open(ctx context.Context, opts Options) (*Store, error) {
