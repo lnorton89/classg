@@ -92,7 +92,7 @@ func main() {
 	store := fusion.NewTrackStoreWithLifecycle(fusion.DefaultWeights(), fusion.NewTrackID, lifecycle)
 	contacts := fusion.NewContactStore()
 	contacts.UseAircraftDB(loadAircraftDB())
-	messages := make(chan busMessage)
+	messages := make(chan busMessage, busQueueDepth)
 	go receive(ctx, sub, messages, detectionSocketMode == "listen", connect)
 	startNetADSB(ctx, messages, detectionTopic, heartbeatTopic)
 	terrain := startTerrain(ctx)
@@ -200,6 +200,30 @@ const (
 // bus hiccup (as it used to) threw away state that takes minutes to rebuild
 // and dropped the track.closed events for it. "Sensors degrade, they don't
 // crash the system" applies to fusion too.
+// busQueueDepth buffers the hop between the socket reader and the ingest loop.
+//
+// It was unbuffered, which quietly made receiving and processing the same
+// serial operation: receive() blocks on the handoff until the loop below has
+// finished the previous message, so sub.Recv() is not being called for that
+// whole time and the socket's queue backs up. ZMQ resolves a full queue by
+// discarding, so what came out the other side was missing messages -- and
+// heartbeats are just messages, so they went with the detections.
+//
+// The symptom was the opposite of what it looked like. A quiet unit was
+// perfectly healthy; the moment a drone appeared and detections arrived in
+// bursts, every sensor started flapping to "heartbeat stale" at once --
+// including one producing no detections of its own, because all of them share
+// this one socket. The console read "No coverage. Nothing on screen is
+// evidence of anything" exactly while it was tracking an aircraft, which is
+// the precise inversion /health exists to prevent.
+//
+// 1024 matches the sensors' own publisher high-water mark, so a burst that
+// their side was willing to hold is one this side is willing to accept. The
+// ingest loop is not slow -- terrain lookups are already scheduled
+// asynchronously for this very reason, see terrain.go's schedule() -- it only
+// needs to not be in lockstep with the reader.
+const busQueueDepth = 1024
+
 func receive(ctx context.Context, sub zmq4.Socket, out chan<- busMessage, keepListening bool, reconnect func() (zmq4.Socket, error)) {
 	defer func() {
 		if sub != nil {
