@@ -404,3 +404,117 @@ func TestTwoSerialsFromOneMACStayOneTrack(t *testing.T) {
 		t.Fatalf("DJI-first: %d active tracks, want 1", got)
 	}
 }
+
+// The same aircraft flying again is a new flight, not a continuation.
+//
+// Reported from the field: a second take-off started appending to the track
+// the previous flight had left behind. resolve matches on identity alone, and
+// updateState runs after LastSeen is bumped in Ingest -- so `since` is ~0, no
+// branch matches, and a CLOSED track went on accumulating detections while
+// still labelled CLOSED. One flight's history, positions and evidence merged
+// into another's.
+//
+// The line is CloseAfter, the same threshold that ends a track anyway, so the
+// operator tunes one number (fusion.track_ttl) rather than two notions of the
+// same thing.
+func TestASecondFlightGetsItsOwnTrack(t *testing.T) {
+	s := newTestStore()
+	start := time.Now()
+	const serial = "1581F0000000FLIGHT01"
+
+	first := s.Ingest(det("A", serial, "", start), start)
+	s.Ingest(det("A", serial, "", start.Add(3*time.Second)), start.Add(3*time.Second))
+	firstID := first.TrackID
+	if first.State != StateConfirmed {
+		t.Fatalf("first flight state %s", first.State)
+	}
+
+	// Landed. Long enough that the track is over by any reading.
+	later := start.Add(CloseAfter + time.Minute)
+	second := s.Ingest(det("A", serial, "", later), later)
+
+	if second.TrackID == firstID {
+		t.Fatal("the second flight continued the first flight's track")
+	}
+	if second.State != StateTentative {
+		t.Errorf("a new flight starts at %s, not %s", StateTentative, second.State)
+	}
+	if second.DetectionCount != 1 {
+		t.Errorf("the new track carried %d detections over from the old one", second.DetectionCount)
+	}
+	if len(second.History) != 0 {
+		t.Errorf("the new track inherited %d history points", len(second.History))
+	}
+	// And the old track is untouched, so it still closes on its own terms.
+	if first.DetectionCount != 2 {
+		t.Errorf("the finished flight gained detections after landing: %d", first.DetectionCount)
+	}
+	if !first.LastSeen.Equal(start.Add(3 * time.Second)) {
+		t.Errorf("the finished flight's LastSeen moved to %v", first.LastSeen)
+	}
+}
+
+// The other half of the same rule: a gap shorter than CloseAfter is the same
+// flight. A drone behind a building is still the flight it was -- that is what
+// COASTING is for, and splitting there would put one aircraft on the map twice.
+func TestAReacquisitionStaysOneFlight(t *testing.T) {
+	s := newTestStore()
+	start := time.Now()
+	const serial = "1581F0000000FLIGHT02"
+
+	first := s.Ingest(det("A", serial, "", start), start)
+	s.Ingest(det("A", serial, "", start.Add(3*time.Second)), start.Add(3*time.Second))
+
+	// Occluded past the coast threshold, but well inside CloseAfter.
+	back := start.Add(CoastAfter + 10*time.Second)
+	if back.Sub(start.Add(3*time.Second)) > CloseAfter {
+		t.Fatal("test gap exceeds CloseAfter; it would not be a reacquisition")
+	}
+	again := s.Ingest(det("A", serial, "", back), back)
+
+	if again.TrackID != first.TrackID {
+		t.Fatalf("a reacquisition split the flight: %s then %s", first.TrackID, again.TrackID)
+	}
+	if again.State != StateConfirmed {
+		t.Errorf("state after reacquisition is %s, want %s", again.State, StateConfirmed)
+	}
+	if got := len(s.Active()); got != 1 {
+		t.Errorf("%d active tracks after a reacquisition, want 1", got)
+	}
+}
+
+// A track already marked CLOSED must never take another detection, whatever
+// the elapsed time says. This is the shape the operator actually saw.
+func TestAClosedTrackNeverTakesAnotherDetection(t *testing.T) {
+	s := newTestStore()
+	start := time.Now()
+	const serial = "1581F0000000FLIGHT03"
+
+	first := s.Ingest(det("A", serial, "", start), start)
+	s.Ingest(det("A", serial, "", start.Add(3*time.Second)), start.Add(3*time.Second))
+
+	// Close it the way the reaper would, then land a detection immediately
+	// afterwards -- the window in which the old code appended to it.
+	//
+	// Measured from LastSeen, not from start: updateState compares against the
+	// last detection, so a reap one CloseAfter after take-off is still two
+	// seconds short and only coasts.
+	lastSeen := start.Add(3 * time.Second)
+	s.Reap(lastSeen.Add(CloseAfter + time.Second))
+	if first.State != StateClosed {
+		t.Fatalf("the track did not close: %s", first.State)
+	}
+
+	after := lastSeen.Add(CloseAfter + 2*time.Second)
+	next := s.Ingest(det("A", serial, "", after), after)
+
+	if next.TrackID == first.TrackID {
+		t.Fatal("a detection was appended to a CLOSED track")
+	}
+	if first.DetectionCount != 2 {
+		t.Errorf("the closed track gained detections: %d", first.DetectionCount)
+	}
+	if first.State != StateClosed {
+		t.Errorf("the closed track changed state to %s", first.State)
+	}
+}

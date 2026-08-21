@@ -265,6 +265,43 @@ func NewTrackStoreWithLifecycle(weights map[string]float64, newID func() string,
 	}
 }
 
+// flightIsOver reports whether a detection belongs to a later flight rather
+// than the one this track is recording.
+//
+// The line is CloseAfter, which is the same threshold that ends a track
+// anyway -- so "picked back up" and "flew again" are separated by exactly the
+// gap the operator already tunes through fusion.track_ttl, rather than by a
+// second notion of the same thing. Everything shorter stays one track,
+// including a reacquisition after occlusion: a drone behind a building for
+// twenty seconds is still the flight it was, which is why COASTING exists.
+//
+// The elapsed gap is checked as well as the state, deliberately. A track only
+// becomes CLOSED when Reap next runs, so between the flight ending and the
+// timer firing the state still reads CONFIRMED -- and that window is precisely
+// when a returning aircraft would have been folded into it. Deciding on the
+// gap makes the answer independent of whether the reaper happened to fire.
+func (s *TrackStore) flightIsOver(t *Track, seen time.Time) bool {
+	if t.State == StateClosed {
+		return true
+	}
+	return seen.Sub(t.LastSeen) > s.lifecycle.CloseAfter
+}
+
+// unindex drops a track from the identity indexes without disturbing it.
+//
+// Left in `all` on purpose, with its LastSeen untouched, so Reap closes it
+// through the ordinary path and reports that transition to everything
+// watching. Closing it here instead would make the state change invisible:
+// Reap only reports what it changes.
+func (s *TrackStore) unindex(t *Track) {
+	if t.Identity.Serial != "" {
+		delete(s.bySerial, t.Identity.Serial)
+	}
+	for _, m := range t.Identity.MACs {
+		delete(s.byMAC, m)
+	}
+}
+
 // resolve implements the identity precedence in docs/architecture/overview.md:
 // serial number beats MAC beats nothing. A track first seen by MAC is promoted to
 // serial-keyed when a Basic ID finally arrives -- and KEEPS its history, because
@@ -324,6 +361,15 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 	mac := d.Identity.MAC
 
 	t := s.resolve(serial, mac)
+	// The same aircraft flying again is not the same flight. Without this, a
+	// second take-off appended to the track the first one left behind: resolve
+	// matches on identity alone, and updateState runs AFTER LastSeen is bumped
+	// here, so `since` is ~0, no branch matches, and a CLOSED track quietly
+	// accumulated new detections while still labelled CLOSED.
+	if t != nil && s.flightIsOver(t, seen) {
+		s.unindex(t)
+		t = nil
+	}
 	if t == nil {
 		// A new track needs an identity, or the next detection from the same
 		// aircraft cannot find it. The same unbounded accumulation Class D used
