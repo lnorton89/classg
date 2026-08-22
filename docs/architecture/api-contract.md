@@ -89,11 +89,21 @@ classg_uptime_seconds 35727
 classg_sensor_healthy{sensor_id="wifi-0",sensor_kind="wifi"} 1
 classg_sensor_heartbeat_age_seconds{sensor_id="wifi-0",sensor_kind="wifi"} 2
 classg_wifi_listening_fraction{sensor_id="wifi-0"} 0.9312
+classg_wifi_hop_latency_ms{sensor_id="wifi-0"} 138.4
+classg_wifi_plan_fallback{sensor_id="wifi-0"} 0
 classg_sdr_dump1090_connected{sensor_id="sdr-0"} 1
 ```
 
 `classg_wifi_listening_fraction` is the roadmap's hopper efficiency: the share of wall clock
-spent receiving rather than retuning.
+spent receiving rather than retuning. `classg_wifi_hop_latency_ms` is what one retune actually
+costs *this* receiver, measured rather than assumed — the two Wi-Fi adapters are different
+chipsets behind different drivers, and tuning a dwell against the other one's figure is how
+that metric stops meaning anything.
+
+`classg_wifi_plan_fallback` is a coverage alarm rather than a tuning number: 1 means this
+receiver widened to the full channel plan because its companion was absent, so the unit is
+running on one radio. Paired with `classg_wifi_companion_present` it distinguishes an adapter
+that was never fitted from one that has gone.
 
 `classg_sensor_heartbeat_age_seconds` is **absent**, not zero, for a sensor that has never
 reported — zero would read as "heard from just now", which is the inversion `/health` exists

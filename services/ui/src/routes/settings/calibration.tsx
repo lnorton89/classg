@@ -461,7 +461,11 @@ export function ChannelPlanEditor() {
           its own file at startup:{' '}
           <code className="font-mono">config/channels-primary.yaml</code> on wifi-0,{' '}
           <code className="font-mono">config/channels-sweep.yaml</code> on the wifi-1 sweep
-          receiver. Record the intended plan here, then copy it as YAML into those files.
+          receiver. Record the intended plan here, then copy it as YAML into those files. A
+          receiver that finds itself alone loads{' '}
+          <code className="font-mono">config/channels.yaml</code> instead, because neither split
+          plan covers the whole spectrum on its own — check the Sensors page to see which one a
+          radio actually loaded.
         </Alert>
         {apiError ? (
           <Alert tone="error" title={`Save failed (${apiError.code})`} className="mb-3">

@@ -35,6 +35,26 @@ var Allowed = map[string]Metric{
 	// the state in which a tracked drone hides every other channel.
 	"scan_dwells": {"classg_wifi_scan_dwells_total", "Dwells reserved for the sweep while locked to a channel.", true},
 	"beacons":     {"classg_wifi_beacons_total", "Beacon frames seen.", true},
+	// Retune cost, measured per receiver rather than assumed. It was a hardcoded
+	// 140 ms taken on mt7921u and applied to the rtl8852au companion too, which
+	// made listening_fraction on that radio a number about the wrong hardware.
+	// Exported because tuning a dwell is done against hours of this, not against
+	// whatever the Sensors page happens to show right now.
+	"hop_latency_ms":       {"classg_wifi_hop_latency_ms", "Measured cost of one channel retune.", false},
+	"hop_latency_measured": {"classg_wifi_hop_latency_measured", "1 when hop latency is observed rather than the startup estimate.", false},
+
+	// Channel-plan coverage. The two Wi-Fi receivers split the plan between
+	// them, so which plan a radio is on decides what the unit can see at all.
+	// plan_fallback is the coverage alarm: this receiver is covering the whole
+	// plan alone because its companion was absent at startup.
+	"plan_fallback":         {"classg_wifi_plan_fallback", "1 while this receiver widened to the full plan because its companion was absent.", false},
+	"companion_present":     {"classg_wifi_companion_present", "1 while the companion receiver's interface exists.", false},
+	"plan_widened_for_peer": {"classg_wifi_plan_widened_for_peer", "1 while widened to cover discovery for a peer that is busy tracking.", false},
+	// Thrash detection. Climbing steadily rather than in steps means the
+	// hysteresis in PlanState is too short for this site's traffic.
+	"plan_swaps":       {"classg_wifi_plan_swaps_total", "Channel-plan swaps made for peer coordination.", true},
+	"peers_active":     {"classg_wifi_peers_active", "1 while another receiver on this unit is contributing to a track.", false},
+	"peer_tracks_seen": {"classg_wifi_peer_tracks_seen_total", "Tracks read from fusion for peer coordination.", true},
 
 	// ADS-B via dump1090.
 	"messages_read": {"classg_sdr_messages_read_total", "SBS-1 messages read from dump1090.", true},
