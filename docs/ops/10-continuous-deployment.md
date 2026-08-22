@@ -25,6 +25,37 @@ every ten minutes. Each run:
 6. If it does not come back, rolls the checkout back and rebuilds from the
    previous commit.
 
+### What it does not do: systemd units
+
+**It never re-renders the systemd units.** `deploy/systemd/*.service.in` are
+templates; `/etc/systemd/system/classg-*.service` are rendered snapshots, and
+only `deploy/systemd/install.sh` turns one into the other. Autodeploy restarts
+the sensors — from whatever unit file is already installed.
+
+So a commit that changes an ExecStart deploys its *code* and silently leaves its
+*invocation* behind. The sensor restarts, reports healthy, and runs without the
+new flags. Nothing fails and nothing warns.
+
+Caught on 2026-08-22: `--solo-channels` and `--companion-iface` were added to
+both Wi-Fi units, the deploy landed green, both sensors restarted — and the
+installed units still had neither, so the single-adapter fallback and peer
+coordination were inert on a unit that reported perfectly healthy. The
+give-away was `companion_iface` missing from the heartbeat while `plan` and
+`hop_latency_ms` were present: new code, old command line.
+
+After any commit that touches `deploy/systemd/`, on the unit:
+
+```bash
+sudo ./deploy/systemd/install.sh wlan-alfa
+sudo systemctl restart classg-sensor-wifi classg-sensor-wifi-tplink
+```
+
+Then confirm the installed file actually changed, rather than assuming:
+
+```bash
+grep ^ExecStart= /etc/systemd/system/classg-sensor-wifi.service
+```
+
 ### Waiting for CI rather than losing the tick
 
 The timer fires every ten minutes; a CI run takes four or five. A tick landing

@@ -48,6 +48,10 @@ services:
       # authentication, so it is not published to the LAN; see
       # docker-compose.yml for the override when remote sensors need it.
       - "${CLASSG_BUS_BIND:-127.0.0.1}:${CLASSG_BUS_PORT:-5556}:5556"
+      # And the track stream, which the host's sensors read for peer
+      # coordination (ADR-0010). Same loopback default and the same reason:
+      # sensors are host units in dev too, so they cannot resolve "fusion".
+      - "${CLASSG_BUS_BIND:-127.0.0.1}:${CLASSG_TRACK_PORT:-5557}:5557"
 
   api:
     build:

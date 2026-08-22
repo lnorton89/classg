@@ -56,9 +56,25 @@ so this is an observation rather than a guess:
 | `listening_fraction` | share of wall-clock spent receiving rather than retuning |
 | `hop_overhead_ms` | total blind time spent retuning |
 
-`hop_latency_ms` was a hardcoded 140 until this was wired up — a figure measured
-on the ALFA and applied to both, which made the TP-Link's `listening_fraction`
-a number about the wrong chipset.
+`hop_latency_ms` was a hardcoded 140 until this was wired up — a figure applied
+to both adapters. **Measured on the unit 2026-08-22, it is wrong by an order of
+magnitude:**
+
+| Receiver | Chipset | Measured hop cost |
+|---|---|---|
+| `wifi-0` ALFA AWUS036AXML | mt7921u | **10.6 ms** |
+| `wifi-1` TP-Link TX20U Plus | rtl8852au | **27.0 ms** |
+
+So a retune costs ~1% of a 1 s beacon interval on the ALFA, not the ~14% the
+old constant implied, and `listening_fraction` was understating itself on both
+radios. The two differ by 2.5×, which is why one shared constant could not serve
+them.
+
+That is a tuning result, not just a correction: **hopping is far cheaper than
+the dwell budget assumed.** A shorter dwell or a wider plan costs much less than
+the old figure suggested, so the 400 ms dwell is now a conservative choice
+rather than a forced one. Both figures are two samples from one Pi — re-measure
+on your own adapters before acting on them.
 
 Read both radios' figures off the Sensors page, then tune each unit's
 `ExecStart` independently — the flags override the shared `.env`, which is the

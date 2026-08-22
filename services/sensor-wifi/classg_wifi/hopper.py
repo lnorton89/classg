@@ -75,18 +75,26 @@ class ChannelHopper:
         self.channels = channels
         self.base_dwell_ms = base_dwell_ms
         # The starting estimate for retune cost, superseded by measurement as
-        # soon as this hopper has timed a hop. ~140 ms was measured on mt7921u
-        # (the ALFA) - a large fraction of a 1 s beacon interval, so the dwell
-        # budget has to account for it or effective listening time is far below
-        # what is configured.
+        # soon as this hopper has timed a hop -- which is within one dwell, so
+        # this value barely matters and is deliberately not tuned.
         #
-        # It stayed a constant for too long. The companion receiver is rtl8852au
-        # (the TP-Link), a different chipset behind a different driver, and
-        # nothing ever measured its retune cost -- so listening_fraction, the
-        # headline tuning number, was being computed for that radio against a
-        # figure taken from the other one. record_hop now times the real thing
-        # per receiver and efficiency_report prefers it, which is what makes the
-        # two radios independently tunable at all.
+        # It mattered a great deal while it was the only figure there was, and
+        # it was wrong by an order of magnitude. The comment here read "measured
+        # mt7921u hop latency is ~140 ms - a large fraction of a 1 s beacon
+        # interval". Measured on the unit on 2026-08-22, once record_hop started
+        # timing the real call:
+        #
+        #     wifi-0  ALFA AWUS036AXML   mt7921u    10.6 ms
+        #     wifi-1  TP-Link TX20U Plus rtl8852au  27.0 ms
+        #
+        # So retuning costs ~1% of a beacon interval on the ALFA, not 14%, and
+        # listening_fraction was understating itself badly on both radios. The
+        # two also differ by 2.5x, which is the whole reason a single shared
+        # constant could not serve both: they are different chipsets behind
+        # different drivers. Hopping being this cheap is a tuning result in its
+        # own right -- a shorter dwell or a wider plan costs far less than the
+        # old figure implied. Re-measure per adapter rather than trusting these;
+        # they are two samples from one Pi.
         self.hop_latency_ms = hop_latency_ms
         self.escalation_hold_s = escalation_hold_s
         # One dwell in N is handed back to the weighted sweep while locked, and

@@ -28,6 +28,19 @@ services:
       # CLASSG_BUS_BIND=0.0.0.0 in .env only when remote sensors on a trusted
       # network genuinely need to publish here (ADR-0009), and firewall it.
       - "${CLASSG_BUS_BIND:-127.0.0.1}:${CLASSG_BUS_PORT:-5556}:5556"
+      # The track stream, published for the same reason: the Wi-Fi sensors are
+      # host systemd units, not compose services, so "fusion:5557" does not
+      # resolve for them. A receiver reads peer activity off this to know when
+      # its companion is busy (ADR-0010). Without it the SUB dials a closed port
+      # and ZeroMQ retries in silence for ever -- coordination never activates
+      # and nothing says why. Verified on the unit 2026-08-22: 5556 connected,
+      # 5557 was refused.
+      #
+      # Read-direction, so the exposure is the mirror of 5556's: anything that
+      # can reach this port can READ tracks, which carry operator ground
+      # positions when CLASSG_EXPOSE_OPERATOR_LOCATION is on (ADR-0006).
+      # Loopback by default, and it should stay that way.
+      - "${CLASSG_BUS_BIND:-127.0.0.1}:${CLASSG_TRACK_PORT:-5557}:5557"
     restart: unless-stopped
 
   api:
