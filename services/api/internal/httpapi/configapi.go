@@ -120,8 +120,7 @@ func (s *Server) handlePutChannels(w http.ResponseWriter, r *http.Request) {
 	// that subscription deliberately carries no configuration: a plan arriving
 	// over the bus would make the running configuration unobservable, which is
 	// what ADR-0007's tiers exist to prevent. It becomes false the day sensors
-	// gain a CONFIG subscription, which is a different decision. Flagged in
-	// api-implementation.md.
+	// gain a CONFIG subscription, which is a different decision.
 	//
 	// Understating it, in the same way the weights endpoint below does: a
 	// restart re-reads the receiver's channel FILE, which nothing here writes,

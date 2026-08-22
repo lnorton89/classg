@@ -198,6 +198,7 @@ both transports produces exactly **one** track, not two.
 - [x] Spectrum sweeps driven from the web app on a containerised unit — the API cannot reach USB from inside a container, so a host agent takes requests through a shared state directory and writes results back: [12-spectrum-sweeps.md](../ops/12-spectrum-sweeps.md)
 - [x] Spectrum from both radios — the SDR sweeps sub-2 GHz, and the Wi-Fi adapter reports the driver's own per-channel busy time and noise across 2.4 and 5 GHz, which the SDR cannot tune at all. Not an FFT and not claimed to be one: occupancy, published on the heartbeat, costing no radio time because it is a by-product of listening. **The unit's own mt7921u turns out to report nothing usable in monitor mode** — one 6 GHz entry with no busy time and no noise floor — so on this hardware the panel says so and explains why; see [12-spectrum-sweeps.md](../ops/12-spectrum-sweeps.md)
 - [x] A console that keeps itself current — a finished sweep or capture arrives on the stream rather than waiting for a reload, banners about finished work expire on their own, and a newly deployed build applies itself once nothing is mid-sweep or mid-capture
+- [x] Two Wi-Fi receivers splitting the channel plan — **not** the parked-on-6 split this roadmap predicted. Parking produced 0 frames across 116,788 dwells (nothing else transmits on ch 6 here), which is indistinguishable from a dead antenna, so `wifi-0` is weighted ~83% to ch 6 rather than pinned to it and `wifi-1` sweeps the rest. Neither plan is safe alone, so each widens to the full plan when the other adapter is absent, and `/health` calls a declared-but-missing receiver degraded rather than "not fitted". Tracks record which radio heard them (`receivers[]`), and retune cost is measured per chipset instead of assumed. Peer coordination is opt-in and unmeasured — [ADR-0010](../architecture/adr/0010-receivers-subscribe-for-coordination.md)
 - [x] Config validation on startup with clear errors — all four services: `api` accumulates every fault before exiting (`config.go`), `sensor-sdr` returns `Result<_, Vec<String>>` the same way, `fusion` names the key and the value it rejected and range-checks the receiver position, `sensor-wifi` gets it from argparse type conversion, which applies to environment-supplied defaults too
 
 Bookworm ships systemd 252, which has no `RestartSteps`, so the backoff is
@@ -213,7 +214,6 @@ the API reported `status: down` with the reason rather than a quiet sky).
 
 - GNSS L1 interference monitoring (Class H)
 - Wi-Fi NAN transport
-- Two Wi-Fi adapters: one parked on ch 6, one sweeping — removes the dwell tradeoff entirely
 - Directional antenna + sector switching for crude bearing
 - Multi-node sensor deployment (this is when MQTT gets reconsidered)
 - TAK/CoT export — **must default to omitting operator location**

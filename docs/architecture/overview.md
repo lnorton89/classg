@@ -113,7 +113,9 @@ ID appearing on each channel:
 | Sweep | 2.4 GHz ch 2–5, 7–10, 12–13 | 15% | Catch non-standard configurations |
 | 5 GHz | UNII-1/3 subset | 15% | 5 GHz Remote ID; region-dependent |
 
-Configured in `services/sensor-wifi/config/channels.yaml`, not hardcoded.
+Configured in `services/sensor-wifi/config/channels.yaml`, not hardcoded. That file is the
+plan for a receiver working alone. The two-radio unit splits it — see **Two receivers** below —
+and falls back to it whenever a receiver finds itself on its own.
 
 **Adaptive escalation.** On any drone-class detection, immediately **lock dwell to that
 channel** for a configurable hold (default 30 s) to maximise track continuity, then resume the
@@ -134,9 +136,36 @@ is the one area where the survey found no published prior work
 ([05-prior-art.md](../research/05-prior-art.md)). Treat it as a first-class experiment, not a
 constant to guess.
 
-**If a second Wi-Fi adapter is ever added,** the correct split is one radio parked on ch 6
-permanently and one sweeping — which eliminates the tradeoff entirely. Design the hopper so
-this is a config change, not a rewrite.
+### Two receivers
+
+The unit now carries two, and the split is a config change rather than a rewrite as intended —
+but **not** the split this section originally predicted. Parking one radio on ch 6 permanently
+was the first implementation and it was wrong: nothing else transmits on ch 6 at this site, so
+the parked receiver logged 0 frames across 116,788 dwells, which is indistinguishable from a
+dead antenna. A receiver with no proof of life is not a receiver.
+
+What runs instead:
+
+| Receiver | Plan | Shape |
+|---|---|---|
+| `wifi-0` (ALFA, mt7921u) | `channels-primary.yaml` | ch 6 at ~83% of dwells, 1 and 11 for proof of life |
+| `wifi-1` (TP-Link, rtl8852au) | `channels-sweep.yaml` | everything else, 2.4 and 5 GHz, ch 6 deliberately absent |
+
+Together they partition the spectrum. **Neither is safe alone** — the primary has no 5 GHz at
+all and the companion never visits ch 6 — so each looks for the other's interface at startup and
+widens to `channels.yaml` if it is missing. A declared receiver that never reports makes
+`/health` degraded rather than "not fitted", unless the survivor says it widened.
+
+**Coordination (opt-in, unmeasured).** An escalated receiver suspends its own sweep for the
+duration of the hold. With `--peer-coordination` the *other* receiver widens to cover discovery
+while that lasts, reading peer activity off the `receivers[]` array on fusion's existing track
+stream. [ADR-0010](adr/0010-receivers-subscribe-for-coordination.md) records the decision, its
+limits, and the fact that the size of the win has not been measured against real hardware.
+
+**Per-radio tuning.** The two are different chipsets behind different drivers, so retune cost is
+measured per receiver and reported as `hop_latency_ms` rather than assumed. It was a hardcoded
+140 ms — taken on the ALFA and applied to both — which made `listening_fraction` on the TP-Link
+a number about the wrong hardware.
 
 ---
 

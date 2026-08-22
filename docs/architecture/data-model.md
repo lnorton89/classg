@@ -119,9 +119,38 @@ Fusion's stateful correlation of detections over time. Mutable.
   // aircraft said so itself, which is always preferred and never overwritten.
 
   "rssi_dbm": -68,
+  // Peak across EVERY receiver. On a unit whose radios differ in antenna and
+  // gain that is a mixed measure -- which radio hears loudest, not how close
+  // the aircraft got -- so attribute it through receivers[] before reading it
+  // as range.
+  "receivers": [
+    {"sensor_id": "wifi-0", "sensor_kind": "wifi", "detection_count": 402,
+     "rssi_dbm": -68, "last_seen": "2026-08-11T14:24:02.100Z"},
+    {"sensor_id": "wifi-1", "sensor_kind": "wifi", "detection_count": 66,
+     "rssi_dbm": -81, "last_seen": "2026-08-11T14:23:58.400Z"}
+  ],
+
   "adsb_correlated": false
 }
 ```
+
+**`receivers` is attribution, `evidence` is belief.** They are deliberately
+separate. Evidence is keyed by detection *class*, so two radios reporting the
+same class collapse into one entry with `count++` — correct for confidence,
+because they are not independent observations of a different fact and noisy-OR
+already overstates. Attribution needs the opposite: which radio, how much each
+contributed, what each measured. Folding them together would either inflate
+confidence or lose the per-radio signal.
+
+Per-receiver counts sum to `detection_count`, which therefore counts one beacon
+twice wherever both radios hear it — unavoidable where the split channel plans
+overlap, and visible here rather than only in the total.
+
+This is the observation-provenance half of
+[ADR-0009](adr/0009-networked-sensor-array.md) stage 2, reached for the local
+two-radio case. It says *that* a receiver heard something, never *where* it is:
+the position half still needs the sensor-site registry, because fusion does not
+know where any of its receivers are.
 
 ### Confidence scoring
 
