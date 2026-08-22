@@ -78,6 +78,7 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("HookRulesAndDeliveries", func(t *testing.T) { testHookRulesAndDeliveries(t, newStore) })
 	t.Run("CaptureOrdering", func(t *testing.T) { testCaptureOrdering(t, newStore) })
 	t.Run("SweepLimit", func(t *testing.T) { testSweepLimit(t, newStore) })
+	t.Run("PeakRSSIBackfill", func(t *testing.T) { testPeakRSSIBackfill(t, newStore) })
 }
 
 // The last of the three limit disagreements: ListSweeps capped at 500 in one
@@ -118,6 +119,138 @@ func testSweepLimit(t *testing.T, newStore Factory) {
 // between them is absorbed by the handler, but the ORDER is not -- a captures
 // page that lists oldest first in one store and newest first in the other is a
 // difference an operator sees and no test would have caught.
+// testPeakRSSIBackfill covers tracks stored before fusion wrote rssi_dbm.
+//
+// The bug this pins: /tracks and /timeline read the stored field and showed a
+// dash, while the detail page computed the peak from the detections it fetched
+// and showed a number, so one track disagreed with itself on two screens.
+func testPeakRSSIBackfill(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	rssi := func(d model.Detection, dbm float64) model.Detection {
+		d.RF = &model.RF{RSSIdBm: &dbm}
+		return d
+	}
+
+	// Legacy: no rssi_dbm on the document. Its own detections peak at -59;
+	// -50 is the same aircraft an hour earlier, outside the track's window,
+	// and must not lend its peak to this flight.
+	legacy := track("T1", base, "CLOSED", 0.8)
+	// The suite's track() helper puts first_seen a minute before last_seen.
+	for _, d := range []model.Detection{
+		rssi(detection("D1", base.Add(-30*time.Second), "wifi-0", "A"), -72),
+		rssi(detection("D2", base.Add(-10*time.Second), "wifi-0", "A"), -59),
+		rssi(detection("D3", base.Add(-time.Hour), "wifi-0", "A"), -50),
+	} {
+		if err := s.InsertDetection(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Current: fusion published a peak. It must survive untouched even though
+	// the same detections would compute a different one.
+	published := -12.5
+	current := track("T2", base.Add(time.Hour), "CLOSED", 0.8)
+	current.Identity.Serial = "SER-T1"
+	current.RSSIdBm = &published
+
+	// A track whose detections carry no RF block at all stays absent rather
+	// than becoming a confident 0 dBm.
+	silent := track("T3", base.Add(2*time.Hour), "CLOSED", 0.8)
+	silent.Identity = model.TrackIdentity{Serial: "SER-SILENT"}
+	quiet := detection("D4", base.Add(2*time.Hour), "wifi-0", "A")
+	quiet.Identity.Serial = "SER-SILENT"
+	quiet.Identity.MAC = ""
+	if err := s.InsertDetection(ctx, quiet); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tr := range []model.Track{legacy, current, silent} {
+		if err := s.UpsertTrack(ctx, tr); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	want := map[string]*float64{"T1": ptr(-59.0), "T2": ptr(-12.5), "T3": nil}
+
+	// A whole page in one call, which is how the list endpoints use it.
+	page, err := s.ListTracks(ctx, store.TrackQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Tracks) != len(want) {
+		t.Fatalf("listed %d tracks, want %d", len(page.Tracks), len(want))
+	}
+	// Nothing is enriched until it is asked for: GetTrack and ListTracks are
+	// also the read half of ingest's and the stale sweep's read-modify-write,
+	// and a derived number must not reach a stored document through them.
+	for _, got := range page.Tracks {
+		if got.TrackID != "T2" && got.RSSIdBm != nil {
+			t.Errorf("ListTracks %s: rssi_dbm = %v before any backfill was asked for",
+				got.TrackID, *got.RSSIdBm)
+		}
+	}
+	if err := s.BackfillPeakRSSI(ctx, page.Tracks); err != nil {
+		t.Fatal(err)
+	}
+	for _, got := range page.Tracks {
+		assertPeak(t, "page", got.TrackID, got.RSSIdBm, want[got.TrackID])
+	}
+
+	// And one at a time, which is how the detail endpoints use it.
+	for id, expected := range want {
+		got, err := s.GetTrack(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		one := []model.Track{got}
+		if err := s.BackfillPeakRSSI(ctx, one); err != nil {
+			t.Fatal(err)
+		}
+		assertPeak(t, "single", id, one[0].RSSIdBm, expected)
+	}
+
+	// The stored document is left as fusion published it: the repair lives in
+	// the response, so it goes away with the detections it was computed from
+	// rather than becoming a number nothing can account for.
+	if _, err := s.PurgeDetections(ctx, base.Add(3*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	after := []model.Track{mustGet(t, s, "T1")}
+	if err := s.BackfillPeakRSSI(ctx, after); err != nil {
+		t.Fatal(err)
+	}
+	if after[0].RSSIdBm != nil {
+		t.Fatalf("T1 kept a peak of %v after its detections were purged; the "+
+			"backfill wrote to the stored document instead of the response",
+			*after[0].RSSIdBm)
+	}
+}
+
+func mustGet(t *testing.T, s store.Store, id string) model.Track {
+	t.Helper()
+	got, err := s.GetTrack(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func ptr(f float64) *float64 { return &f }
+
+func assertPeak(t *testing.T, via, id string, got, want *float64) {
+	t.Helper()
+	switch {
+	case want == nil && got != nil:
+		t.Errorf("%s %s: rssi_dbm = %v, want absent", via, id, *got)
+	case want != nil && got == nil:
+		t.Errorf("%s %s: rssi_dbm absent, want %v", via, id, *want)
+	case want != nil && got != nil && *got != *want:
+		t.Errorf("%s %s: rssi_dbm = %v, want %v", via, id, *got, *want)
+	}
+}
+
 func testCaptureOrdering(t *testing.T, newStore Factory) {
 	ctx := context.Background()
 	s := newStore(t)

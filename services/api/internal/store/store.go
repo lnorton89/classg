@@ -136,6 +136,28 @@ type DetectionPage struct {
 	Total      int
 }
 
+// TrackDetectionWindow is the span a track's detections are looked for in.
+//
+// One definition, used by the detection reconstruction and by the peak-RSSI
+// backfill below, so the two cannot disagree about which detections belong to
+// a track -- a list showing a peak drawn from a wider span than the detail
+// page lists is the same self-contradiction the backfill exists to remove.
+func TrackDetectionWindow(t model.Track) (from, to time.Time) {
+	// A second of grace on the upper bound: a detection can be written by the
+	// sensor path microseconds after the track update it produced, and
+	// excluding it would make the last detection of every track invisible.
+	return t.FirstSeen, t.LastSeen.Add(time.Second)
+}
+
+// NeedsPeakRSSI reports whether a track's rssi_dbm can and should be
+// reconstructed from its detections. See Store.BackfillPeakRSSI.
+//
+// A track with neither a serial nor a MAC has nothing to match detections on,
+// so there is no query worth running for it.
+func NeedsPeakRSSI(t model.Track) bool {
+	return t.RSSIdBm == nil && (t.Identity.Serial != "" || len(t.Identity.MACs) > 0)
+}
+
 type SensorRecord struct {
 	SensorID      string
 	SensorKind    string
@@ -182,6 +204,30 @@ type Store interface {
 	UpsertTrack(ctx context.Context, t model.Track) error
 	GetTrack(ctx context.Context, trackID string) (model.Track, error)
 	ListTracks(ctx context.Context, q TrackQuery) (TrackPage, error)
+
+	// BackfillPeakRSSI fills rssi_dbm, in place, on the given tracks that were
+	// stored without one, from the peak across their own detections.
+	//
+	// fusion only started writing track.rssi_dbm partway through the project's
+	// life. Tracks stored before that deploy have no such field, so /tracks and
+	// /timeline rendered a dash for them while the detail page -- which
+	// computes the peak client-side from the detections it fetches anyway --
+	// rendered a real number for the same track. One track disagreeing with
+	// itself on two screens reads as a bug rather than as history.
+	//
+	// Called by whatever SERVES a track, not by GetTrack and ListTracks
+	// themselves. That is deliberate: both of those are also the read half of
+	// a read-modify-write -- ingest closing a track it was told about, and the
+	// stale sweep closing one fusion abandoned -- and enriching there would
+	// launder a derived number into the stored document on a path nobody
+	// looking at it would expect to write, and would put a detections
+	// aggregate on the closure hot path. The stored document stays exactly
+	// what fusion published; the repair lives in the response.
+	//
+	// A track that already carries a peak is never second-guessed, and a track
+	// whose detections carry no RSSI at all is left absent rather than given a
+	// confident 0 dBm. One query for the whole slice.
+	BackfillPeakRSSI(ctx context.Context, tracks []model.Track) error
 
 	InsertDetection(ctx context.Context, d model.Detection) error
 	ListDetections(ctx context.Context, q DetectionQuery) (DetectionPage, error)

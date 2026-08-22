@@ -124,6 +124,64 @@ func (s *Store) GetTrack(ctx context.Context, id string) (model.Track, error) {
 	return t, nil
 }
 
+// peakRSSIKey is one element of the JSON array MaxTrackRSSI expands. The field
+// names are the ones the query's json_extract paths read.
+type peakRSSIKey struct {
+	ID     string   `json:"id"`
+	Serial string   `json:"serial,omitempty"`
+	MACs   []string `json:"macs,omitempty"`
+	From   string   `json:"from"`
+	To     string   `json:"to"`
+}
+
+// BackfillPeakRSSI implements store.Store. One statement covers the whole
+// slice: a per-track query would turn one list response into a hundred.
+func (s *Store) BackfillPeakRSSI(ctx context.Context, tracks []model.Track) error {
+	keys := make([]peakRSSIKey, 0, len(tracks))
+	for _, t := range tracks {
+		if !store.NeedsPeakRSSI(t) {
+			continue
+		}
+		from, to := store.TrackDetectionWindow(t)
+		keys = append(keys, peakRSSIKey{
+			ID:     t.TrackID,
+			Serial: t.Identity.Serial,
+			MACs:   t.Identity.MACs,
+			From:   toDB(from),
+			To:     toDB(to),
+		})
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+
+	arg, err := json.Marshal(keys)
+	if err != nil {
+		return fmt.Errorf("peak rssi: %w", err)
+	}
+	rows, err := s.q.MaxTrackRSSI(ctx, string(arg))
+	if err != nil {
+		return fmt.Errorf("peak rssi: %w", err)
+	}
+
+	peaks := make(map[string]float64, len(rows))
+	for _, row := range rows {
+		peaks[row.TrackID] = row.RssiDbm
+	}
+	for i := range tracks {
+		// Re-check rather than trusting the key list to line up with the
+		// slice: a track that already had a peak must keep the one fusion
+		// published.
+		if !store.NeedsPeakRSSI(tracks[i]) {
+			continue
+		}
+		if peak, ok := peaks[tracks[i].TrackID]; ok {
+			tracks[i].RSSIdBm = &peak
+		}
+	}
+	return nil
+}
+
 func (s *Store) ListTracks(ctx context.Context, q store.TrackQuery) (store.TrackPage, error) {
 	var (
 		since          = nullTime(q.Since)

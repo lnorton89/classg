@@ -951,6 +951,90 @@ func (q *Queries) MarkHookRuleFired(ctx context.Context, arg MarkHookRuleFiredPa
 	return result.RowsAffected()
 }
 
+const maxTrackRSSI = `-- name: MaxTrackRSSI :many
+WITH want AS (
+    SELECT CAST(json_extract(value, '$.id')     AS TEXT) AS track_id,
+           CAST(json_extract(value, '$.serial') AS TEXT) AS serial,
+           json_extract(value, '$.macs')                 AS macs,
+           CAST(json_extract(value, '$.from')   AS TEXT) AS from_ts,
+           CAST(json_extract(value, '$.to')     AS TEXT) AS to_ts
+    FROM json_each(?1)
+),
+matched AS (
+    SELECT w.track_id AS track_id,
+           CAST(json_extract(d.doc, '$.rf.rssi_dbm') AS REAL) AS rssi_dbm
+    FROM want w
+    JOIN detections d
+      ON d.serial = w.serial AND d.ts >= w.from_ts AND d.ts <= w.to_ts
+    WHERE w.serial IS NOT NULL
+    UNION ALL
+    SELECT w.track_id AS track_id,
+           CAST(json_extract(d.doc, '$.rf.rssi_dbm') AS REAL) AS rssi_dbm
+    FROM want w
+    JOIN json_each(w.macs) m
+    JOIN detections d
+      ON d.mac = m.value AND d.ts >= w.from_ts AND d.ts <= w.to_ts
+    WHERE w.macs IS NOT NULL
+)
+SELECT matched.track_id, CAST(MAX(matched.rssi_dbm) AS REAL) AS rssi_dbm
+FROM matched
+WHERE rssi_dbm IS NOT NULL
+GROUP BY track_id
+`
+
+type MaxTrackRSSIRow struct {
+	TrackID string
+	RssiDbm float64
+}
+
+// Peak RSSI for tracks whose stored document has no rssi_dbm.
+//
+// fusion only started writing track.rssi_dbm partway through the project's
+// life, so every track recorded before that deploy has none. The detail page
+// computed the peak client-side from the detections it had already fetched and
+// showed a real number, while the list and timeline tables read the stored
+// field and showed a dash -- the same track disagreeing with itself on two
+// screens, which reads as a bug rather than as history.
+//
+// One statement for a whole page of tracks, not one per track: the parameter is
+// a JSON array of {id, serial, macs, from, to} objects, and json_each expands
+// it into a table to join against.
+//
+// The two arms are deliberately UNIONed rather than written as a single ON
+// clause with an OR. Each arm is then an equality on an indexed column and rides
+// idx_detections_serial / idx_detections_mac; the OR form cannot use either and
+// degrades to a full scan of detections per track. A detection matched by both
+// serial and MAC is counted twice, which MAX does not care about.
+//
+// The per-track window comes from the track itself rather than being one span
+// across the page, so the same aircraft flown twice does not lend the peak of
+// one flight to the other.
+// Filtered before the aggregate, not after: a track whose detections carry no
+// RSSI at all must produce no row, so the field stays absent rather than
+// becoming a confident 0 dBm.
+func (q *Queries) MaxTrackRSSI(ctx context.Context, tracks interface{}) ([]MaxTrackRSSIRow, error) {
+	rows, err := q.db.QueryContext(ctx, maxTrackRSSI, tracks)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MaxTrackRSSIRow{}
+	for rows.Next() {
+		var i MaxTrackRSSIRow
+		if err := rows.Scan(&i.TrackID, &i.RssiDbm); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const purgeDetections = `-- name: PurgeDetections :execrows
 DELETE FROM detections WHERE rowid IN (
     SELECT d.rowid FROM detections AS d WHERE d.ts < ?1 LIMIT ?2

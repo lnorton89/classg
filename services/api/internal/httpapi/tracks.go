@@ -3,7 +3,6 @@ package httpapi
 import (
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/classg/api/internal/apierr"
 	"github.com/classg/api/internal/model"
@@ -54,6 +53,13 @@ func (s *Server) handleListTracks(w http.ResponseWriter, r *http.Request) {
 		fail(w, apierr.Internal("listing tracks failed"))
 		return
 	}
+	// Tracks older than the deploy that taught fusion to publish a peak have
+	// none stored; without this the table shows a dash where the detail page
+	// shows a number. See store.Store.BackfillPeakRSSI.
+	if err := s.store.BackfillPeakRSSI(r.Context(), page.Tracks); err != nil {
+		fail(w, apierr.Internal("listing tracks failed"))
+		return
+	}
 
 	writeJSON(w, http.StatusOK, tracksResponse{
 		Tracks:     model.RedactTracks(page.Tracks, s.cfg.ExposeOperatorLocation),
@@ -73,7 +79,12 @@ func (s *Server) handleGetTrack(w http.ResponseWriter, r *http.Request) {
 		fail(w, apierr.Internal("loading track failed"))
 		return
 	}
-	writeJSON(w, http.StatusOK, t.Redact(s.cfg.ExposeOperatorLocation))
+	one := []model.Track{t}
+	if err := s.store.BackfillPeakRSSI(r.Context(), one); err != nil {
+		fail(w, apierr.Internal("loading track failed"))
+		return
+	}
+	writeJSON(w, http.StatusOK, one[0].Redact(s.cfg.ExposeOperatorLocation))
 }
 
 func (s *Server) handleTrackDetections(w http.ResponseWriter, r *http.Request) {
@@ -103,14 +114,13 @@ func (s *Server) handleTrackDetections(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	from := t.FirstSeen
+	// The same window the store's peak-RSSI backfill uses, from the same
+	// helper, so this page's detections and the peak shown for the track in
+	// every list are drawn from one definition of "belongs to this track".
+	from, to := store.TrackDetectionWindow(t)
 	if !since.IsZero() && since.After(from) {
 		from = since
 	}
-	// A small grace window on the upper bound: a detection can be written by
-	// the sensor path microseconds after the track update that it produced,
-	// and excluding it would make the last detection of every track invisible.
-	to := t.LastSeen.Add(time.Second)
 
 	page, err := s.store.ListTrackDetections(r.Context(), store.TrackDetectionQuery{
 		Serial: t.Identity.Serial,

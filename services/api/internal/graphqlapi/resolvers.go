@@ -115,8 +115,15 @@ func (r *resolvers) tracks(p graphql.ResolveParams) (any, error) {
 		q.Cursor = &c
 	}
 
-	page, err := r.deps.Store.ListTracks(ctxOrBackground(p), q)
+	ctx := ctxOrBackground(p)
+	page, err := r.deps.Store.ListTracks(ctx, q)
 	if err != nil {
+		return nil, fmt.Errorf("listing tracks failed: %w", err)
+	}
+	// See store.Store.BackfillPeakRSSI: tracks recorded before fusion
+	// published a peak have none stored, and REST and GraphQL must not differ
+	// about that.
+	if err := r.deps.Store.BackfillPeakRSSI(ctx, page.Tracks); err != nil {
 		return nil, fmt.Errorf("listing tracks failed: %w", err)
 	}
 	page.Tracks = r.redactTracks(page.Tracks)
@@ -125,7 +132,8 @@ func (r *resolvers) tracks(p graphql.ResolveParams) (any, error) {
 
 func (r *resolvers) track(p graphql.ResolveParams) (any, error) {
 	id, _ := p.Args["track_id"].(string)
-	t, err := r.deps.Store.GetTrack(ctxOrBackground(p), id)
+	ctx := ctxOrBackground(p)
+	t, err := r.deps.Store.GetTrack(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		// Null rather than an error. "There is no track with that id" is an
 		// answer, and a GraphQL errors array would make a client that asked
@@ -135,7 +143,11 @@ func (r *resolvers) track(p graphql.ResolveParams) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading the track failed: %w", err)
 	}
-	return r.redactTrack(t), nil
+	one := []model.Track{t}
+	if err := r.deps.Store.BackfillPeakRSSI(ctx, one); err != nil {
+		return nil, fmt.Errorf("reading the track failed: %w", err)
+	}
+	return r.redactTrack(one[0]), nil
 }
 
 // trackDetections is the reason this endpoint exists: over REST it is one call

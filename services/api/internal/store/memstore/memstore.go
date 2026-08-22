@@ -84,6 +84,51 @@ func (s *Store) GetTrack(_ context.Context, id string) (model.Track, error) {
 	return t, nil
 }
 
+// BackfillPeakRSSI implements store.Store. The SQL store does the same thing
+// in one statement; see the MaxTrackRSSI query.
+func (s *Store) BackfillPeakRSSI(_ context.Context, tracks []model.Track) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for i := range tracks {
+		s.peakRSSI(&tracks[i])
+	}
+	return nil
+}
+
+// peakRSSI fills one track's rssi_dbm from its detections. The caller must
+// hold at least the read lock.
+func (s *Store) peakRSSI(t *model.Track) {
+	if !store.NeedsPeakRSSI(*t) {
+		return
+	}
+	macs := set(t.Identity.MACs)
+	from, to := store.TrackDetectionWindow(*t)
+
+	var peak float64
+	found := false
+	for _, d := range s.detections {
+		if d.RF == nil || d.RF.RSSIdBm == nil {
+			continue
+		}
+		if d.TS.Time.Before(from) || d.TS.Time.After(to) {
+			continue
+		}
+		bySerial := t.Identity.Serial != "" && d.Identity.Serial == t.Identity.Serial
+		byMAC := d.Identity.MAC != "" && macs[d.Identity.MAC]
+		if !bySerial && !byMAC {
+			continue
+		}
+		if !found || *d.RF.RSSIdBm > peak {
+			peak, found = *d.RF.RSSIdBm, true
+		}
+	}
+	// Left absent when nothing carried an RSSI: a dash is honest, a 0 dBm is a
+	// signal strong enough to be sitting on the antenna.
+	if found {
+		t.RSSIdBm = &peak
+	}
+}
+
 func (s *Store) ListTracks(_ context.Context, q store.TrackQuery) (store.TrackPage, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

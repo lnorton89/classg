@@ -79,6 +79,32 @@ type Querier interface {
 	// stale snapshot. The updated_at column is deliberately untouched: it records
 	// the last admin edit, not the last firing.
 	MarkHookRuleFired(ctx context.Context, arg MarkHookRuleFiredParams) (int64, error)
+	// Peak RSSI for tracks whose stored document has no rssi_dbm.
+	//
+	// fusion only started writing track.rssi_dbm partway through the project's
+	// life, so every track recorded before that deploy has none. The detail page
+	// computed the peak client-side from the detections it had already fetched and
+	// showed a real number, while the list and timeline tables read the stored
+	// field and showed a dash -- the same track disagreeing with itself on two
+	// screens, which reads as a bug rather than as history.
+	//
+	// One statement for a whole page of tracks, not one per track: the parameter is
+	// a JSON array of {id, serial, macs, from, to} objects, and json_each expands
+	// it into a table to join against.
+	//
+	// The two arms are deliberately UNIONed rather than written as a single ON
+	// clause with an OR. Each arm is then an equality on an indexed column and rides
+	// idx_detections_serial / idx_detections_mac; the OR form cannot use either and
+	// degrades to a full scan of detections per track. A detection matched by both
+	// serial and MAC is counted twice, which MAX does not care about.
+	//
+	// The per-track window comes from the track itself rather than being one span
+	// across the page, so the same aircraft flown twice does not lend the peak of
+	// one flight to the other.
+	// Filtered before the aggregate, not after: a track whose detections carry no
+	// RSSI at all must produce no row, so the field stays absent rather than
+	// becoming a confident 0 dBm.
+	MaxTrackRSSI(ctx context.Context, tracks interface{}) ([]MaxTrackRSSIRow, error)
 	// Batched via the rowid subquery. The first sweep after a Pi was powered off
 	// for a week can owe hundreds of thousands of rows, and a single unbounded
 	// DELETE holds SQLite's one writer -- the SAME pooled connection synchronous
