@@ -126,6 +126,18 @@ LOCK_WAIT="${CLASSG_LOCK_WAIT:-20}"
 exec 9>"$STATE_DIR/agent.lock"
 if ! flock -w "$LOCK_WAIT" 9; then
     log "another ClassG agent still holds the lock after ${LOCK_WAIT}s; standing down this pass"
+    # Standing down is still a pass. This used to exit before the publish
+    # block, so a deploy whose lock hold spanned two ticks left last_check_at
+    # untouched past the console's six-minute staleness line -- and the admin
+    # page declared the watchdog dead ("nothing is currently watching for
+    # faults") eleven times in the journal, once per long deploy. Only the
+    # timestamp is refreshed: every other field still describes the last real
+    # inspection, which is the truth -- this pass looked, found a deploy in
+    # progress, and correctly touched nothing. The sed is safe because this
+    # same script wrote the file in a fixed format.
+    if [ -f "$STATE_JSON" ]; then
+        sed -i "s/\"last_check_at\": \"[^\"]*\"/\"last_check_at\": \"$(date -Iseconds -u | sed 's/+00:00/Z/')\"/"             "$STATE_JSON" 2>/dev/null || true
+    fi
     exit 0
 fi
 
