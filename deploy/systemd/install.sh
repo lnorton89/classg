@@ -95,6 +95,16 @@ If the TP-Link is fitted as wlan-tplink, enable the companion sweep receiver:
 
   systemctl enable --now classg-sensor-wifi-tplink
 
+Either receiver runs safely alone: it looks for the other interface at startup
+and widens to the full channel plan if it is missing, because the two split
+plans each cover only part of the spectrum. Check which one loaded with
+'systemctl status classg-sensor-wifi'.
+
+On a two-radio unit, declare both in .env so a receiver that never starts is
+reported instead of quietly narrowing coverage:
+
+  CLASSG_EXPECTED_SENSORS=wifi-0:wifi,wifi-1:wifi:optional,sdr-0:sdr:optional
+
 The watchdog, sweep and deploy agents were rendered too, but not enabled:
 each needs a sudoers grant and (for two of them) a timer, which their own
 installers add -- scripts/install-watchdog.sh, install-sweep-agent.sh,

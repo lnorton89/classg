@@ -36,6 +36,10 @@ const KNOWN: Record<string, KnownDetail> = {
   subscribers: { label: 'Feed subscribers', section: 'Radio' },
   reconnects: { label: 'Reconnects', section: 'Radio' },
   uptime_s: { label: 'Sensor uptime', section: 'Radio', kind: 'seconds' },
+  plan: { label: 'Channel plan', section: 'Radio' },
+  plan_fallback: { label: 'Widened to full plan', section: 'Radio' },
+  companion_iface: { label: 'Companion receiver', section: 'Radio' },
+  companion_present: { label: 'Companion present', section: 'Radio' },
   seconds_since_message: {
     label: 'Since last message',
     section: 'Radio',
@@ -67,6 +71,12 @@ const KNOWN: Record<string, KnownDetail> = {
     section: 'Traffic',
     kind: 'millis',
   },
+  hop_latency_ms: {
+    label: 'Cost per hop',
+    section: 'Traffic',
+    kind: 'millis',
+  },
+  hop_latency_measured: { label: 'Hop cost measured', section: 'Traffic' },
   escalations: { label: 'Escalations', section: 'Traffic' },
   currently_escalated: { label: 'Escalated right now', section: 'Traffic' },
 

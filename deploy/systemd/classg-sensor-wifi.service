@@ -53,7 +53,12 @@ EnvironmentFile=/home/admin/classg/.env
 # which the capability-limited sensor user cannot and should not do.
 ExecStartPre=+/home/admin/classg/scripts/setup-monitor.sh wlan-alfa
 
-ExecStart=/home/admin/classg/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli --sensor-id wifi-0 run --iface wlan-alfa --channels config/channels-primary.yaml
+# --channels is half a plan. channels-primary.yaml is 6/1/11 because the
+# companion sweeps everything else, so this receiver alone would be blind to all
+# of 5 GHz. --solo-channels is what it loads instead when wlan-tplink is not
+# there, which is the supported single-adapter build. Decided at startup and
+# reported on the heartbeat; /health reads it back.
+ExecStart=/home/admin/classg/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli --sensor-id wifi-0 run --iface wlan-alfa --channels config/channels-primary.yaml --solo-channels config/channels.yaml --companion-iface wlan-tplink
 
 Restart=always
 RestartSec=5

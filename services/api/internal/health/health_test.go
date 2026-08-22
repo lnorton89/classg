@@ -1,6 +1,7 @@
 package health
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -330,4 +331,113 @@ func TestOnlyUnfittedOptionalSensorIsDown(t *testing.T) {
 	if rep.Status != StatusDown {
 		t.Fatalf("status: got %q want down", rep.Status)
 	}
+}
+
+// A second Wi-Fi receiver is not optional the way a second radio KIND is.
+//
+// The two Wi-Fi radios share a split channel plan -- channels-primary.yaml is
+// 6/1/11 only because channels-sweep.yaml takes the rest, and
+// channels-sweep.yaml omits channel 6 because the primary camps there. Declare
+// both and lose one, and the survivor is running a plan written for coverage it
+// no longer has: no 5 GHz at all, or no channel 6 at all. "not fitted" is the
+// answer for an SDR that was never bought. It is the wrong answer here.
+func TestDeclaredSecondWifiReceiverThatNeverReportsDegrades(t *testing.T) {
+	r := NewRegistry(staleAfter)
+	r.Expect("wifi-0", "wifi", false)
+	r.Expect("wifi-1", "wifi", true)
+	// The survivor is on the split plan: it found its companion at startup, or
+	// was never told it had one. Either way it is not covering the whole plan.
+	r.Heartbeat(Heartbeat{SensorID: "wifi-0", SensorKind: "wifi", Healthy: true, TS: now,
+		Detail: map[string]any{"plan": "channels-primary.yaml", "plan_fallback": false}})
+
+	rep := r.Snapshot(now, time.Minute, "0.1.0", nil)
+	if rep.Status != StatusDegraded {
+		t.Fatalf("status: got %q want degraded", rep.Status)
+	}
+	got := sensorByID(t, rep, "wifi-1")
+	if got.Reason == "not fitted" {
+		t.Error("a missing Wi-Fi receiver leaves a coverage hole; the reason must say so")
+	}
+	if !strings.Contains(got.Reason, "split") {
+		t.Errorf("reason %q does not name the split plan", got.Reason)
+	}
+}
+
+// The other half, and the one that keeps the warning honest: on a genuine
+// single-adapter build the survivor widens to the full plan and there is no
+// hole. Reporting degraded forever here would be the standing warning that
+// teaches an operator to ignore the real one.
+func TestWidenedWifiReceiverMakesAMissingCompanionHarmless(t *testing.T) {
+	r := NewRegistry(staleAfter)
+	r.Expect("wifi-0", "wifi", false)
+	r.Expect("wifi-1", "wifi", true)
+	r.Heartbeat(Heartbeat{SensorID: "wifi-0", SensorKind: "wifi", Healthy: true, TS: now,
+		Detail: map[string]any{"plan": "channels.yaml", "plan_fallback": true}})
+
+	rep := r.Snapshot(now, time.Minute, "0.1.0", nil)
+	if rep.Status != StatusOK {
+		t.Fatalf("status: got %q want ok", rep.Status)
+	}
+	if got := sensorByID(t, rep, "wifi-1"); !strings.Contains(got.Reason, "widened") {
+		t.Errorf("reason %q does not say the survivor widened", got.Reason)
+	}
+}
+
+// A widened receiver only speaks for coverage while it is alive. Once it goes
+// stale it proves nothing, and the companion's absence is a hole again --
+// otherwise a dead radio's last heartbeat would keep vouching for the sky.
+func TestAStaleWidenedReceiverStopsVouchingForCoverage(t *testing.T) {
+	r := NewRegistry(staleAfter)
+	r.Expect("wifi-0", "wifi", false)
+	r.Expect("wifi-1", "wifi", true)
+	r.Heartbeat(Heartbeat{SensorID: "wifi-0", SensorKind: "wifi", Healthy: true,
+		TS: now.Add(-time.Hour), At: now.Add(-time.Hour),
+		Detail: map[string]any{"plan_fallback": true}})
+
+	rep := r.Snapshot(now, time.Minute, "0.1.0", nil)
+	if got := sensorByID(t, rep, "wifi-1"); !strings.Contains(got.Reason, "split") {
+		t.Errorf("reason %q: a stale receiver must not vouch for coverage", got.Reason)
+	}
+}
+
+// The rule is about the Wi-Fi pair's shared channel plan, so it must not leak
+// onto other hardware. An SDR is still allowed to be absent.
+func TestTheCoverageRuleDoesNotTouchOtherSensorKinds(t *testing.T) {
+	r := NewRegistry(staleAfter)
+	r.Expect("wifi-0", "wifi", false)
+	r.Expect("sdr-0", "sdr", true)
+	r.Heartbeat(Heartbeat{SensorID: "wifi-0", SensorKind: "wifi", Healthy: true, TS: now,
+		Detail: map[string]any{"plan_fallback": false}})
+
+	rep := r.Snapshot(now, time.Minute, "0.1.0", nil)
+	if rep.Status != StatusOK {
+		t.Fatalf("status: got %q want ok", rep.Status)
+	}
+	if got := sensorByID(t, rep, "sdr-0"); got.Reason != "not fitted" {
+		t.Errorf("reason: got %q want %q", got.Reason, "not fitted")
+	}
+}
+
+// An undeclared second receiver is not a missing one. A unit that only ever had
+// one radio and says so must stay `ok` whatever plan it is running.
+func TestUndeclaredSecondWifiReceiverIsNotAFault(t *testing.T) {
+	r := NewRegistry(staleAfter)
+	r.Expect("wifi-0", "wifi", false)
+	r.Heartbeat(Heartbeat{SensorID: "wifi-0", SensorKind: "wifi", Healthy: true, TS: now,
+		Detail: map[string]any{"plan_fallback": false}})
+
+	if rep := r.Snapshot(now, time.Minute, "0.1.0", nil); rep.Status != StatusOK {
+		t.Fatalf("status: got %q want ok", rep.Status)
+	}
+}
+
+func sensorByID(t *testing.T, rep Report, id string) Sensor {
+	t.Helper()
+	for _, s := range rep.Sensors {
+		if s.SensorID == id {
+			return s
+		}
+	}
+	t.Fatalf("%s missing from the report", id)
+	return Sensor{}
 }

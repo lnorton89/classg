@@ -114,7 +114,11 @@ def drone_frame() -> bytes:
     )
 
 
-def run_once(radio: FakeRadio, hopper: ChannelHopper | None = None):
+def run_once(
+    radio: FakeRadio,
+    hopper: ChannelHopper | None = None,
+    plan: capture.PlanChoice | None = None,
+):
     """Run exactly one dwell."""
     hopper = hopper or make_hopper()
     pipeline = Pipeline(sensor_id="wifi-test")
@@ -134,6 +138,7 @@ def run_once(radio: FakeRadio, hopper: ChannelHopper | None = None):
     hopper.record_dwell = counting_record  # type: ignore[method-assign]
 
     stats = capture.run_capture(
+        plan=plan,
         iface="wlan-test",
         hopper=hopper,
         pipeline=pipeline,
@@ -210,6 +215,33 @@ class TestHealth:
         detail = pub.heartbeats[-1]["detail"]
         for key in ("iface", "channel", "frames", "beacons", "listening_fraction"):
             assert key in detail, f"heartbeat missing {key}"
+
+    def test_heartbeat_reports_a_widened_channel_plan(self):
+        """The API cannot ask a sensor anything (ADR-0002), so this is the only
+        route by which /health learns whether a lone receiver widened to cover
+        the whole plan or is running half of one. Asserted on every heartbeat
+        rather than the first: the api restarts, and a field that appeared only
+        at startup would be lost to it."""
+        plan = capture.PlanChoice(
+            path="config/channels.yaml",
+            fallback=True,
+            companion_iface="wlan-tplink",
+            companion_present=False,
+        )
+        _, pub, _, _ = run_once(FakeRadio([drone_frame()]), plan=plan)
+
+        assert pub.heartbeats
+        for beat in pub.heartbeats:
+            assert beat["detail"]["plan"] == "channels.yaml"
+            assert beat["detail"]["plan_fallback"] is True
+            assert beat["detail"]["companion_present"] is False
+
+    def test_heartbeat_omits_the_plan_when_none_was_resolved(self):
+        """Replay and hand-run captures resolve no plan. The keys must be absent
+        rather than present-and-false: /health reads a false plan_fallback as
+        "this receiver is NOT covering everything on its own"."""
+        _, pub, _, _ = run_once(FakeRadio([]))
+        assert "plan_fallback" not in pub.heartbeats[-1]["detail"]
 
     def test_final_heartbeat_marks_the_sensor_down(self):
         """A clean stop must not leave /health believing the radio is fine."""

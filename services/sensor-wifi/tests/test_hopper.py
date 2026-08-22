@@ -97,6 +97,59 @@ class TestEscalation:
         assert h.dwell_ms() == 400
 
 
+class TestHopCost:
+    """listening_fraction is the number dwell tuning is judged against, so where
+    its retune cost comes from decides whether either radio can be tuned at all.
+
+    The 140 ms default was measured on mt7921u (the ALFA). The companion is
+    rtl8852au behind a vendor driver, and nothing ever measured it -- so until
+    the cost was observed per receiver, half the fleet's headline metric was
+    computed from the other half's hardware.
+    """
+
+    def test_a_timed_hop_beats_the_estimate(self):
+        h = make(hop_latency_ms=140)
+        for _ in range(4):
+            h.record_hop(60.0)
+        h.record_dwell(6, 400.0)
+
+        report = h.efficiency_report()
+        assert report["hop_latency_measured"] is True
+        assert report["hop_latency_ms"] == 60.0
+        # 4 x 60, not 4 x 140. The estimate is not consulted once there is data.
+        assert report["hop_overhead_ms"] == 240.0
+        assert report["listening_fraction"] == 400.0 / 640.0
+
+    def test_an_untimed_hop_falls_back_to_the_estimate(self):
+        """The pure-hopper callers pass no duration, and a receiver that has not
+        hopped yet has nothing to report. Both must still produce a number."""
+        h = make(hop_latency_ms=140)
+        for _ in range(4):
+            h.record_hop()
+        h.record_dwell(6, 400.0)
+
+        report = h.efficiency_report()
+        assert report["hop_latency_measured"] is False
+        assert report["hop_latency_ms"] == 140.0
+        assert report["hop_overhead_ms"] == 560
+
+    def test_the_measurement_is_a_mean_over_timed_hops_only(self):
+        """A mix is what a real receiver produces: the loop times every hop, but
+        record_hop stays usable without one. Untimed hops must not be counted
+        into the mean as zeros and flatter the radio."""
+        h = make(hop_latency_ms=140)
+        h.record_hop(100.0)
+        h.record_hop(200.0)
+        h.record_hop()
+
+        report = h.efficiency_report()
+        assert report["hops"] == 3
+        assert report["hop_latency_ms"] == 150.0
+        # And the untimed hop is charged at the measured mean rather than at
+        # zero: 3 x 150, not the 300 ms that was actually stopwatched.
+        assert report["hop_overhead_ms"] == 450.0
+
+
 class TestWeighting:
     def test_unescalated_hopping_follows_the_weights(self):
         h = make()

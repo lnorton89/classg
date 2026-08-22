@@ -294,6 +294,110 @@ def prune_channel_plan(channels: list[ChannelSpec], iface: str) -> list[ChannelS
     return kept
 
 
+# How long to wait for a companion adapter to enumerate before deciding it is
+# not fitted. The two receivers race at boot: classg-sensor-wifi-tplink.service
+# is ordered After= the primary, but the INTERFACE appears from udev, not from
+# the unit, and the TP-Link enumerates behind a USB mode-switch. Deciding too
+# early is not dangerous -- it widens the primary to the full plan, so the two
+# radios duplicate coverage instead of splitting it -- but a solo unit pays this
+# wait at every start, so it is a guess that wants measuring on real hardware
+# rather than raising blindly.
+COMPANION_WAIT_S = 15.0
+
+
+@dataclass(frozen=True)
+class PlanChoice:
+    """Which channel plan this receiver ended up loading, and why.
+
+    `fallback` is the one that matters downstream: it means this radio is
+    covering the full plan alone because its companion was not there. The API
+    reads it back out of the heartbeat to decide whether a missing second
+    receiver is a supported build or a hole in the coverage -- see
+    services/api/internal/health/health.go.
+    """
+
+    path: str
+    fallback: bool = False
+    companion_iface: str = ""
+    companion_present: bool | None = None
+
+    def detail(self) -> dict[str, Any]:
+        """The subset of this that belongs in every heartbeat."""
+        out: dict[str, Any] = {
+            "plan": os.path.basename(self.path),
+            "plan_fallback": self.fallback,
+        }
+        if self.companion_iface:
+            out["companion_iface"] = self.companion_iface
+            out["companion_present"] = self.companion_present
+        return out
+
+
+def resolve_channel_plan(
+    *,
+    split_path: str,
+    solo_path: str = "",
+    companion_iface: str = "",
+    wait_s: float = COMPANION_WAIT_S,
+    poll_s: float = 0.5,
+    exists: Callable[[str], bool] = interface_exists,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> PlanChoice:
+    """Pick between the split plan and the solo plan by looking for the companion.
+
+    The dual-receiver plans are deliberately partial. channels-primary.yaml is
+    channels 6/1/11 only because channels-sweep.yaml takes everything else, and
+    channels-sweep.yaml omits channel 6 -- the one channel a DJI was actually
+    measured on -- because the primary camps there. Each is correct only while
+    the other radio is running. Alone, either is a detector with a hole in it:
+    no 5 GHz at all on the primary, no channel 6 at all on the companion.
+
+    So which plan to load is a runtime question, not an install-time one. Ask
+    the kernel whether the other radio is fitted, and widen to the full plan if
+    it is not.
+
+    Decided once, at startup, and reported in the heartbeat so /health can say
+    so. A companion that vanishes an hour in does NOT re-widen this receiver:
+    swapping plans mid-run means rebuilding the hopper's cumulative weights
+    underneath the capture loop, and restarting to reload them drops frames
+    during exactly the event you care about. The API surfaces that state
+    instead of hiding it.
+    """
+    if not companion_iface or not solo_path:
+        return PlanChoice(path=split_path)
+
+    deadline = monotonic() + max(wait_s, 0.0)
+    while True:
+        if exists(companion_iface):
+            log.info(
+                "companion receiver %s is present; using the split plan %s",
+                companion_iface, split_path,
+            )
+            return PlanChoice(
+                path=split_path,
+                companion_iface=companion_iface,
+                companion_present=True,
+            )
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        sleep(min(poll_s, remaining))
+
+    log.warning(
+        "companion receiver %s did not appear within %.0fs, so this radio is "
+        "alone. Widening from %s to %s -- the split plans each cover only part "
+        "of the spectrum and neither is safe on its own.",
+        companion_iface, wait_s, split_path, solo_path,
+    )
+    return PlanChoice(
+        path=solo_path,
+        fallback=True,
+        companion_iface=companion_iface,
+        companion_present=False,
+    )
+
+
 # ARPHRD_IEEE80211_RADIOTAP. A monitor-mode interface reports this as its
 # hardware type, and scapy warns "Unable to guess type ... family=803" when it
 # cannot map it to a dissector.
@@ -373,6 +477,7 @@ def run_capture(
     should_run: Callable[[], bool] = lambda: True,
     socket_factory: Callable[[str], Any] = open_socket,
     surveyor: SurveySampler | None = None,
+    plan: PlanChoice | None = None,
 ) -> CaptureStats:
     """Capture until should_run() goes false.
 
@@ -382,6 +487,12 @@ def run_capture(
     surveyor is the channel-occupancy sampler. None means no survey is taken --
     which is what the tests want, and what a run on an adapter with no `iw`
     reduces to anyway.
+
+    plan describes which channel file this receiver loaded and whether it
+    widened because its companion was missing. It is static for the life of the
+    process and rides on every heartbeat, because the consumer that needs it --
+    /health, deciding whether an absent second radio left a gap -- has no other
+    way to learn it.
     """
     stats = CaptureStats()
     if socket_factory is open_socket:
@@ -417,8 +528,15 @@ def run_capture(
             if tuned_channel == spec.channel:
                 hop_ok = True
             else:
-                hopper.record_hop()
+                # Time the retune rather than assume it. This is the only place
+                # that can: the hopper never touches hardware, and the cost
+                # differs per chipset -- mt7921u and rtl8852au are not the same
+                # radio behind the same driver. Wall time around `iw` is the
+                # honest figure for listening_fraction anyway, because the
+                # subprocess spawn is blind time for this loop too.
+                hop_started = time.monotonic()
                 hop_ok = set_channel(iface, spec.channel)
+                hopper.record_hop((time.monotonic() - hop_started) * 1000.0)
                 if hop_ok:
                     tuned_channel = spec.channel
             if hop_ok:
@@ -560,7 +678,7 @@ def run_capture(
                     # and a one-channel plan never retunes.
                     if not interface_exists(iface):
                         _heartbeat(publisher, stats, pipeline, hopper, iface,
-                                   healthy=False, surveyor=surveyor,
+                                   healthy=False, surveyor=surveyor, plan=plan,
                                    reason=f"{iface} disappeared mid-capture")
                         raise CaptureError(
                             f"{iface} disappeared mid-capture. The adapter was "
@@ -576,7 +694,7 @@ def run_capture(
                     elif len(hopper.channels) > 1:
                         _heartbeat(
                             publisher, stats, pipeline, hopper, iface,
-                            healthy=False, surveyor=surveyor,
+                            healthy=False, surveyor=surveyor, plan=plan,
                             reason=(
                                 f"no frames for {int(stalled_s)}s on {iface}; "
                                 "the radio is up but hearing nothing. Check the "
@@ -589,7 +707,7 @@ def run_capture(
                     # calling a working radio unhealthy.
                     else:
                         _heartbeat(publisher, stats, pipeline, hopper, iface,
-                                   surveyor=surveyor,
+                                   surveyor=surveyor, plan=plan,
                                    reason=(
                                        f"no frames for {int(stalled_s)}s, parked "
                                        f"on channel {hopper.current.channel}; "
@@ -597,7 +715,7 @@ def run_capture(
                                    ))
                 else:
                     _heartbeat(publisher, stats, pipeline, hopper, iface,
-                               surveyor=surveyor)
+                               surveyor=surveyor, plan=plan)
                 last_heartbeat = now
                 beat.mark()
     finally:
@@ -606,7 +724,7 @@ def run_capture(
         # One last heartbeat so a clean shutdown is distinguishable from a
         # crash in whatever is watching the bus.
         _heartbeat(publisher, stats, pipeline, hopper, iface, healthy=False,
-                   reason="capture stopped")
+                   plan=plan, reason="capture stopped")
         log.info(
             "capture stopped: %d frames, %d beacons, %d detections, %d dwells",
             stats.frames, pipeline.stats.beacons, stats.detections, stats.dwells,
@@ -731,6 +849,7 @@ def _heartbeat(
     healthy: bool = True,
     reason: str = "",
     surveyor: SurveySampler | None = None,
+    plan: PlanChoice | None = None,
 ) -> None:
     detail: dict[str, Any] = {
         "iface": iface,
@@ -747,6 +866,8 @@ def _heartbeat(
         "uptime_s": round(stats.uptime_s(), 1),
         **hopper.efficiency_report(),
     }
+    if plan is not None:
+        detail.update(plan.detail())
     if reason:
         detail["reason"] = reason
     if surveyor is not None:

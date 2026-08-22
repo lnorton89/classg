@@ -22,7 +22,13 @@ from typing import cast
 from dotenv import find_dotenv, load_dotenv
 
 from .bus import DEFAULT_ENDPOINT, DetectionPublisher
-from .capture import CaptureError, prune_channel_plan, run_capture, set_channel
+from .capture import (
+    CaptureError,
+    prune_channel_plan,
+    resolve_channel_plan,
+    run_capture,
+    set_channel,
+)
 from .fingerprint import FingerprintMatcher
 from .help_docs import render_cli_help, render_cli_topic, topic_ids
 from .hopper import ChannelHopper, load_channels
@@ -197,7 +203,17 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 def cmd_run(args: argparse.Namespace) -> int:
     import yaml
 
-    channels = load_channels(yaml.safe_load(Path(args.channels).read_text()))
+    # Which file, before which channels. On a dual-receiver unit --channels is
+    # half a plan by design, and the other half only exists while the companion
+    # radio is running; alone it has to widen or it is a detector with a hole in
+    # it. See capture.resolve_channel_plan.
+    plan = resolve_channel_plan(
+        split_path=args.channels,
+        solo_path=args.solo_channels,
+        companion_iface=args.companion_iface,
+        wait_s=args.companion_wait_s,
+    )
+    channels = load_channels(yaml.safe_load(Path(plan.path).read_text()))
     matcher = FingerprintMatcher.from_yaml(
         args.fingerprints, OUIRegistry.load_if_present(args.oui_registry)
     )
@@ -222,8 +238,10 @@ def cmd_run(args: argparse.Namespace) -> int:
             escalation_scan_every=args.escalation_scan_every,
         )
         log.info(
-            "sensor %s: %s, %d channels, %d ms base dwell",
-            args.sensor_id, args.iface, len(channels), args.dwell_ms,
+            "sensor %s: %s, %s%s, %d channels, %d ms base dwell",
+            args.sensor_id, args.iface, Path(plan.path).name,
+            " (widened: companion absent)" if plan.fallback else "",
+            len(channels), args.dwell_ms,
         )
         run_capture(
             iface=args.iface,
@@ -239,6 +257,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             # counters, so the first heartbeat after start reports no survey --
             # there is no window to measure yet.
             surveyor=SurveySampler(iface=args.iface),
+            plan=plan,
         )
     except CaptureError as exc:
         # The radio is unusable. Say so on the bus before exiting so /health
@@ -348,6 +367,30 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument(
         "--channels",
         default=os.getenv("CLASSG_WIFI_CHANNELS_FILE", "config/channels.yaml"),
+    )
+    p_run.add_argument(
+        "--solo-channels",
+        default=os.getenv("CLASSG_WIFI_SOLO_CHANNELS_FILE", ""),
+        help="channel plan to load instead of --channels when --companion-iface "
+             "is not present. The dual-receiver plans each cover only part of "
+             "the spectrum, so a receiver left on its own has to widen or it "
+             "goes silently blind to the other half. Empty disables the "
+             "fallback and --channels is used unconditionally.",
+    )
+    p_run.add_argument(
+        "--companion-iface",
+        default=os.getenv("CLASSG_WIFI_COMPANION_IFACE", ""),
+        help="the other Wi-Fi receiver's interface. Its presence at startup is "
+             "what says the split channel plans are live; its absence selects "
+             "--solo-channels and is reported in the heartbeat.",
+    )
+    p_run.add_argument(
+        "--companion-wait-s",
+        type=float,
+        default=os.getenv("CLASSG_WIFI_COMPANION_WAIT_S", "15"),
+        help="how long to wait for --companion-iface to enumerate before "
+             "concluding it is not fitted. Covers the boot race with udev and "
+             "the TP-Link's USB mode-switch.",
     )
     p_run.add_argument(
         "--fingerprints",

@@ -237,6 +237,39 @@ Sensor restart uses `CLASSG_SENSOR_RESTART_COMMAND`; when that executable is
 not available in the API runtime, the UI disables restart and shows the reason
 instead of reporting a false success.
 
+### Declare both Wi-Fi receivers
+
+`CLASSG_EXPECTED_SENSORS=wifi-0:wifi,wifi-1:wifi:optional,sdr-0:sdr:optional`
+
+`optional` means something stronger for a Wi-Fi receiver than for the SDR, and
+the difference is the split channel plan. A unit with no SDR is a supported
+build and stays `ok`. A unit that declares two Wi-Fi radios and only has one is
+`degraded` — because `channels-primary.yaml` and `channels-sweep.yaml` each
+cover only part of the spectrum, so losing either leaves the survivor running a
+plan written for coverage it no longer has.
+
+Unless the survivor widened. Each receiver reports `plan_fallback` on its
+heartbeat, and a live one that widened to `channels.yaml` is genuinely covering
+everything, so the missing companion goes back to being a supported build and
+the status returns to `ok`. That is the whole point of the distinction: the
+warning fires when coverage is actually incomplete, and not otherwise.
+
+Absence of the signal counts as "not proven", not as "fine" — a receiver too old
+to send the field, or started by hand without `--solo-channels`, gets a warning
+that may be unnecessary rather than a silence that may be false confidence.
+
+Declare `wifi-1` only if the unit is meant to have two radios. On a genuine
+single-adapter build, leave it out.
+
+| Wi-Fi sensor variable | Default | What |
+|---|---|---|
+| `CLASSG_WIFI_SOLO_CHANNELS_FILE` | *(unset)* | plan to load instead of `--channels` when the companion is absent; empty disables the fallback |
+| `CLASSG_WIFI_COMPANION_IFACE` | *(unset)* | the other receiver's interface; its presence at startup means the split plans are live |
+| `CLASSG_WIFI_COMPANION_WAIT_S` | `15` | how long to wait for it to enumerate before concluding it is not fitted |
+
+The deployed units pass these as flags rather than reading the environment, so
+that the two receivers get different values from one shared `.env`.
+
 ## Production checklist
 
 - **Confirm `CLASSG_STORE=libsql`.** The Go default and the Compose default are both `libsql`;

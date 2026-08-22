@@ -118,6 +118,12 @@ func NewRegistry(staleAfter time.Duration) *Registry {
 // optional declares hardware the unit may not have fitted -- an SDR or a BLE
 // dongle on a build that ships without one. It suppresses nothing except the
 // "never reported at all" case; see Snapshot.
+//
+// It is weaker for a Wi-Fi receiver, and deliberately: the two Wi-Fi radios
+// share a split channel plan, so a declared one that never reports is a hole in
+// the coverage rather than a build option, and Snapshot counts it unless the
+// surviving receiver says it widened. Declare wifi-1 only on a unit that is
+// meant to have two.
 func (r *Registry) Expect(sensorID, kind string, optional bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -242,6 +248,11 @@ func (r *Registry) Snapshot(now time.Time, uptime time.Duration, version string,
 		rep.Fusion.LastMessage = &last
 	}
 
+	// A second Wi-Fi receiver is not optional in the way a second radio kind is:
+	// the two share a split channel plan, so losing one leaves the other running
+	// a plan that was written assuming coverage it no longer has.
+	coverageWhole := r.wifiCoverageIsWhole(now)
+
 	healthy, total := 0, 0
 	for id, e := range r.sensors {
 		s := Sensor{
@@ -256,10 +267,21 @@ func (r *Registry) Snapshot(now time.Time, uptime time.Duration, version string,
 		case !e.seen:
 			s.Healthy = false
 			if s.Reason == "" {
-				if e.optional {
-					s.Reason = "not fitted"
-				} else {
+				switch {
+				case !e.optional:
 					s.Reason = "no heartbeat since the api started"
+				case e.kind == "wifi" && !coverageWhole:
+					// Deliberately does not claim which: from here, an adapter
+					// that was never plugged in and one whose unit was never
+					// enabled look identical, and both leave the same hole.
+					s.Reason = "not fitted, or its unit was never enabled; " +
+						"the remaining Wi-Fi receiver is running a split " +
+						"channel plan, so part of the plan is unwatched"
+				case e.kind == "wifi":
+					s.Reason = "not fitted; the remaining Wi-Fi receiver " +
+						"widened to the full channel plan"
+				default:
+					s.Reason = "not fitted"
 				}
 			}
 		default:
@@ -283,7 +305,22 @@ func (r *Registry) Snapshot(now time.Time, uptime time.Duration, version string,
 		// The moment it HAS reported, e.seen is true and it counts like any
 		// other sensor: a radio that worked and stopped is exactly what this
 		// endpoint exists to surface.
-		if e.optional && !e.seen {
+		uncounted := e.optional && !e.seen
+
+		// Except for a declared second Wi-Fi receiver, which is a different
+		// kind of absence. A missing SDR costs this unit the sensor it never
+		// had; a missing Wi-Fi receiver costs it channels the OTHER receiver
+		// stopped covering when the plans were split -- all of 5 GHz, or
+		// channel 6, depending which one is gone. Declaring it is the operator
+		// saying this unit has two, so `not fitted` is not an answer.
+		//
+		// Unless the survivor widened, which is the supported single-adapter
+		// build and genuinely fine. Then the standing-warning objection above
+		// applies with full force and this stays uncounted.
+		if uncounted && e.kind == "wifi" && !coverageWhole {
+			uncounted = false
+		}
+		if uncounted {
 			rep.Sensors = append(rep.Sensors, s)
 			continue
 		}
@@ -297,6 +334,43 @@ func (r *Registry) Snapshot(now time.Time, uptime time.Duration, version string,
 
 	rep.Status = status(healthy, total, r.fusionConfigured, r.fusionConnected)
 	return rep
+}
+
+// wifiCoverageIsWhole reports whether some live Wi-Fi receiver says it is
+// covering the full channel plan by itself.
+//
+// The dual-receiver channel plans are partial on purpose: channels-primary.yaml
+// is 6/1/11 because channels-sweep.yaml takes the rest, and channels-sweep.yaml
+// omits channel 6 because the primary camps there. A receiver that starts with
+// no companion widens to the full plan and says so in its heartbeat
+// (capture.PlanChoice) -- which is the only way this process can learn it,
+// since sensors publish and never answer questions (ADR-0002).
+//
+// Absence of the signal is read as "not proven", not as "fine". A sensor too old
+// to send the field, or one started by hand without the fallback configured,
+// gets a warning that may be unnecessary rather than a silence that may be
+// false confidence -- the direction this whole package leans.
+//
+// Staleness is applied here and not just e.healthy, because e.healthy is what
+// the sensor last SAID about itself. A radio that was unplugged an hour ago
+// left a cheerful heartbeat behind, and without the age check that message
+// keeps vouching for coverage nothing is providing any more -- the same
+// last-word-wins failure the rest of this package exists to prevent.
+//
+// Caller must hold r.mu.
+func (r *Registry) wifiCoverageIsWhole(now time.Time) bool {
+	for _, e := range r.sensors {
+		if e.kind != "wifi" || !e.seen || !e.healthy {
+			continue
+		}
+		if now.Sub(e.observed) > r.staleAfter {
+			continue
+		}
+		if widened, ok := e.detail["plan_fallback"].(bool); ok && widened {
+			return true
+		}
+	}
+	return false
 }
 
 // status implements the contract's rule -- degraded when some sensors are

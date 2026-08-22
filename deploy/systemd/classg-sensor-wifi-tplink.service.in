@@ -34,7 +34,10 @@ EnvironmentFile=@CLASSG_HOME@/.env
 # only the initial tune; channels-sweep.yaml owns the runtime schedule.
 ExecStartPre=+@CLASSG_HOME@/scripts/setup-monitor.sh wlan-tplink 1
 
-ExecStart=@CLASSG_HOME@/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli --sensor-id wifi-1 run --iface wlan-tplink --channels config/channels-sweep.yaml
+# Same trade in the other direction, and it bites harder: channels-sweep.yaml
+# omits channel 6 entirely because the primary camps there, so this receiver
+# alone would never visit the one channel a DJI was measured on here.
+ExecStart=@CLASSG_HOME@/services/sensor-wifi/.venv/bin/python -m classg_wifi.cli --sensor-id wifi-1 run --iface wlan-tplink --channels config/channels-sweep.yaml --solo-channels config/channels.yaml --companion-iface @IFACE@
 
 Restart=always
 RestartSec=5

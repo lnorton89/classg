@@ -44,6 +44,10 @@ class HopperStats:
     escalations: int = 0
     scan_dwells: int = 0
     hops: int = 0
+    # Wall time actually spent inside the retune, summed, and how many hops
+    # contributed. Measured rather than assumed: see ChannelHopper.hop_latency_ms.
+    hop_ms: float = 0.0
+    hops_timed: int = 0
 
     def dwell_share(self) -> dict[int, float]:
         total = sum(self.dwell_ms.values())
@@ -70,9 +74,19 @@ class ChannelHopper:
 
         self.channels = channels
         self.base_dwell_ms = base_dwell_ms
-        # Measured mt7921u hop latency is ~140 ms - a large fraction of a 1 s
-        # beacon interval. Dwell budget must account for it or the effective
-        # listening time is far lower than configured.
+        # The starting estimate for retune cost, superseded by measurement as
+        # soon as this hopper has timed a hop. ~140 ms was measured on mt7921u
+        # (the ALFA) - a large fraction of a 1 s beacon interval, so the dwell
+        # budget has to account for it or effective listening time is far below
+        # what is configured.
+        #
+        # It stayed a constant for too long. The companion receiver is rtl8852au
+        # (the TP-Link), a different chipset behind a different driver, and
+        # nothing ever measured its retune cost -- so listening_fraction, the
+        # headline tuning number, was being computed for that radio against a
+        # figure taken from the other one. record_hop now times the real thing
+        # per receiver and efficiency_report prefers it, which is what makes the
+        # two radios independently tunable at all.
         self.hop_latency_ms = hop_latency_ms
         self.escalation_hold_s = escalation_hold_s
         # One dwell in N is handed back to the weighted sweep while locked, and
@@ -207,21 +221,49 @@ class ChannelHopper:
         self.stats.dwells[channel] = self.stats.dwells.get(channel, 0) + 1
         self.stats.dwell_ms[channel] = self.stats.dwell_ms.get(channel, 0.0) + actual_ms
 
-    def record_hop(self) -> None:
-        """Record a hardware retune attempt, distinct from a listening dwell."""
+    def record_hop(self, actual_ms: float | None = None) -> None:
+        """Record a hardware retune attempt, distinct from a listening dwell.
+
+        actual_ms is the wall time the retune really took, which the caller is
+        the only one in a position to know -- this class deliberately does not
+        touch hardware. None keeps the old behaviour and leaves the report on
+        the hop_latency_ms estimate, which is what the pure-hopper tests want.
+        """
         self.stats.hops += 1
+        if actual_ms is not None:
+            self.stats.hop_ms += actual_ms
+            self.stats.hops_timed += 1
 
     def efficiency_report(self) -> dict[str, object]:
         """Metrics for tuning. `listening_fraction` is the headline number: the
-        share of wall-clock actually spent receiving rather than retuning."""
+        share of wall-clock actually spent receiving rather than retuning.
+
+        Overhead comes from measurement once any hop has been timed, and from
+        the hop_latency_ms estimate only until then. `hop_latency_ms` in the
+        output is the per-hop cost this receiver is actually paying, and
+        `hop_latency_measured` says whether it was observed or assumed -- the
+        difference between a number you can tune a dwell against and one copied
+        from a different chipset.
+        """
         total_dwell = sum(self.stats.dwell_ms.values())
         total_hops = self.stats.hops
-        overhead = total_hops * self.hop_latency_ms
+        measured = self.stats.hops_timed > 0
+        if measured:
+            per_hop = self.stats.hop_ms / self.stats.hops_timed
+        else:
+            per_hop = float(self.hop_latency_ms)
+        # Extrapolated across every hop, not summed over the timed ones only.
+        # A hop nobody timed still cost blind time, and charging it at zero
+        # would inflate listening_fraction -- the metric reading BETTER the less
+        # of the loop is instrumented is the wrong way round.
+        overhead = per_hop * total_hops
         wall = total_dwell + overhead
         return {
             "listening_fraction": (total_dwell / wall) if wall else 0.0,
             "hops": total_hops,
             "hop_overhead_ms": overhead,
+            "hop_latency_ms": round(per_hop, 1),
+            "hop_latency_measured": measured,
             "dwell_share": self.stats.dwell_share(),
             "beacons_per_channel": dict(self.stats.beacons),
             "drone_hits_per_channel": dict(self.stats.drone_hits),

@@ -2,13 +2,76 @@
 
 ClassG uses two independent passive receivers on the Pi:
 
-- `wifi-0` / `wlan-alfa` — ALFA AWUS036AXML, fixed on the Mini 5 Pro's
-  measured channel 6.
+- `wifi-0` / `wlan-alfa` — ALFA AWUS036AXML, weighted hard toward the Mini 5
+  Pro's measured channel 6 (`config/channels-primary.yaml`).
 - `wifi-1` / `wlan-tplink` — TP-Link Archer TX20U Plus, sweeping the remaining
-  2.4 and 5 GHz plan.
+  2.4 and 5 GHz plan (`config/channels-sweep.yaml`).
+
+`wifi-0` is *weighted*, not parked. Parked was the first version and it logged
+0 frames across 116,788 dwells here, because nothing else transmits on channel 6
+at this site — indistinguishable from a dead antenna. The weights keep channel 6
+at ~83% of dwells and spend the rest on 1 and 11 for proof of life.
 
 The stable names come from `deploy/udev/70-classg-wifi.rules`; never key a
 service to `wlan1` or `wlan2`, because probe order changes after a USB reset.
+
+## One adapter, or one that went missing
+
+The two plans partition the spectrum, so **neither is safe on its own**:
+`channels-primary.yaml` has no 5 GHz at all, and `channels-sweep.yaml` has no
+channel 6 at all — the one channel a DJI was actually measured on here.
+
+Both units therefore pass `--solo-channels config/channels.yaml` and
+`--companion-iface <the other radio>`. At startup each receiver waits up to
+`--companion-wait-s` (15 s, covering the udev race and the TP-Link's USB
+mode-switch) for the other interface to appear, and widens to the full plan if
+it never does. A single-adapter build needs no configuration for this; it just
+works, and `systemctl status` shows which plan was loaded.
+
+Two limits worth knowing:
+
+- **The choice is made once, at startup.** An adapter unplugged mid-run does not
+  re-widen the survivor — swapping plans means rebuilding the hopper's weights
+  under a live capture loop, and restarting to reload them drops frames during
+  exactly the event you care about. `/health` reports the state instead.
+- **Presence of the interface is the signal, not the unit.** Plug the TP-Link in
+  without enabling `classg-sensor-wifi-tplink.service` and the primary stays on
+  the split plan while nothing sweeps. Declaring both radios in
+  `CLASSG_EXPECTED_SENSORS` is what catches that — see
+  [00-configuration.md](00-configuration.md).
+
+## Tuning the two radios separately
+
+They are not the same radio and should not be assumed to want the same dwell.
+The ALFA is mt7921u covering 3 channels; the TP-Link is rtl8852au behind a
+vendor driver covering 16, including 5 GHz.
+
+Each receiver now measures its own retune cost and reports it on the heartbeat,
+so this is an observation rather than a guess:
+
+| Heartbeat field | What |
+|---|---|
+| `hop_latency_ms` | what a retune actually costs this receiver, averaged over timed hops |
+| `hop_latency_measured` | `false` only before the first hop, when the estimate is still in use |
+| `listening_fraction` | share of wall-clock spent receiving rather than retuning |
+| `hop_overhead_ms` | total blind time spent retuning |
+
+`hop_latency_ms` was a hardcoded 140 until this was wired up — a figure measured
+on the ALFA and applied to both, which made the TP-Link's `listening_fraction`
+a number about the wrong chipset.
+
+Read both radios' figures off the Sensors page, then tune each unit's
+`ExecStart` independently — the flags override the shared `.env`, which is the
+only way to give two receivers different values from one file:
+
+```
+--dwell-ms 400              # raise if listening_fraction is below ~0.6
+--escalation-scan-every 4   # lower on the sweep receiver to give up less of a
+                            # 16-channel plan while locked to one channel
+```
+
+Neither default has been re-derived from a measured rtl8852au hop cost. Take the
+numbers off a real unit before changing them.
 
 ## Pi 4 USB layout and power
 
