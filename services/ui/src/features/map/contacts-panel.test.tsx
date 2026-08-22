@@ -340,3 +340,42 @@ describe('resizable sections', () => {
     expect(screen.queryByRole('separator')).not.toBeInTheDocument()
   })
 })
+
+/**
+ * The audit found the closed-tracks list ending in a row sliced through the
+ * middle, with the "Manned traffic" heading starting immediately under the cut
+ * — a scroll container behaving correctly and reading as a broken panel.
+ *
+ * jsdom has no layout, so there is nothing here that can see a fade. What it
+ * can pin is that every scroll region still carries the affordance that makes
+ * the cut deliberate, and that the headings a clipped row runs under are opaque
+ * rather than showing it through.
+ */
+describe('section boundaries', () => {
+  it('gives every scrollable section a faded edge and clearance under it', async () => {
+    await renderInRouter(
+      <Panel splitId="test-contacts" unidentifiedTracks={[vendorMatchOnly]} />,
+    )
+
+    for (const name of [/Active drone tracks/, /Unidentified RF/, /Manned traffic/]) {
+      const region = screen.getByRole('region', { name })
+      const scroller = region.className.includes('overflow-y-auto')
+        ? region
+        : region.querySelector('.overflow-y-auto')
+      expect(scroller, `${String(name)} has a scroll container`).not.toBeNull()
+      expect(scroller?.className).toContain('scroll-fade-b')
+      // Taller than the 1.25rem fade, so the last row clears it at the end of
+      // the scroll instead of being read through the gradient.
+      expect(scroller?.className).toContain('pb-6')
+    }
+  })
+
+  it('makes a section heading an opaque lid on the list above it', async () => {
+    await renderInRouter(<Panel splitId="test-contacts" />)
+
+    const heading = screen.getByRole('heading', { name: /Manned traffic/ })
+    expect(heading.className).toContain('bg-card')
+    // Not bg-card/95: a translucent lid shows the clipped row through itself.
+    expect(heading.className).not.toContain('bg-card/')
+  })
+})

@@ -330,6 +330,26 @@
 }
 
 /*
+ * A soft bottom edge for a scroll region.
+ *
+ * A scroll container cuts whatever row happens to lie across its last pixel.
+ * That is correct behaviour and it looks like damage: on the live page's
+ * contacts column the closed-tracks list ended in a row sliced through the
+ * middle with the "Manned traffic" heading starting immediately under it, and
+ * it read as a broken panel rather than as a list that continues.
+ *
+ * The mask is on the container, not the content, so it stays pinned to the
+ * bottom edge while the list scrolls underneath -- a half row fades out
+ * instead of being guillotined, which is what says "there is more below".
+ * Callers pair it with bottom padding a little taller than the fade, so
+ * scrolled all the way down the padding is what sits in the gradient and the
+ * final row is read at full strength.
+ */
+@utility scroll-fade-b {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1.25rem), transparent 100%);
+}
+
+/*
  * iOS standalone safe areas.
  *
  * `viewport-fit=cover` in index.html is what makes the installed app fill the

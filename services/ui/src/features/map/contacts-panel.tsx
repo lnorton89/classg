@@ -92,8 +92,32 @@ export function ContactsPanel({
     splitId ? 'flex-1 basis-0' : 'max-h-64',
   )
 
+  /*
+   * Every section here ends where the next one begins, so whichever row lies
+   * across that line gets cut in half -- which is what a scroll container does,
+   * and which read as a broken panel: half a closed track, a hairline, then
+   * "MANNED TRAFFIC". Three things make the boundary deliberate instead. The
+   * mask fades the last 1.25rem, so a clipped row trails off rather than being
+   * guillotined; the padding is taller than the fade, so scrolled to the end it
+   * is the padding in the gradient and the final row is read at full strength;
+   * and the headings below are opaque, so the boundary is a bar the list runs
+   * under rather than an edge it collides with.
+   *
+   * Nothing here changes the pane heights, so the operator's remembered split
+   * is untouched.
+   */
+  const scrollList = 'divide-border scroll-fade-b min-h-0 flex-1 divide-y overflow-y-auto pb-6'
+
+  /* Opaque, not the /95 the sticky heading above uses: this one is the lid on
+     the section before it, and a translucent lid shows the clipped row through
+     itself. */
+  const secondaryHeading = 'label-caps bg-card shrink-0 px-3 py-2'
+
   const droneSection = (
-    <section aria-labelledby="contacts-drones" className="min-h-0 flex-1 overflow-y-auto">
+    <section
+      aria-labelledby="contacts-drones"
+      className="scroll-fade-b min-h-0 flex-1 overflow-y-auto pb-6"
+    >
       <h2
         id="contacts-drones"
         className="label-caps bg-card/95 sticky top-0 z-10 px-3 py-2 backdrop-blur"
@@ -127,7 +151,7 @@ export function ContactsPanel({
     <>
       {unidentifiedTracks.length > 0 ? (
         <section aria-labelledby="contacts-unidentified" className={secondaryBox}>
-          <h2 id="contacts-unidentified" className="label-caps shrink-0 px-3 py-2">
+          <h2 id="contacts-unidentified" className={secondaryHeading}>
             Unidentified RF ({unidentifiedTracks.length})
           </h2>
           {/*
@@ -139,7 +163,7 @@ export function ContactsPanel({
           <p className="text-muted-foreground px-3 pb-2 text-xs">
             Vendor match only, never plotted. Not counted as aircraft.
           </p>
-          <ul className="divide-border min-h-0 flex-1 divide-y overflow-y-auto">
+          <ul className={scrollList}>
             {unidentifiedTracks.map((track) => (
               <li key={track.track_id}>
                 <UnidentifiedTrackRow track={track} format={format} />
@@ -151,7 +175,7 @@ export function ContactsPanel({
 
       {showClosed ? (
         <section aria-labelledby="contacts-closed" className={secondaryBox}>
-          <h2 id="contacts-closed" className="label-caps shrink-0 px-3 py-2">
+          <h2 id="contacts-closed" className={secondaryHeading}>
             Closed tracks ({closedTracks.length})
           </h2>
           {closedTracks.length === 0 ? (
@@ -165,7 +189,7 @@ export function ContactsPanel({
              * box caps its own height while the list overflows straight past
              * it, dragging the document to 9000px in a 600px viewport.
              */
-            <ul className="divide-border min-h-0 flex-1 divide-y overflow-y-auto">
+            <ul className={scrollList}>
               {closedTracks.map((track) => (
                 <li key={track.track_id}>
                   <ClosedTrackRow track={track} format={format} />
@@ -177,7 +201,7 @@ export function ContactsPanel({
       ) : null}
 
       <section aria-labelledby="contacts-manned" className={secondaryBox}>
-        <h2 id="contacts-manned" className="label-caps shrink-0 px-3 py-2">
+        <h2 id="contacts-manned" className={secondaryHeading}>
           Manned traffic ({adsb.length})
         </h2>
         {adsb.length === 0 ? (
@@ -186,7 +210,7 @@ export function ContactsPanel({
             contributes to a drone&apos;s confidence.
           </p>
         ) : (
-          <ul className="divide-border min-h-0 flex-1 divide-y overflow-y-auto">
+          <ul className={scrollList}>
             {adsb.map((detection) => (
               <li key={detection.detection_id}>
                 <MannedRow
