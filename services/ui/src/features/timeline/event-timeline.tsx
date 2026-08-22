@@ -92,7 +92,10 @@ export function EventTimeline({
             // A one-minute track in a seven-day window is 0.01% of the width.
             // The percentage keeps the bar in the right PLACE; this keeps it
             // visible at all, which for a single detection is the whole point.
-            minPx={3}
+            // Six rather than three: three was visible but nobody could click
+            // it — and each bar also carries an invisible hit margin, see
+            // EventBar.
+            minPx={6}
             top={laneY(event.lane)}
             selected={event.track.track_id === selectedId}
             onSelect={() => onSelect(event.track)}
@@ -124,9 +127,23 @@ export function EventTimeline({
         })}
       </div>
 
-      <p className="text-muted-foreground tnum mt-1 h-4 font-mono text-2xs" aria-live="off">
-        {hoverLabel ?? ''}
-      </p>
+      {/* The readout rides under the cursor line rather than sitting parked at
+          the band's left edge, where it used to appear with nothing tying it
+          to the position it described. Same edge-clamping as the axis labels. */}
+      <div className="text-muted-foreground tnum relative mt-1 h-4 font-mono text-2xs">
+        {hoverMs !== null && hoverLabel !== null ? (
+          <span
+            className={cn(
+              'absolute whitespace-nowrap',
+              x(hoverMs) >= 12 && x(hoverMs) <= 88 && '-translate-x-1/2',
+              x(hoverMs) > 88 && '-translate-x-full',
+            )}
+            style={{ left: `${x(hoverMs)}%` }}
+          >
+            {hoverLabel}
+          </span>
+        ) : null}
+      </div>
     </div>
   )
 }
@@ -168,7 +185,12 @@ function EventBar({
       aria-current={selected ? 'true' : undefined}
       title={label}
       className={cn(
-        'absolute overflow-hidden rounded-sm border text-left',
+        'absolute rounded-sm border text-left',
+        // The visible bar stays honest about duration; the hit area does not
+        // have to. A sliver of a bar — one detection in a 24-hour window —
+        // was a ~3px target, so every bar carries an invisible margin that
+        // brings the click area to roughly a fingertip.
+        'before:absolute before:-inset-x-1.5 before:-inset-y-1 before:content-[""]',
         'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
         stateClass(track.state),
         selected && 'ring-primary ring-2',
@@ -181,7 +203,7 @@ function EventBar({
       style={{ left: `${left}%`, width: `${width}%`, minWidth: minPx, top, height: LANE_H }}
     >
       {/* leading matches LANE_H so the label centres in the bar. */}
-      <span className="truncate px-1 text-2xs leading-[18px] font-medium">
+      <span className="block w-full truncate px-1 text-2xs leading-[18px] font-medium">
         {width > 6 ? trackLabel(track) : ''}
       </span>
     </button>

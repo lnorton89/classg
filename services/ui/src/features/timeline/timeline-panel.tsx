@@ -17,16 +17,18 @@
  * rule /health follows, applied to history instead of to the present.
  */
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { CircleSlashIcon, HistoryIcon, VideoOffIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { useFormat } from '@/app/use-format'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { CopyButton } from '@/components/ui/copy-button'
 import { Alert, EmptyState, Skeleton } from '@/components/ui/misc'
 import { Segmented } from '@/components/ui/segmented'
 import { computeSkyState } from '@/features/health/sky-state'
+import { ConfidenceBar, EvidenceChips, TrackStateBadge } from '@/features/tracks/evidence'
 import { TracksTable } from '@/features/tracks/tracks-table'
 import { healthQuery, monitoringQuery, settingsQuery, tracksQuery } from '@/lib/api/queries'
 import { cn } from '@/lib/cn'
@@ -178,7 +180,11 @@ export function TimelinePanel() {
               events={events}
               window={window}
               selectedId={selectedId}
-              onSelect={(track) => setSelectedId(track.track_id)}
+              // Clicking the selected bar again clears it — without this the
+              // only way out of the selection card was picking a different bar.
+              onSelect={(track) =>
+                setSelectedId((old) => (old === track.track_id ? null : track.track_id))
+              }
               formatTime={format.clockBrief}
             />
           )}
@@ -223,27 +229,70 @@ export function TimelinePanel() {
           <CardHeader>
             <CardTitle className="flex flex-wrap items-center gap-2">
               Selected event
-              <Button
-                size="sm"
-                variant="outline"
-                className="ml-auto"
-                onClick={() =>
-                  void navigate({
-                    to: '/tracks/$trackId',
-                    params: { trackId: selected.track_id },
-                  })
-                }
-              >
-                Open track
-              </Button>
+              <div className="ml-auto flex items-center gap-1.5">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void navigate({
+                      to: '/tracks/$trackId',
+                      params: { trackId: selected.track_id },
+                    })
+                  }
+                >
+                  Open track
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelectedId(null)}>
+                  Clear
+                </Button>
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <TracksTable
-              tracks={[selected]}
-              caption="The track selected on the timeline"
-              emptyTitle="Nothing selected"
-            />
+            {/* One summary line, not a TracksTable: a full search box and
+                state dropdown over a single guaranteed-match row read as a
+                rendering fault, and every fact here is already filter-free. */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+              <span className="flex min-w-0 items-center gap-1">
+                <Link
+                  to="/tracks/$trackId"
+                  params={{ trackId: selected.track_id }}
+                  className="text-primary truncate font-mono underline-offset-2 hover:underline"
+                >
+                  {selected.identity?.serial ??
+                    selected.identity?.macs?.[0] ??
+                    selected.track_id}
+                </Link>
+                <CopyButton
+                  value={
+                    selected.identity?.serial ??
+                    selected.identity?.macs?.[0] ??
+                    selected.track_id
+                  }
+                  label="identifier"
+                />
+              </span>
+              <TrackStateBadge state={selected.state} />
+              <span className="flex items-center gap-2">
+                <ConfidenceBar confidence={selected.confidence} className="w-14" />
+                <span className="font-mono">{format.confidence(selected.confidence)}</span>
+              </span>
+              <EvidenceChips evidence={selected.evidence ?? []} />
+              <span className="text-muted-foreground">
+                {selected.detection_count} detection{selected.detection_count === 1 ? '' : 's'}
+              </span>
+              <span className="text-muted-foreground tnum">
+                {format.clockBrief(selected.first_seen)} –{' '}
+                {format.clockBrief(selected.last_seen)}
+              </span>
+              {selected.current ? (
+                <span className="text-muted-foreground font-mono text-2xs">
+                  {format.coords(selected.current.lat, selected.current.lon)}
+                </span>
+              ) : (
+                <span className="text-warn text-2xs">no fix</span>
+              )}
+            </div>
           </CardContent>
         </Card>
       ) : null}
