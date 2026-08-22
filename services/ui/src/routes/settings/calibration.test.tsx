@@ -164,7 +164,7 @@ describe('ChannelPlanEditor', () => {
   it('does not claim a restart will apply the plan', async () => {
     renderPlan()
 
-    expect(await screen.findByText(/Recorded, not applied/)).toBeVisible()
+    expect(await screen.findByText(/Recorded here, applied by file/)).toBeVisible()
     expect(
       screen.queryByText(/must be restarted for this to take effect/),
     ).not.toBeInTheDocument()

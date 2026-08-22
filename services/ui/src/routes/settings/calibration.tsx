@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute } from '@tanstack/react-router'
-import { LocateFixedIcon, RotateCcwIcon, SaveIcon } from 'lucide-react'
+import { CheckIcon, CopyIcon, LocateFixedIcon, RotateCcwIcon, SaveIcon } from 'lucide-react'
 import { useState } from 'react'
 import { z } from 'zod'
 
@@ -360,13 +360,44 @@ export function ReceiverPositionEditor() {
   )
 }
 
+/**
+ * The recorded plan, in the exact shape the receivers' files use -- flow
+ * mappings under a `channels:` key, matching services/sensor-wifi/config/
+ * channels-*.yaml. The point of the copy button is paste-without-translation,
+ * so the format is the file's, not JSON's.
+ */
+export function channelPlanYaml(plan: ChannelPlan): string {
+  const rows = plan.channels.map(
+    (c) =>
+      `  - { channel: ${String(c.channel)}, freq_mhz: ${String(c.freq_mhz)}, weight: ${
+        Number.isInteger(c.weight) ? c.weight.toFixed(1) : String(c.weight)
+      } }`,
+  )
+  return ['channels:', ...rows, ''].join('\n')
+}
+
 /** Exported for its own test; the page renders it directly. */
 export function ChannelPlanEditor() {
   const queryClient = useQueryClient()
   const { data } = useQuery(channelPlanQuery())
   const [draftOverride, setDraft] = useState<ChannelPlan | null>(null)
   const [errors, setErrors] = useState<Record<number, string>>({})
+  const [copiedYaml, setCopiedYaml] = useState(false)
   const draft = draftOverride ?? data ?? null
+
+  const copyAsYaml = () => {
+    if (!draft) return
+    // Undefined on insecure origins -- same trap as copy-button.tsx.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (!navigator.clipboard) return
+    void navigator.clipboard
+      .writeText(channelPlanYaml(draft))
+      .then(() => {
+        setCopiedYaml(true)
+        setTimeout(() => setCopiedYaml(false), 1600)
+      })
+      .catch(() => setCopiedYaml(false))
+  }
 
   const save = useMutation({
     mutationFn: (body: ChannelPlan) => api.putChannelPlan(body),
@@ -411,22 +442,27 @@ export function ChannelPlanEditor() {
           most of them, so dwell time is allocated in proportion to these weights. The share
           column is what actually matters.
         </p>
+      </CardHeader>
+      <CardContent>
         {/* This card used to promise a restart would apply the plan. It does
             not, and never did: sensors publish and subscribe to nothing
             (ADR-0002), and the hopper reads its channel file from disk at
             startup — so a restart re-reads that file, not this. Nor is there
-            one file: the deployed units run a different plan each. Saying so
-            here rather than leaving an operator to conclude the receiver is
-            broken when the scan does not match the table in front of them. */}
-        <p className="text-warn mt-2 text-xs">
-          Recorded, not applied — including after a restart. Each receiver reads its own file at
-          startup and nothing here reaches it:{' '}
+            one file: the deployed units run a different plan each.
+
+            A full-weight Alert rather than the small orange paragraph it once
+            was: this is the fact that decides whether the edits below do
+            anything, and an editor whose Save quietly changes nothing is the
+            worst kind of control. The copy button beside "Record" closes the
+            loop the card can only describe -- the recorded plan, in the exact
+            YAML the receivers read, ready to paste into their files. */}
+        <Alert tone="warn" title="Recorded here, applied by file" className="mb-3">
+          Nothing here reaches a running receiver — including after a restart. Each one reads
+          its own file at startup:{' '}
           <code className="font-mono">config/channels-primary.yaml</code> on wifi-0,{' '}
           <code className="font-mono">config/channels-sweep.yaml</code> on the wifi-1 sweep
-          receiver. Editing this records the intended plan.
-        </p>
-      </CardHeader>
-      <CardContent>
+          receiver. Record the intended plan here, then copy it as YAML into those files.
+        </Alert>
         {apiError ? (
           <Alert tone="error" title={`Save failed (${apiError.code})`} className="mb-3">
             {apiError.message}
@@ -436,11 +472,11 @@ export function ChannelPlanEditor() {
         {notice ? (
           <Alert
             tone={notice === 'saved-restart' ? 'warn' : 'info'}
-            title={notice === 'saved-restart' ? 'Saved — not applied' : 'Saved'}
+            title={notice === 'saved-restart' ? 'Recorded — not applied' : 'Recorded'}
             className="mb-3"
           >
             {notice === 'saved-restart'
-              ? 'Stored as the intended plan. The receivers keep scanning their own files.'
+              ? 'Stored as the intended plan. The receivers keep scanning their own files until the YAML is copied over.'
               : 'Applied without a restart.'}
           </Alert>
         ) : null}
@@ -513,7 +549,15 @@ export function ChannelPlanEditor() {
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button type="submit" size="sm" disabled={save.isPending}>
-              <SaveIcon aria-hidden /> {save.isPending ? 'Saving…' : 'Save channel plan'}
+              <SaveIcon aria-hidden /> {save.isPending ? 'Recording…' : 'Record intended plan'}
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={copyAsYaml}>
+              {copiedYaml ? (
+                <CheckIcon className="text-ok" aria-hidden />
+              ) : (
+                <CopyIcon aria-hidden />
+              )}
+              {copiedYaml ? 'Copied' : 'Copy as YAML'}
             </Button>
             <Button
               type="button"
@@ -595,13 +639,16 @@ function FusionWeightsEditor() {
           accumulate but never reach certainty, and no single class can be gamed into a false
           confirm.
         </p>
-        <p className="text-warn mt-2 text-xs">
-          Recorded, not applied. Fusion runs the weights compiled into it and reads nothing back
-          from here, so editing these changes the intended plan rather than the confidence of
-          any track on screen — including after a restart.
-        </p>
       </CardHeader>
       <CardContent>
+        {/* The same promotion as the channel plan's notice, for the same
+            reason: this is the fact that decides whether the editor below
+            does anything, and it must not be skimmable. */}
+        <Alert tone="warn" title="Recorded here, compiled into fusion" className="mb-3">
+          Fusion runs the weights compiled into it and reads nothing back from here, so editing
+          these records the intended weights rather than changing the confidence of any track on
+          screen — including after a restart.
+        </Alert>
         {apiError ? (
           <Alert tone="error" title={`Save failed (${apiError.code})`} className="mb-3">
             {apiError.message}
@@ -609,8 +656,8 @@ function FusionWeightsEditor() {
           </Alert>
         ) : null}
         {saved ? (
-          <Alert tone="warn" title="Saved — not applied" className="mb-3">
-            Stored as the intended plan. The confidence numbers on screen are unchanged.
+          <Alert tone="warn" title="Recorded — not applied" className="mb-3">
+            Stored as the intended weights. The confidence numbers on screen are unchanged.
           </Alert>
         ) : null}
 
@@ -681,7 +728,8 @@ function FusionWeightsEditor() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" size="sm" disabled={save.isPending}>
-              <SaveIcon aria-hidden /> {save.isPending ? 'Saving…' : 'Save weights'}
+              <SaveIcon aria-hidden />{' '}
+              {save.isPending ? 'Recording…' : 'Record intended weights'}
             </Button>
             <Button
               type="button"
