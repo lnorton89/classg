@@ -11,11 +11,16 @@ import {
 } from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { Link } from '@tanstack/react-router'
+import { LocateFixedIcon, XIcon } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 import { usePreferences } from '@/app/preferences-context'
 import { useTheme } from '@/app/theme-context'
 import { useFormat } from '@/app/use-format'
+import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button-variants'
+import { useHasRole } from '@/features/auth/use-auth'
 import { settingsQuery } from '@/lib/api/queries'
 import { asReceiverPosition } from '@/lib/api/types'
 import type { Detection, ReceiverPosition, Track } from '@/lib/api/types'
@@ -98,6 +103,52 @@ const FALLBACK_CENTER: [number, number] = [-98.5, 39.5]
 const FALLBACK_ZOOM = 3.3
 
 /**
+ * The operator's last view of THIS map, remembered per browser.
+ *
+ * Without it every visit reopened on whatever the fallbacks produced and the
+ * zoom-in to the site was repeated by hand each session. It ranks above the
+ * receiver-position jump -- a view somebody chose beats a view we derived --
+ * and below fit-to-contacts, same as every other claim on the camera.
+ *
+ * Validated on the way back in, not trusted: this goes straight into the map
+ * constructor, which throws on a malformed centre, and localStorage survives
+ * schema changes that this code does not.
+ */
+const VIEWPORT_KEY = 'classg.live-map.viewport'
+
+interface SavedViewport {
+  center: [number, number]
+  zoom: number
+}
+
+function loadSavedViewport(): SavedViewport | null {
+  try {
+    const raw = localStorage.getItem(VIEWPORT_KEY)
+    if (!raw) return null
+    // Typed as unknowns, not as SavedViewport: the whole point of this parse
+    // is that localStorage holds whatever an older build wrote.
+    const parsed = JSON.parse(raw) as { center?: unknown; zoom?: unknown }
+    if (!Array.isArray(parsed.center) || parsed.center.length !== 2) return null
+    const [lon, lat] = parsed.center as [unknown, unknown]
+    if (typeof lon !== 'number' || !Number.isFinite(lon) || Math.abs(lon) > 180) return null
+    if (typeof lat !== 'number' || !Number.isFinite(lat) || Math.abs(lat) > 90) return null
+    if (typeof parsed.zoom !== 'number' || !Number.isFinite(parsed.zoom)) return null
+    return { center: [lon, lat], zoom: parsed.zoom }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Whether the "this map doesn't know where it is" prompt was dismissed.
+ *
+ * Per browser and permanent once dismissed: the prompt exists to teach that the
+ * setting exists, and a lesson that reappears on every visit stops being a
+ * lesson. Setting the position clears the condition it renders under anyway.
+ */
+const POSITION_PROMPT_DISMISSED_KEY = 'classg.live-map.position-prompt-dismissed'
+
+/**
  * Register the `pmtiles://` protocol, once, and only if an archive is actually
  * configured.
  *
@@ -128,6 +179,15 @@ export interface LiveMapProps {
   ariaLabel?: string
   fitOnTrackChanges?: boolean
   fitMaxZoom?: number
+  /**
+   * This map is the site overview, as opposed to a one-track detail view:
+   * remember the operator's viewport between visits, offer a
+   * centre-on-receiver control, and prompt an admin when the receiver's
+   * position was never configured. TrackMap reuses this component and must
+   * not inherit any of that -- a flight's close-up is not "where was I", and
+   * the prompt on a detail page would be noise.
+   */
+  siteAnchored?: boolean
 }
 
 export function LiveMap({
@@ -142,6 +202,7 @@ export function LiveMap({
   ariaLabel = 'Live airspace map',
   fitOnTrackChanges = false,
   fitMaxZoom = 16,
+  siteAnchored = false,
 }: LiveMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
@@ -195,6 +256,15 @@ export function LiveMap({
   // WORLD_MAX_ZOOM in style.ts for why the extract alone cannot.
   const [worldArchive, setWorldArchive] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
+  // False until the first `idle` -- the point at which every tile in view has
+  // actually arrived. Over a Tailscale link to a Pi that is seconds, and the
+  // map spends them as a featureless void that is pixel-identical to a broken
+  // one; the chip below names the difference.
+  const [tilesSettled, setTilesSettled] = useState(false)
+  const [positionPromptDismissed, setPositionPromptDismissed] = useState(
+    () => localStorage.getItem(POSITION_PROMPT_DISMISSED_KEY) === 'true',
+  )
+  const isAdmin = useHasRole('admin')
 
   // --- where to centre before any track exists to derive a position from --
   // Configured receiver position beats browser geolocation: a fixed
@@ -283,11 +353,12 @@ export function LiveMap({
         : basemap === 'tiles'
           ? tiledStyle(theme, BASE_URL)
           : noTilesStyle(theme)
+    const savedViewport = siteAnchored ? loadSavedViewport() : null
     const map = new MapLibreMap({
       container: containerRef.current,
       style,
-      center: FALLBACK_CENTER,
-      zoom: FALLBACK_ZOOM,
+      center: savedViewport?.center ?? FALLBACK_CENTER,
+      zoom: savedViewport?.zoom ?? FALLBACK_ZOOM,
       attributionControl: basemap === 'no-tiles' ? false : undefined,
       // Two-finger pan on touch so the page can still be scrolled past the map
       // on a phone.
@@ -295,7 +366,11 @@ export function LiveMap({
     })
     mapRef.current = map
     fittedBoundsRef.current = null
-    initialCenterAppliedRef.current = false
+    // A restored viewport counts as the initial centre having been chosen:
+    // the receiver-position jump must not yank the camera away from a view
+    // the operator set up on a previous visit.
+    initialCenterAppliedRef.current = savedViewport !== null
+    setTilesSettled(false)
 
     // MapLibre sizes its canvas from the container's dimensions at the moment
     // it is constructed. This container is flex-laid-out next to a sidebar
@@ -432,14 +507,32 @@ export function LiveMap({
       setOutsideCoverage(drawn === 0)
     }
 
+    // Wherever the camera ends up is the view to reopen with next visit.
+    // Deliberately including programmatic moves: the fit-to-contacts pass and
+    // the receiver jump both end on "the current view", which is exactly what
+    // "where was I" means.
+    const persistViewport = () => {
+      const centre = map.getCenter()
+      try {
+        localStorage.setItem(
+          VIEWPORT_KEY,
+          JSON.stringify({ center: [centre.lng, centre.lat], zoom: map.getZoom() }),
+        )
+      } catch {
+        /* a full or unavailable localStorage costs only the memory feature */
+      }
+    }
+
     map.on('load', addOverlays)
     // setStyle() drops custom sources and layers; re-add them every time.
     map.on('styledata', addOverlays)
     map.on('moveend', drawRings)
     map.on('moveend', checkCoverage)
+    if (siteAnchored) map.on('moveend', persistViewport)
     // `idle` is the one that fires after tiles finish arriving, so a pan into
     // covered ground clears the notice without waiting for the next gesture.
     map.on('idle', checkCoverage)
+    map.once('idle', () => setTilesSettled(true))
 
     const drones = droneMarkers.current
     const operators = operatorMarkers.current
@@ -459,7 +552,7 @@ export function LiveMap({
       map.remove()
       mapRef.current = null
     }
-  }, [ariaLabel, basemap, theme, worldArchive])
+  }, [ariaLabel, basemap, siteAnchored, theme, worldArchive])
 
   // --- line sources --------------------------------------------------------
   useEffect(() => {
@@ -649,6 +742,93 @@ export function LiveMap({
           data-testid="map-coverage-scrim"
           className="pointer-events-none absolute inset-0 z-10 bg-[repeating-linear-gradient(45deg,transparent_0_14px,color-mix(in_oklch,var(--down)_10%,transparent)_14px_28px)] backdrop-grayscale-[0.3]"
         />
+      ) : null}
+
+      {/*
+        Until the first `idle`, what is on screen is a featureless ground with
+        markers floating in it -- indistinguishable from a map that failed.
+        Naming the wait is the whole fix: the void reads as loading instead of
+        broken. Fades rather than popping out because tiles resolve outward
+        from the centre and the exact end of "loading" is not a moment worth
+        flashing about.
+      */}
+      {basemap !== 'no-tiles' && !tilesSettled ? (
+        <p
+          className="text-muted-foreground bg-background/80 ring-border pointer-events-none absolute top-1/2 left-1/2 z-10 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full px-3 py-1.5 text-xs ring-1"
+          data-testid="map-loading"
+        >
+          <span
+            aria-hidden
+            className="border-muted-foreground/40 border-t-foreground size-3.5 animate-spin rounded-full border-2 motion-reduce:animate-none"
+          />
+          Loading map…
+        </p>
+      ) : null}
+
+      {/* Same placement logic as MapLibre's own nav cluster: top-right, just
+          below it. Only rendered once there is a "here" to centre on. */}
+      {siteAnchored && (receiverPosition ?? browserLocation) ? (
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Centre on the receiver"
+          className="bg-background/90 absolute top-[110px] right-[10px] z-10 size-[29px] rounded-md"
+          onClick={() => {
+            const target = receiverPosition ?? browserLocation
+            if (!target) return
+            mapRef.current?.flyTo({ center: [target.lon, target.lat], zoom: 12, duration: 600 })
+          }}
+        >
+          <LocateFixedIcon className="size-4" aria-hidden />
+        </Button>
+      ) : null}
+
+      {/*
+        The map has no idea where this receiver is, and the only cure is a
+        setting four levels deep in Calibration. Without this prompt the
+        console opens on a continent every single visit and nothing anywhere
+        says why -- the single worst first-run impression this app can make.
+        Admins only, because only they can act on it; dismissable exactly once
+        per browser, because a lesson that nags stops being read.
+      */}
+      {siteAnchored &&
+      isAdmin &&
+      settingsResolved &&
+      !receiverPosition &&
+      !positionPromptDismissed ? (
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 z-20 flex justify-center px-3">
+          <div className="bg-card/95 border-border text-card-foreground pointer-events-auto flex max-w-md items-start gap-3 rounded-lg border p-3 text-sm shadow-lg backdrop-blur">
+            <div className="min-w-0">
+              <p className="font-medium">This map doesn’t know where the receiver is</p>
+              <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
+                Set the receiver’s position once and every visit opens here, centred on your
+                site, instead of on a continent.
+              </p>
+              <Link
+                to="/settings/calibration"
+                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'mt-2')}
+              >
+                Set receiver position
+              </Link>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Dismiss"
+              className="-mt-1 -mr-1 shrink-0"
+              onClick={() => {
+                setPositionPromptDismissed(true)
+                try {
+                  localStorage.setItem(POSITION_PROMPT_DISMISSED_KEY, 'true')
+                } catch {
+                  /* dismissal just won't persist */
+                }
+              }}
+            >
+              <XIcon className="size-4" aria-hidden />
+            </Button>
+          </div>
+        </div>
       ) : null}
 
       {basemap === 'no-tiles' ? (

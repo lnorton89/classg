@@ -97,6 +97,7 @@ function LiveView() {
         selectedMannedIcao={selectedMannedIcao}
         onSelectManned={selectManned}
         coverageBroken={!skyState.absenceIsEvidence}
+        siteAnchored
       />
 
       {preferences.mapLegend ? (
@@ -111,12 +112,20 @@ function LiveView() {
   const banner = <SkyStateBanner state={skyState} className="max-w-2xl" />
 
   // Only rendered in the narrow layout; the wide one has both panes at once.
+  // top-0, not top-14: <main> is the scroll container here, and its top edge
+  // already sits below the header -- a 14 offset stuck the toggle 56px down
+  // *inside* main, and the stat tiles scrolled up behind it, values clipped
+  // under the bar. Switching panes also resets the scroll, so the list always
+  // opens at its own top rather than wherever the map pane left off.
   const toggle = (
-    <div className="border-border bg-card sticky top-14 z-30 border-b p-2">
+    <div className="border-border bg-card sticky top-0 z-30 border-b p-2">
       <Segmented
         aria-label="Show the map or the contact list"
         value={mobilePane}
-        onValueChange={setMobilePane}
+        onValueChange={(pane) => {
+          setMobilePane(pane)
+          document.getElementById('main')?.scrollTo({ top: 0 })
+        }}
         options={[
           { value: 'map', label: 'Map', icon: <MapIcon aria-hidden /> },
           {
