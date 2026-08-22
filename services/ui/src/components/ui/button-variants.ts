@@ -23,7 +23,19 @@ export const buttonVariants = cva(
       variant: {
         default: 'bg-primary text-primary-foreground hover:bg-primary/90',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
-        outline: 'border-border bg-background hover:bg-accent border',
+        // bg-transparent, not bg-background. `bg-background` is the PAGE
+        // ground, so an "outline" button placed on anything else painted a
+        // rectangle of the wrong colour instead of reading as an outline: on
+        // the header (bg-card/85) and inside an Alert (bg-muted/40) most
+        // visibly. It went unnoticed in the dark theme, where --background
+        // (0.16) and --muted over it (~0.20) are nearly the same, and was
+        // obvious in the light theme, where a near-white 0.985 chip sits on a
+        // 0.95 alert — which is why the 404 button looked like a solid light
+        // button on one screenshot and an outline on another. Transparent
+        // inherits whatever it sits on, so it is an outline everywhere.
+        // Call sites that genuinely want a fill (the map's centre-on-receiver
+        // control, over tiles) set their own bg-*, which twMerge keeps.
+        outline: 'border-border bg-transparent hover:bg-accent border',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
         link: 'text-primary underline-offset-4 hover:underline',
