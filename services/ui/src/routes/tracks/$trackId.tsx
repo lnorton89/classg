@@ -26,6 +26,7 @@ import {
   heightProvenance,
   heightProvenanceHint,
 } from '@/features/tracks/height-provenance'
+import { ReceiverBreakdown } from '@/features/tracks/receivers'
 import { RssiChart } from '@/features/tracks/rssi-chart'
 import { flightPath } from '@/features/tracks/flight-path'
 import { samplesFromDetections } from '@/features/tracks/rssi-samples'
@@ -96,6 +97,9 @@ function TrackDetail() {
 
   const detections = detectionsData?.detections ?? []
   const rssiSamples = samplesFromDetections(detections)
+  // Absent on tracks recorded before fusion attributed them, so this is a
+  // normal empty rather than a fault.
+  const receivers = track.receivers ?? []
   const serial = format.splitSerial(track.identity?.serial)
   const current = track.current
   const operator = track.operator
@@ -343,6 +347,14 @@ function TrackDetail() {
       content: (
         <>
           <RssiChart samples={rssiSamples} height={160} />
+          {/* The chart above pools every receiver's samples, and the peak in
+              this panel's description is the pooled maximum. On a two-radio
+              unit that number belongs to whichever adapter has more gain, so
+              the attribution has to sit next to it or the headline reads as a
+              range cue it is not. */}
+          {receivers.length > 0 ? (
+            <ReceiverBreakdown receivers={receivers} className="mt-3" />
+          ) : null}
           {rssiSamples.length > 0 ? (
             <div className="mt-2">
               <Button
