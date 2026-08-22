@@ -21,6 +21,11 @@ import { Tooltip } from '@/components/ui/tooltip'
 import { bearingDegrees, distanceMetres } from '@/features/map/geo'
 import { TrackMap } from '@/features/map/track-map'
 import { ConfidenceBar, EvidenceBreakdown, TrackStateBadge } from '@/features/tracks/evidence'
+import {
+  DERIVED_MARK,
+  heightProvenance,
+  heightProvenanceHint,
+} from '@/features/tracks/height-provenance'
 import { RssiChart } from '@/features/tracks/rssi-chart'
 import { flightPath } from '@/features/tracks/flight-path'
 import { samplesFromDetections } from '@/features/tracks/rssi-samples'
@@ -98,6 +103,7 @@ function TrackDetail() {
   // long flight, so a detail page that reads it shows a route with the start
   // missing. Rebuilt from the detections instead -- see flightPath.
   const history = flightPath(pathDetections ?? [], track.history ?? [])
+  const currentHeight = heightProvenance(current)
   const peakRssi = format.rssi(
     rssiSamples.length ? Math.max(...rssiSamples.map((sample) => sample.rssi)) : null,
   )
@@ -242,6 +248,10 @@ function TrackDetail() {
               value={format.length(current.alt_geodetic_m)}
               mono
             />
+            {/* The hint is the provenance, not decoration: a height fusion
+                derived from a terrain model and one the aircraft broadcast are
+                the same number rendered the same way, and only one of them is
+                a measurement. See heightProvenance. */}
             <DataRow
               label="Height AGL"
               value={
@@ -250,6 +260,9 @@ function TrackDetail() {
                     {format.length(current.height_agl_m)}
                   </span>
                 </Tooltip>
+              }
+              hint={
+                currentHeight ? heightProvenanceHint(currentHeight, format.length) : undefined
               }
               mono
             />
@@ -413,11 +426,42 @@ function TrackDetail() {
  */
 const HISTORY_ROWS = 500
 
+/**
+ * An AGL, with a mark on it when fusion derived it rather than the aircraft
+ * broadcasting it.
+ *
+ * A hint line under the value is what the Current position card can afford; a
+ * table of hundreds of rows cannot, so the provenance is a superscript and the
+ * sentence moves to the title and the legend below the table.
+ */
+function AglCell({ position }: { position: Position }) {
+  const format = useFormat()
+  const provenance = heightProvenance(position)
+
+  return (
+    <>
+      {format.length(position.height_agl_m)}
+      {provenance?.source === 'derived' ? (
+        <sup
+          className="text-muted-foreground ml-0.5 font-sans"
+          title={heightProvenanceHint(provenance, format.length)}
+        >
+          {DERIVED_MARK}
+        </sup>
+      ) : null}
+    </>
+  )
+}
+
 function PositionHistory({ history, track }: { history: Position[]; track: Track }) {
   const format = useFormat()
   // Reversed once, here, instead of separately in each of the two renderings.
   const rows = [...history].reverse().slice(0, HISTORY_ROWS)
   const hidden = history.length - rows.length
+  // The legend costs a line, so it only appears once something on screen wears
+  // the mark -- and it counts the rendered rows, not the whole path, because a
+  // mark the reader cannot see needs no explaining.
+  const anyDerived = rows.some((position) => heightProvenance(position)?.source === 'derived')
 
   return (
     <details className="group border-border border-t">
@@ -500,7 +544,9 @@ function PositionHistory({ history, track }: { history: Position[]; track: Track
                   <dl className="tnum mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 sm:grid-cols-4">
                     <div>
                       <dt className="text-muted-foreground font-sans">AGL</dt>
-                      <dd>{format.length(position.height_agl_m)}</dd>
+                      <dd>
+                        <AglCell position={position} />
+                      </dd>
                     </div>
                     <div>
                       <dt className="text-muted-foreground font-sans">Geodetic</dt>
@@ -559,7 +605,7 @@ function PositionHistory({ history, track }: { history: Position[]; track: Track
                         {format.coords(position.lat, position.lon)}
                       </td>
                       <td className="py-1.5 pr-4 text-right whitespace-nowrap">
-                        {format.length(position.height_agl_m)}
+                        <AglCell position={position} />
                       </td>
                       <td className="py-1.5 pr-4 text-right whitespace-nowrap">
                         {format.length(position.alt_geodetic_m)}
@@ -577,6 +623,12 @@ function PositionHistory({ history, track }: { history: Position[]; track: Track
             </div>
           </div>
         )}
+        {anyDerived ? (
+          <p className="text-muted-foreground text-2xs mt-2 px-1">
+            <span className="font-mono">{DERIVED_MARK}</span> height above ground derived from a
+            terrain model, not broadcast by the aircraft.
+          </p>
+        ) : null}
       </div>
     </details>
   )
