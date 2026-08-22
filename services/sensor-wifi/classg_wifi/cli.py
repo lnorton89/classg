@@ -21,9 +21,15 @@ from typing import cast
 
 from dotenv import find_dotenv, load_dotenv
 
-from .bus import DEFAULT_ENDPOINT, DetectionPublisher
+from .bus import (
+    DEFAULT_ENDPOINT,
+    DEFAULT_TRACK_ENDPOINT,
+    DetectionPublisher,
+    PeerActivity,
+)
 from .capture import (
     CaptureError,
+    PlanState,
     prune_channel_plan,
     resolve_channel_plan,
     run_capture,
@@ -214,6 +220,13 @@ def cmd_run(args: argparse.Namespace) -> int:
         wait_s=args.companion_wait_s,
     )
     channels = load_channels(yaml.safe_load(Path(plan.path).read_text()))
+    # The plan not in force is loaded too when coordination is on, because
+    # swapping to it later must not mean reading a file mid-flight -- and a
+    # plan file that has been deleted or corrupted since startup should fail
+    # here, in daylight, rather than during a contact.
+    solo_channels = None
+    if args.peer_coordination and not plan.fallback and args.solo_channels:
+        solo_channels = load_channels(yaml.safe_load(Path(args.solo_channels).read_text()))
     matcher = FingerprintMatcher.from_yaml(
         args.fingerprints, OUIRegistry.load_if_present(args.oui_registry)
     )
@@ -232,6 +245,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         # adapter may actually tune to is a runtime question. See
         # capture.prune_channel_plan for the cost of skipping this.
         channels = prune_channel_plan(channels, args.iface)
+        if solo_channels is not None:
+            solo_channels = prune_channel_plan(solo_channels, args.iface)
         hopper = ChannelHopper(
             channels,
             base_dwell_ms=args.dwell_ms,
@@ -243,6 +258,23 @@ def cmd_run(args: argparse.Namespace) -> int:
             " (widened: companion absent)" if plan.fallback else "",
             len(channels), args.dwell_ms,
         )
+        plan_state = PlanState(
+            choice=plan,
+            split=channels,
+            solo=solo_channels,
+            min_hold_s=args.peer_hold_s,
+        )
+        peers = None
+        if args.peer_coordination:
+            # ADR-0010. Optional and failure-tolerant on purpose: a unit with no
+            # fusion, no peers, or an older fusion that publishes tracks without
+            # receivers simply never sees a peer and keeps its startup plan.
+            peers = PeerActivity(
+                endpoint=args.track_endpoint,
+                sensor_id=args.sensor_id,
+                active_for_s=args.peer_active_s,
+            )
+
         run_capture(
             iface=args.iface,
             hopper=hopper,
@@ -257,7 +289,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             # counters, so the first heartbeat after start reports no survey --
             # there is no window to measure yet.
             surveyor=SurveySampler(iface=args.iface),
-            plan=plan,
+            plan=plan_state,
+            peers=peers,
         )
     except CaptureError as exc:
         # The radio is unusable. Say so on the bus before exiting so /health
@@ -391,6 +424,36 @@ def main(argv: list[str] | None = None) -> int:
         help="how long to wait for --companion-iface to enumerate before "
              "concluding it is not fitted. Covers the boot race with udev and "
              "the TP-Link's USB mode-switch.",
+    )
+    p_run.add_argument(
+        "--peer-coordination",
+        action=argparse.BooleanOptionalAction,
+        default=os.getenv("CLASSG_WIFI_PEER_COORDINATION", "") not in ("", "0", "false"),
+        help="watch fusion's track stream and widen to --solo-channels while "
+             "another receiver is busy tracking, because its sweep is suspended "
+             "for as long as it holds the contact (ADR-0010). Off by default; "
+             "the effect is unmeasured against real hardware.",
+    )
+    p_run.add_argument(
+        "--track-endpoint",
+        default=os.getenv("CLASSG_TRACK_ENDPOINT", DEFAULT_TRACK_ENDPOINT),
+        help="where fusion publishes tracks; the source of peer activity",
+    )
+    p_run.add_argument(
+        "--peer-active-s",
+        type=float,
+        default=os.getenv("CLASSG_WIFI_PEER_ACTIVE_S", "20"),
+        help="how recently a peer must have contributed to a track to count as "
+             "busy. Comparable to escalation_hold_s, which is how long its "
+             "sweep is actually suspended for.",
+    )
+    p_run.add_argument(
+        "--peer-hold-s",
+        type=float,
+        default=os.getenv("CLASSG_WIFI_PEER_HOLD_S", "30"),
+        help="minimum time between plan swaps. Escalation renews on every "
+             "detection, so a peer tracking one aircraft flickers at the edge "
+             "of --peer-active-s; without this the dwell budget goes on retunes.",
     )
     p_run.add_argument(
         "--fingerprints",

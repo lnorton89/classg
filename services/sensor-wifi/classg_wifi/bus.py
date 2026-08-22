@@ -1,8 +1,13 @@
-"""ZeroMQ PUB publisher.
+"""ZeroMQ PUB publisher, and the one SUB that reads back.
 
-Non-negotiable property: publishing must NEVER block the capture loop. Losing a
-detection is recoverable; missing a beacon window while blocked on a slow consumer
-is not. See ADR-0002.
+Non-negotiable property: neither direction may EVER block the capture loop.
+Losing a detection is recoverable; missing a beacon window while blocked on a
+slow consumer is not. See ADR-0002.
+
+The SUB is PeerActivity, and it is narrow on purpose. ADR-0010 lets a receiver
+subscribe so it can tell whether its companion radio is busy tracking, and
+nothing else: no configuration arrives this way, and a silent bus leaves the
+sensor behaving exactly as it does with no subscriber at all.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ import zmq
 log = logging.getLogger(__name__)
 
 DEFAULT_ENDPOINT = "tcp://127.0.0.1:5556"
+DEFAULT_TRACK_ENDPOINT = "tcp://127.0.0.1:5557"
 DEFAULT_HWM = 1000
 
 
@@ -134,3 +140,135 @@ class DetectionPublisher:
 
     def close(self) -> None:
         self._sock.close()
+
+
+class PeerActivity:
+    """Whether another receiver on this unit is currently hearing an aircraft.
+
+    Reads fusion's existing track stream (ADR-0010). Tracks carry `receivers[]`
+    -- which radio contributed and when -- so "is my companion busy" is already
+    on the wire and needs no new message type.
+
+    Freshness is judged two ways, because neither alone is enough:
+
+      * The MESSAGE is recent because we just received it. Fusion publishes on
+        update, so arrival is the evidence that this track is live.
+      * A peer's entry is recent RELATIVE TO the newest entry on the same track.
+        A track updated by wifi-0 still carries wifi-1's contribution from five
+        minutes ago, and treating that as current would leave this receiver
+        widened long after its companion went quiet. Comparing the two stamps
+        against each other keeps the whole judgement inside fusion's own clock
+        domain, so no wall clock and no cross-host skew enters into it.
+    """
+
+    def __init__(
+        self,
+        endpoint: str = DEFAULT_TRACK_ENDPOINT,
+        sensor_id: str = "wifi-0",
+        topic: str = "track.",
+        active_for_s: float = 20.0,
+        hwm: int = DEFAULT_HWM,
+        socket_mode: str = "connect",
+    ) -> None:
+        self.sensor_id = sensor_id
+        self.active_for_s = active_for_s
+        self.messages = 0
+        self.parse_errors = 0
+        self._last_peer_at: float | None = None
+        self._ctx: zmq.Context[zmq.Socket[bytes]] = zmq.Context.instance()
+        self._sock: zmq.Socket[bytes] = self._ctx.socket(zmq.SUB)
+        # A capture loop that falls behind must drop coordination hints, not
+        # queue them: a stale hint is worse than none, and unbounded queueing is
+        # how a SUB socket starts costing memory on a Pi.
+        self._sock.setsockopt(zmq.RCVHWM, hwm)
+        self._sock.setsockopt(zmq.LINGER, 0)
+        self._sock.setsockopt(zmq.SUBSCRIBE, topic.encode())
+        if socket_mode == "bind":
+            self._sock.bind(endpoint)
+        elif socket_mode == "connect":
+            # connect, not bind: fusion Listen()s the track endpoint, and a
+            # connecting SUB tolerates fusion being absent or restarting
+            # without the sensor noticing.
+            self._sock.connect(endpoint)
+        else:
+            raise ValueError("socket_mode must be 'bind' or 'connect'")
+        log.info(
+            "watching %s for peer activity (topic %r, active for %.0fs)",
+            endpoint,
+            topic,
+            active_for_s,
+        )
+
+    def poll(self, now: float) -> None:
+        """Drain whatever has arrived. Never blocks, never raises."""
+        while True:
+            try:
+                parts = self._sock.recv_multipart(flags=zmq.NOBLOCK)
+            except zmq.Again:
+                return
+            except zmq.ZMQError as exc:
+                # A dead socket must not take the radio with it. Coordination
+                # degrades to "no peers seen", which is the configured split
+                # plan -- exactly the behaviour with no subscription at all.
+                log.debug("peer socket: %s", exc)
+                return
+            self.messages += 1
+            if self._names_an_active_peer(parts[-1] if parts else b""):
+                self._last_peer_at = now
+
+    def _names_an_active_peer(self, body: bytes) -> bool:
+        try:
+            track = json.loads(body)
+            receivers = track.get("receivers") or []
+        except (ValueError, AttributeError):
+            self.parse_errors += 1
+            return False
+        newest: str | None = None
+        for entry in receivers:
+            if isinstance(entry, dict) and isinstance(entry.get("last_seen"), str):
+                stamp = entry["last_seen"]
+                if newest is None or stamp > newest:
+                    newest = stamp
+        if newest is None:
+            # Tracks published before receivers existed, and any track whose
+            # contributors carry no timestamp. Says nothing either way.
+            return False
+        for entry in receivers:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("sensor_id") in (None, self.sensor_id):
+                continue
+            if _within(entry.get("last_seen"), newest, self.active_for_s):
+                return True
+        return False
+
+    def peers_active(self, now: float) -> bool:
+        if self._last_peer_at is None:
+            return False
+        return (now - self._last_peer_at) <= self.active_for_s
+
+    def detail(self, now: float) -> dict[str, Any]:
+        return {
+            "peer_tracks_seen": self.messages,
+            "peers_active": self.peers_active(now),
+        }
+
+    def close(self) -> None:
+        self._sock.close()
+
+
+def _within(stamp: object, newest: str, window_s: float) -> bool:
+    """Is `stamp` within `window_s` of `newest`, both RFC3339 from one clock?
+
+    A lexical compare is not enough -- these are two instants that need
+    subtracting -- but a parse failure must not be fatal, because this is a
+    tuning hint and the sensor has a radio to run.
+    """
+    if not isinstance(stamp, str):
+        return False
+    try:
+        a = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        b = datetime.fromisoformat(newest.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return abs((b - a).total_seconds()) <= window_s

@@ -266,6 +266,9 @@ single-adapter build, leave it out.
 | `CLASSG_WIFI_SOLO_CHANNELS_FILE` | *(unset)* | plan to load instead of `--channels` when the companion is absent; empty disables the fallback |
 | `CLASSG_WIFI_COMPANION_IFACE` | *(unset)* | the other receiver's interface; its presence at startup means the split plans are live |
 | `CLASSG_WIFI_COMPANION_WAIT_S` | `15` | how long to wait for it to enumerate before concluding it is not fitted |
+| `CLASSG_WIFI_PEER_COORDINATION` | *(off)* | widen to the solo plan while another receiver is busy tracking (ADR-0010); set `1` to enable on both radios |
+| `CLASSG_WIFI_PEER_ACTIVE_S` | `20` | how recently a peer must have contributed to a track to count as busy |
+| `CLASSG_WIFI_PEER_HOLD_S` | `30` | minimum time between plan swaps |
 
 The deployed units pass these as flags rather than reading the environment, so
 that the two receivers get different values from one shared `.env`.

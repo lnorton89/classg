@@ -37,7 +37,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .bus import DetectionPublisher
+from .bus import DetectionPublisher, PeerActivity
 from .hopper import ChannelHopper, ChannelSpec
 from .pipeline import Pipeline
 from .survey import SurveySampler
@@ -320,6 +320,9 @@ class PlanChoice:
     fallback: bool = False
     companion_iface: str = ""
     companion_present: bool | None = None
+    # Kept even when the split plan was chosen: peer coordination widens to it
+    # later, and the name has to reach the heartbeat when it does.
+    solo_path: str = ""
 
     def detail(self) -> dict[str, Any]:
         """The subset of this that belongs in every heartbeat."""
@@ -331,6 +334,94 @@ class PlanChoice:
             out["companion_iface"] = self.companion_iface
             out["companion_present"] = self.companion_present
         return out
+
+
+class PlanState:
+    """The channel plan this receiver is running right now, and why.
+
+    Startup picks between the split plan and the solo plan by looking for the
+    companion adapter (resolve_channel_plan). This carries that decision into
+    the run and lets it move once: while a PEER is busy tracking, its sweep is
+    suspended for escalation_hold_s at a time, so this receiver widens to the
+    solo plan and keeps discovery alive. It narrows again when the peer goes
+    quiet. ADR-0010 is the decision record.
+
+    Not applied when this receiver is itself escalated: a radio holding a
+    contact should keep holding it, and widening mid-track is how you drop the
+    aircraft you already have.
+
+    Nor when the companion was absent at startup -- there is nothing to widen
+    to, because the solo plan is already loaded.
+    """
+
+    def __init__(
+        self,
+        choice: PlanChoice,
+        split: list[ChannelSpec],
+        solo: list[ChannelSpec] | None = None,
+        min_hold_s: float = 30.0,
+    ) -> None:
+        self.choice = choice
+        self.split = split
+        self.solo = solo
+        # Hysteresis. Escalation renews its lock on every further detection, so
+        # a peer tracking one aircraft flickers between "active" and "quiet" at
+        # the edge of the window. Rebuilding the plan on each flicker would
+        # spend the dwell budget on retunes, which is the cost this is trying
+        # to avoid in the first place.
+        self.min_hold_s = min_hold_s
+        self.widened = False
+        self.swaps = 0
+        self._changed_at: float | None = None
+
+    @property
+    def can_widen(self) -> bool:
+        return self.solo is not None and not self.choice.fallback
+
+    def reconcile(
+        self,
+        hopper: ChannelHopper,
+        peer_active: bool,
+        now: float,
+    ) -> bool:
+        """Swap the plan if the peer picture calls for it. Returns True if it did."""
+        # Bound here rather than asserted below: `python -O` strips asserts, and
+        # a type-narrowing aid that vanishes under a flag is not one.
+        solo = self.solo
+        if solo is None or self.choice.fallback:
+            return False
+        want = peer_active and not hopper.is_escalated
+        if want == self.widened:
+            return False
+        if self._changed_at is not None and (now - self._changed_at) < self.min_hold_s:
+            return False
+
+        target = solo if want else self.split
+        hopper.set_channels(target)
+        self.widened = want
+        self.swaps += 1
+        self._changed_at = now
+        log.info(
+            "peer %s; %s to %d channels",
+            "is tracking" if want else "is quiet",
+            "widening" if want else "narrowing back",
+            len(target),
+        )
+        return True
+
+    def detail(self) -> dict[str, Any]:
+        out = dict(self.choice.detail())
+        if self.widened:
+            # The startup file name would be a lie while this is true, and the
+            # heartbeat is the only place /health and the operator can see it.
+            out["plan"] = os.path.basename(self.solo_path)
+        out["plan_widened_for_peer"] = self.widened
+        out["plan_swaps"] = self.swaps
+        return out
+
+    @property
+    def solo_path(self) -> str:
+        return self.choice.solo_path or self.choice.path
 
 
 def resolve_channel_plan(
@@ -365,7 +456,7 @@ def resolve_channel_plan(
     instead of hiding it.
     """
     if not companion_iface or not solo_path:
-        return PlanChoice(path=split_path)
+        return PlanChoice(path=split_path, solo_path=solo_path)
 
     deadline = monotonic() + max(wait_s, 0.0)
     while True:
@@ -378,6 +469,7 @@ def resolve_channel_plan(
                 path=split_path,
                 companion_iface=companion_iface,
                 companion_present=True,
+                solo_path=solo_path,
             )
         remaining = deadline - monotonic()
         if remaining <= 0:
@@ -395,6 +487,7 @@ def resolve_channel_plan(
         fallback=True,
         companion_iface=companion_iface,
         companion_present=False,
+        solo_path=solo_path,
     )
 
 
@@ -477,7 +570,8 @@ def run_capture(
     should_run: Callable[[], bool] = lambda: True,
     socket_factory: Callable[[str], Any] = open_socket,
     surveyor: SurveySampler | None = None,
-    plan: PlanChoice | None = None,
+    plan: PlanState | None = None,
+    peers: PeerActivity | None = None,
 ) -> CaptureStats:
     """Capture until should_run() goes false.
 
@@ -488,11 +582,15 @@ def run_capture(
     which is what the tests want, and what a run on an adapter with no `iw`
     reduces to anyway.
 
-    plan describes which channel file this receiver loaded and whether it
-    widened because its companion was missing. It is static for the life of the
-    process and rides on every heartbeat, because the consumer that needs it --
-    /health, deciding whether an absent second radio left a gap -- has no other
-    way to learn it.
+    plan describes which channel file this receiver loaded, whether it widened
+    because its companion was missing, and whether it is widened right now
+    because the companion is busy tracking. It rides on every heartbeat, because
+    the consumer that needs it -- /health, deciding whether an absent second
+    radio left a gap -- has no other way to learn it.
+
+    peers is the coordination subscriber (ADR-0010) and is entirely optional.
+    None means no coordination: the plan chosen at startup stands for the life
+    of the process, which is what every single-radio unit does.
     """
     stats = CaptureStats()
     if socket_factory is open_socket:
@@ -521,6 +619,19 @@ def run_capture(
     log.info("capture starting on %s", iface)
     try:
         while should_run():
+            # Between dwells, never during one: set_channels rebuilds the
+            # hopper's cumulative weights, and the loop is the only thread that
+            # touches them. Polling here also means a silent or absent fusion
+            # costs one non-blocking recv per dwell and nothing else.
+            if peers is not None:
+                # One clock read for the whole decision. Three separate calls
+                # could have the activity window expire between the test and
+                # the swap, which is a race that only shows up under load.
+                at = time.monotonic()
+                peers.poll(at)
+                if plan is not None:
+                    plan.reconcile(hopper, peers.peers_active(at), at)
+
             spec = hopper.next_channel()
             # Weighted selection can pick the same channel twice, and the
             # dedicated receiver has a one-channel plan. Calling `iw` anyway
@@ -678,7 +789,7 @@ def run_capture(
                     # and a one-channel plan never retunes.
                     if not interface_exists(iface):
                         _heartbeat(publisher, stats, pipeline, hopper, iface,
-                                   healthy=False, surveyor=surveyor, plan=plan,
+                                   healthy=False, surveyor=surveyor, plan=plan, peers=peers,
                                    reason=f"{iface} disappeared mid-capture")
                         raise CaptureError(
                             f"{iface} disappeared mid-capture. The adapter was "
@@ -694,7 +805,7 @@ def run_capture(
                     elif len(hopper.channels) > 1:
                         _heartbeat(
                             publisher, stats, pipeline, hopper, iface,
-                            healthy=False, surveyor=surveyor, plan=plan,
+                            healthy=False, surveyor=surveyor, plan=plan, peers=peers,
                             reason=(
                                 f"no frames for {int(stalled_s)}s on {iface}; "
                                 "the radio is up but hearing nothing. Check the "
@@ -707,7 +818,7 @@ def run_capture(
                     # calling a working radio unhealthy.
                     else:
                         _heartbeat(publisher, stats, pipeline, hopper, iface,
-                                   surveyor=surveyor, plan=plan,
+                                   surveyor=surveyor, plan=plan, peers=peers,
                                    reason=(
                                        f"no frames for {int(stalled_s)}s, parked "
                                        f"on channel {hopper.current.channel}; "
@@ -715,7 +826,7 @@ def run_capture(
                                    ))
                 else:
                     _heartbeat(publisher, stats, pipeline, hopper, iface,
-                               surveyor=surveyor, plan=plan)
+                               surveyor=surveyor, plan=plan, peers=peers)
                 last_heartbeat = now
                 beat.mark()
     finally:
@@ -724,7 +835,7 @@ def run_capture(
         # One last heartbeat so a clean shutdown is distinguishable from a
         # crash in whatever is watching the bus.
         _heartbeat(publisher, stats, pipeline, hopper, iface, healthy=False,
-                   plan=plan, reason="capture stopped")
+                   plan=plan, peers=peers, reason="capture stopped")
         log.info(
             "capture stopped: %d frames, %d beacons, %d detections, %d dwells",
             stats.frames, pipeline.stats.beacons, stats.detections, stats.dwells,
@@ -849,7 +960,8 @@ def _heartbeat(
     healthy: bool = True,
     reason: str = "",
     surveyor: SurveySampler | None = None,
-    plan: PlanChoice | None = None,
+    plan: PlanState | None = None,
+    peers: PeerActivity | None = None,
 ) -> None:
     detail: dict[str, Any] = {
         "iface": iface,
@@ -868,6 +980,8 @@ def _heartbeat(
     }
     if plan is not None:
         detail.update(plan.detail())
+    if peers is not None:
+        detail.update(peers.detail(time.monotonic()))
     if reason:
         detail["reason"] = reason
     if surveyor is not None:

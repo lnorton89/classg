@@ -127,7 +127,8 @@ def test_the_fallback_plan_actually_closes_the_hole_it_is_for():
 
 
 def test_heartbeat_detail_reports_the_choice():
-    """/health cannot ask the sensor anything (ADR-0002, sensors only publish),
+    """/health cannot ask a sensor anything -- the API has no request path to
+    one, and the SUB socket ADR-0010 allows points the other way, at fusion --
     so the plan has to arrive on the heartbeat or it is unknowable."""
     widened = PlanChoice(
         path="config/channels.yaml",

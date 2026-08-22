@@ -117,7 +117,7 @@ def drone_frame() -> bytes:
 def run_once(
     radio: FakeRadio,
     hopper: ChannelHopper | None = None,
-    plan: capture.PlanChoice | None = None,
+    plan: capture.PlanState | None = None,
 ):
     """Run exactly one dwell."""
     hopper = hopper or make_hopper()
@@ -222,11 +222,14 @@ class TestHealth:
         the whole plan or is running half of one. Asserted on every heartbeat
         rather than the first: the api restarts, and a field that appeared only
         at startup would be lost to it."""
-        plan = capture.PlanChoice(
-            path="config/channels.yaml",
-            fallback=True,
-            companion_iface="wlan-tplink",
-            companion_present=False,
+        plan = capture.PlanState(
+            choice=capture.PlanChoice(
+                path="config/channels.yaml",
+                fallback=True,
+                companion_iface="wlan-tplink",
+                companion_present=False,
+            ),
+            split=[],
         )
         _, pub, _, _ = run_once(FakeRadio([drone_frame()]), plan=plan)
 

@@ -40,6 +40,10 @@ const KNOWN: Record<string, KnownDetail> = {
   plan_fallback: { label: 'Widened to full plan', section: 'Radio' },
   companion_iface: { label: 'Companion receiver', section: 'Radio' },
   companion_present: { label: 'Companion present', section: 'Radio' },
+  plan_widened_for_peer: { label: 'Widened while peer busy', section: 'Radio' },
+  plan_swaps: { label: 'Plan swaps', section: 'Radio' },
+  peers_active: { label: 'Peer receiver busy', section: 'Radio' },
+  peer_tracks_seen: { label: 'Peer tracks seen', section: 'Radio' },
   seconds_since_message: {
     label: 'Since last message',
     section: 'Radio',

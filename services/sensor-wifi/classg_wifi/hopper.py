@@ -110,14 +110,40 @@ class ChannelHopper:
         self._scanning = False
         self._current: ChannelSpec = channels[0]
 
-        total = sum(c.weight for c in channels)
+        self._cumulative: list[tuple[float, ChannelSpec]] = []
+        self._rebuild_weights()
+
+    def _rebuild_weights(self) -> None:
+        total = sum(c.weight for c in self.channels)
         if total <= 0:
             raise ValueError("channel weights must sum to > 0")
-        self._cumulative: list[tuple[float, ChannelSpec]] = []
+        self._cumulative = []
         acc = 0.0
-        for spec in channels:
+        for spec in self.channels:
             acc += spec.weight / total
             self._cumulative.append((acc, spec))
+
+    def set_channels(self, channels: list[ChannelSpec]) -> None:
+        """Swap the plan without disturbing the run in progress.
+
+        For peer coordination (ADR-0010): a receiver whose companion is busy
+        tracking widens to its solo plan so discovery carries on, and narrows
+        again when the companion is free.
+
+        Stats are deliberately NOT reset. dwell_share and beacons_per_channel
+        are the evidence for tuning the weights, and a receiver that swapped
+        plans twice during a flight would otherwise report only the last
+        fragment of its own history.
+
+        A lock held on a channel the new plan does not contain is left to
+        next_channel, which already drops a lock it cannot honour. Called
+        between dwells from the capture loop, so there is no torn read: this
+        class is single-threaded by construction.
+        """
+        if not channels:
+            raise ValueError("hopper needs at least one channel")
+        self.channels = channels
+        self._rebuild_weights()
 
     @property
     def current(self) -> ChannelSpec:

@@ -73,6 +73,44 @@ only way to give two receivers different values from one file:
 Neither default has been re-derived from a measured rtl8852au hop cost. Take the
 numbers off a real unit before changing them.
 
+## Peer coordination (opt-in, unmeasured)
+
+When either radio detects a drone the hopper locks to that channel for
+`escalation_hold_s`, renewed on every further detection, handing back one dwell
+in `escalation_scan_every`. On the sweep receiver that turns a 16-channel plan
+into roughly one channel plus a 25% sample — while the primary carries on
+sampling three channels the aircraft demonstrably is not on.
+
+With `--peer-coordination`, a receiver watches fusion's track stream and widens
+to `--solo-channels` while *another* receiver is contributing to a track,
+narrowing back when that peer goes quiet. [ADR-0010](../architecture/adr/0010-receivers-subscribe-for-coordination.md)
+is the decision record and the limits.
+
+Enable it for both radios with one line in `.env`, since both units read it:
+
+```
+CLASSG_WIFI_PEER_COORDINATION=1
+```
+
+| Flag | Default | What |
+|---|---|---|
+| `--peer-coordination` | off | watch the track stream and widen while a peer is busy |
+| `--track-endpoint` | `tcp://127.0.0.1:5557` | where fusion publishes tracks |
+| `--peer-active-s` | `20` | how recently a peer must have contributed to count as busy |
+| `--peer-hold-s` | `30` | minimum time between plan swaps, so a flickering peer cannot thrash the plan |
+
+Watch `plan`, `plan_widened_for_peer`, `plan_swaps` and `peers_active` on the
+Sensors page to see it working. A receiver never widens while holding its own
+contact, and one already on the solo plan (companion absent) has nothing to
+widen to.
+
+**It is off by default because the size of the win is unmeasured.** The
+reasoning is sound and every failure mode lands on the startup plan — no fusion,
+no peers, a fusion too old to publish `receivers`, or a corrupt message all read
+as "no peer activity" — but nobody has yet flown an aircraft past a two-radio
+unit and counted discoveries with it on and off. Do that before trusting a
+number.
+
 ## Pi 4 USB layout and power
 
 Prefer both Wi-Fi adapters in the blue USB 3 ports and the USB 2 RTL-SDR in a

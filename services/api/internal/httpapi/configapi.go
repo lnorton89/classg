@@ -115,8 +115,12 @@ func (s *Server) handlePutChannels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// restart_required is true because the api has no way to push a plan to a
-	// sensor: sensors subscribe to nothing, they only publish (ADR-0002). It
-	// becomes false the day sensors gain a config subscription. Flagged in
+	// sensor. Sensors do now hold a SUB socket -- ADR-0010 lets a receiver watch
+	// fusion's track stream to tell whether its companion radio is busy -- but
+	// that subscription deliberately carries no configuration: a plan arriving
+	// over the bus would make the running configuration unobservable, which is
+	// what ADR-0007's tiers exist to prevent. It becomes false the day sensors
+	// gain a CONFIG subscription, which is a different decision. Flagged in
 	// api-implementation.md.
 	//
 	// Understating it, in the same way the weights endpoint below does: a
