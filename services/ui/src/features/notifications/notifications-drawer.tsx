@@ -254,6 +254,18 @@ export function NotificationsDrawer() {
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1">
+                {feed.length > 0 ? (
+                  <Tooltip content="Clear every notification currently listed">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground text-xs"
+                      onClick={() => clearedNotifications.clearMany(feed.map((f) => f.id))}
+                    >
+                      Clear all
+                    </Button>
+                  </Tooltip>
+                ) : null}
                 <Tooltip content="Choose what appears here">
                   <Link
                     to="/settings/notifications"
@@ -374,14 +386,13 @@ function NotificationRow({ item, onNavigate }: { item: Notification; onNavigate:
   const body = (
     <>
       <div className="flex items-baseline justify-between gap-2">
-        <span
-          className={cn(
-            'truncate text-xs',
-            item.category === 'drone' ? 'font-mono' : 'font-medium',
-          )}
-        >
-          {item.title}
-        </span>
+        {/* Clamped to two lines rather than truncated to one: several system
+            titles ("Offline support active: the console shell is cached…")
+            only carry their meaning past the first dozen words, and a cut with
+            no tooltip on a touch screen was simply unreadable. Drone titles no
+            longer need the mono face -- they are prose with a serial tail, not
+            a raw identifier. */}
+        <span className="line-clamp-2 min-w-0 text-xs font-medium">{item.title}</span>
         <span className="text-muted-foreground shrink-0 text-2xs">
           {format.relative(item.at)}
         </span>

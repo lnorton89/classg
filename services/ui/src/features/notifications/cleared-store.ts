@@ -51,6 +51,21 @@ class ClearedStore {
     this.emit()
   }
 
+  /**
+   * Clear a whole drawer's worth at once. Takes the ids rather than clearing
+   * "everything" in the abstract, because this store never sees the feed --
+   * the drawer knows what is on screen, and only what is on screen can be
+   * what "clear all" means to the person pressing it.
+   */
+  clearMany(ids: string[]): void {
+    if (ids.every((id) => this.ids.has(id))) return
+    const next = new Set(this.ids)
+    for (const id of ids) next.add(id)
+    this.ids = trim(next)
+    persist(this.ids)
+    this.emit()
+  }
+
   private emit(): void {
     for (const listener of this.listeners) listener()
   }

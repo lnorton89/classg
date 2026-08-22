@@ -67,14 +67,14 @@ describe('NotificationsDrawer', () => {
     mount([track({ track_id: 'a', identity: { serial: 'DRONE-A' } })])
 
     fireEvent.click(screen.getByRole('button', { name: /^Notifications/i }))
-    expect(screen.getByText('DRONE-A')).toBeInTheDocument()
+    expect(screen.getByText('Drone DRONE-A')).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Clear notification: DRONE-A' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear notification: Drone DRONE-A' }))
     // Still present -- the slide-and-fade plays before the row actually leaves.
-    expect(screen.getByText('DRONE-A')).toBeInTheDocument()
+    expect(screen.getByText('Drone DRONE-A')).toBeInTheDocument()
 
     await advance(250)
-    expect(screen.queryByText('DRONE-A')).not.toBeInTheDocument()
+    expect(screen.queryByText('Drone DRONE-A')).not.toBeInTheDocument()
   })
 
   it('dismisses a row on a swipe past the threshold', async () => {
@@ -82,7 +82,7 @@ describe('NotificationsDrawer', () => {
     mount([track({ track_id: 'b', identity: { serial: 'DRONE-B' } })])
 
     fireEvent.click(screen.getByRole('button', { name: /^Notifications/i }))
-    const row = screen.getByText('DRONE-B').closest('[data-notification-id]')
+    const row = screen.getByText('Drone DRONE-B').closest('[data-notification-id]')
     expect(row).not.toBeNull()
     if (!row) throw new Error('row not found')
 
@@ -91,7 +91,7 @@ describe('NotificationsDrawer', () => {
     fireEvent.pointerUp(row, { clientX: -150, pointerId: 1 })
 
     await advance(250)
-    expect(screen.queryByText('DRONE-B')).not.toBeInTheDocument()
+    expect(screen.queryByText('Drone DRONE-B')).not.toBeInTheDocument()
   })
 
   it('snaps back and stays on a short swipe', async () => {
@@ -99,7 +99,7 @@ describe('NotificationsDrawer', () => {
     mount([track({ track_id: 'c', identity: { serial: 'DRONE-C' } })])
 
     fireEvent.click(screen.getByRole('button', { name: /^Notifications/i }))
-    const row = screen.getByText('DRONE-C').closest('[data-notification-id]')
+    const row = screen.getByText('Drone DRONE-C').closest('[data-notification-id]')
     if (!row) throw new Error('row not found')
 
     fireEvent.pointerDown(row, { clientX: 0, pointerId: 1 })
@@ -107,7 +107,7 @@ describe('NotificationsDrawer', () => {
     fireEvent.pointerUp(row, { clientX: -30, pointerId: 1 })
 
     await advance(500)
-    expect(screen.getByText('DRONE-C')).toBeInTheDocument()
+    expect(screen.getByText('Drone DRONE-C')).toBeInTheDocument()
   })
 
   it('a cleared notification stays cleared across a remount of the drawer', async () => {
@@ -116,13 +116,13 @@ describe('NotificationsDrawer', () => {
 
     const { unmount } = mount(trackList)
     fireEvent.click(screen.getByRole('button', { name: /^Notifications/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Clear notification: DRONE-D' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear notification: Drone DRONE-D' }))
     await advance(250)
     unmount()
 
     mount(trackList)
     fireEvent.click(screen.getByRole('button', { name: /^Notifications/i }))
-    expect(screen.queryByText('DRONE-D')).not.toBeInTheDocument()
+    expect(screen.queryByText('Drone DRONE-D')).not.toBeInTheDocument()
     expect(screen.getByText(/everything here has been cleared/i)).toBeInTheDocument()
   })
 
@@ -138,10 +138,10 @@ describe('NotificationsDrawer', () => {
     ])
 
     fireEvent.click(screen.getByRole('button', { name: /^Notifications/i }))
-    fireEvent.click(screen.getByRole('button', { name: 'Clear notification: DRONE-E' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Clear notification: Drone DRONE-E' }))
     await advance(250)
 
-    expect(screen.queryByText('DRONE-E')).not.toBeInTheDocument()
-    expect(screen.getByText('DRONE-F')).toBeInTheDocument()
+    expect(screen.queryByText('Drone DRONE-E')).not.toBeInTheDocument()
+    expect(screen.getByText('Drone DRONE-F')).toBeInTheDocument()
   })
 })
