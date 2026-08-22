@@ -42,7 +42,12 @@ export function ShareTrack({
   rssiSamples?: RssiSample[]
 }) {
   const [open, setOpen] = useState(false)
-  const [includeLocation, setIncludeLocation] = useState(true)
+  // Off until asked for. The card's own caption warns that exact coordinates
+  // for a grounded aircraft are effectively an address; a default that ships
+  // them on the first tap of Copy contradicted the warning printed above the
+  // button -- and the rest of this product's privacy posture (the pilot's
+  // position switch, webhooks' private-address default). Precision is opt-in.
+  const [includeLocation, setIncludeLocation] = useState(false)
   const [busy, setBusy] = useState<'png' | 'copy' | 'share' | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const toggleId = useId()

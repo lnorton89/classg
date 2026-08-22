@@ -34,7 +34,11 @@ describe('ShareTrack', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Share this detection' })
     expect(within(dialog).getByRole('img', { name: /ClassG detection record/ })).toBeVisible()
     expect(within(dialog).getByRole('button', { name: /Download PNG/ })).toBeVisible()
-    expect(within(dialog).getByRole('switch', { name: 'Include exact location' })).toBeChecked()
+    // Off by default: precision is opt-in -- the card's own caption calls exact
+    // coordinates for a grounded aircraft "effectively an address".
+    expect(
+      within(dialog).getByRole('switch', { name: 'Include exact location' }),
+    ).not.toBeChecked()
   })
 
   it('closes on its own close button, not the trigger', async () => {
