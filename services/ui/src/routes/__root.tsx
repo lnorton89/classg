@@ -1,9 +1,10 @@
 import { type QueryClient } from '@tanstack/react-query'
-import { createRootRouteWithContext, Outlet } from '@tanstack/react-router'
+import { createRootRouteWithContext, Link, Outlet } from '@tanstack/react-router'
 
 import { AppShell } from '@/components/layout/app-shell'
 import { Alert } from '@/components/ui/misc'
 import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button-variants'
 import { ApiError } from '@/lib/api/client'
 
 export interface RouterContext {
@@ -27,8 +28,18 @@ function RootLayout() {
 function NotFound() {
   return (
     <div className="p-6">
-      <Alert tone="info" title="Page not found">
-        That route does not exist. Use the navigation above to get back to the live map.
+      {/* With a button, not just directions. "Use the navigation above" asks
+          the reader to do the work a link does better. */}
+      <Alert
+        tone="info"
+        title="Page not found"
+        action={
+          <Link to="/" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+            Go to the live map
+          </Link>
+        }
+      >
+        That route does not exist.
       </Alert>
     </div>
   )

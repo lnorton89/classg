@@ -2,8 +2,10 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { BellIcon, FilterIcon, Volume2Icon } from 'lucide-react'
 
 import { usePreferences } from '@/app/preferences-context'
+import { Button } from '@/components/ui/button'
 import { Segmented } from '@/components/ui/segmented'
 import { Alert } from '@/components/ui/misc'
+import { playAlert } from '@/lib/alert-sound'
 import type { LogLevel } from '@/features/logs/log-store'
 import {
   isCategoryEnabled,
@@ -105,6 +107,23 @@ function NotificationSettings() {
             ]}
             className="w-full"
           />
+        </SettingRow>
+        {/* An alert meant for an unattended bench has to be verifiable while
+            somebody is still standing at it. Without this the first proof the
+            chirp works — the volume is up, the browser allows audio, the
+            speaker is not muted — was a real drone. */}
+        <SettingRow
+          label="Test the chirp"
+          hint="Plays the confirmed-track sound once, at the volume an alert would use."
+        >
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => playAlert('confirmed')}
+          >
+            <Volume2Icon aria-hidden /> Play test chirp
+          </Button>
         </SettingRow>
       </SettingsCard>
     </>

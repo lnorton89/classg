@@ -36,6 +36,7 @@ import type { RefObject } from 'react'
 
 import { usePreferences } from '@/app/preferences-context'
 import { useTheme } from '@/app/theme-context'
+import { useFormat } from '@/app/use-format'
 import { useHasRole } from '@/features/auth/use-auth'
 import { Kbd } from '@/components/ui/kbd'
 import { log } from '@/features/logs/log-store'
@@ -100,6 +101,7 @@ function PaletteBody({
   const { preferences, setPreference } = usePreferences()
   const { preference: theme, setPreference: setTheme } = useTheme()
   const isAdmin = useHasRole('admin')
+  const format = useFormat()
 
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -112,7 +114,7 @@ function PaletteBody({
    */
   const tracks = useMemo(() => {
     const entries = queryClient.getQueriesData<TracksResponse>({ queryKey: ['tracks', 'list'] })
-    const seen = new Map<string, { id: string; label: string; sub: string }>()
+    const seen = new Map<string, { id: string; label: string; sub: string; lastSeen: number }>()
     for (const [, data] of entries) {
       for (const track of data?.tracks ?? []) {
         if (seen.has(track.track_id)) continue
@@ -121,18 +123,28 @@ function PaletteBody({
         seen.set(track.track_id, {
           id: track.track_id,
           label: serial ?? mac ?? track.track_id,
+          // "When" and "how much" are in the line for a reason: the same
+          // aircraft flying seven times produces seven rows with identical
+          // serial, MAC and vendor, and without a timestamp choosing between
+          // them was a guessing game.
           sub: [
             track.state.toLowerCase(),
+            format.relative(track.last_seen),
+            track.detection_count > 0 ? `${track.detection_count} detections` : null,
             serial && mac ? mac : null,
             track.identity?.vendor ?? null,
           ]
             .filter(Boolean)
             .join(' · '),
+          lastSeen: Date.parse(track.last_seen),
         })
       }
     }
-    return [...seen.values()]
-  }, [queryClient])
+    // Newest episode first, so the row somebody is most likely reaching for --
+    // the flight that just happened -- is the first match rather than wherever
+    // cache iteration happened to put it.
+    return [...seen.values()].sort((a, b) => b.lastSeen - a.lastSeen)
+  }, [queryClient, format])
 
   const commands = useMemo<Command[]>(() => {
     const go = (to: string) => () => void navigate({ to })

@@ -55,7 +55,8 @@ export function Dialog({
         <BaseDialog.Backdrop
           className={cn(
             'fixed inset-0 z-50 bg-black/50',
-            'transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0',
+            'transition-opacity duration-100',
+            'data-[ending-style]:opacity-0 data-[starting-style]:opacity-0',
           )}
         />
         <BaseDialog.Popup
@@ -64,7 +65,10 @@ export function Dialog({
             'bg-popover text-popover-foreground border-border flex flex-col overflow-hidden',
             'rounded-lg border shadow-2xl',
             'max-h-[calc(100dvh-2rem)] w-[min(24rem,calc(100vw-2rem))]',
-            'transition-[transform,opacity]',
+            // Explicit and short for the same reason as popover.tsx: a panel
+            // mid-fade shows its text mixed with the page's, so that state
+            // must be too brief to catch.
+            'transition-[transform,opacity] duration-100',
             'data-[ending-style]:scale-95 data-[ending-style]:opacity-0',
             'data-[starting-style]:scale-95 data-[starting-style]:opacity-0',
             className,

@@ -58,7 +58,11 @@ export function Popover({
             className={cn(
               'bg-popover text-popover-foreground border-border rounded-lg border shadow-lg',
               'w-[min(20rem,var(--available-width))] overflow-hidden',
-              'origin-(--transform-origin) transition-[transform,opacity]',
+              // duration-100 is explicit, not the ambient default: while a
+              // panel is mid-fade its text sits translucent over the page's
+              // text, which is unreadable -- so the window in which that state
+              // exists is kept too short to ever be what someone sees.
+              'origin-(--transform-origin) transition-[transform,opacity] duration-100',
               'data-[starting-style]:scale-95 data-[starting-style]:opacity-0',
               'data-[ending-style]:scale-95 data-[ending-style]:opacity-0',
               className,

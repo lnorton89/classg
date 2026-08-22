@@ -10,7 +10,12 @@ export const buttonVariants = cva(
   cn(
     'inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium',
     'whitespace-nowrap transition-colors',
-    'disabled:pointer-events-none disabled:opacity-50',
+    // 40%, not the tailwind-default 50: on the dark theme a half-opacity
+    // filled button still read as pressable -- the audit found an operator
+    // (fine, an auditor) DOM-inspecting a disabled Restart to be sure. The
+    // grayscale pulls the accent out so "inert" reads in colour as well as
+    // brightness.
+    'disabled:pointer-events-none disabled:opacity-40 disabled:grayscale-[0.5]',
     '[&_svg]:pointer-events-none [&_svg:not([class*=size-])]:size-4',
   ),
   {

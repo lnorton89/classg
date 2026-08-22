@@ -72,7 +72,9 @@ const SOURCE_LABEL: Record<LogSource, string> = {
 }
 
 const MIN_LEVEL_OPTIONS: { value: LogLevel; label: string }[] = [
-  { value: 'debug', label: 'All' },
+  // "Everything", matching Settings › Notifications' severity control -- and
+  // because "All" left the Debug counter tile pointing at no visible filter.
+  { value: 'debug', label: 'Everything' },
   { value: 'info', label: 'Info' },
   { value: 'warn', label: 'Warnings' },
   { value: 'error', label: 'Errors' },
@@ -164,11 +166,38 @@ export function LogsView() {
 
   return (
     <div className="flex min-h-0 flex-col gap-3">
+      {/* The tiles are the filter, not decoration beside it: each one sets the
+          severity floor it counts. Debug's tile used to show a number with no
+          tab that reached it. */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <LevelCount label="Errors" value={counts.error} tone="down" />
-        <LevelCount label="Warnings" value={counts.warn} tone="warn" />
-        <LevelCount label="Info" value={counts.info} tone="info" />
-        <LevelCount label="Debug" value={counts.debug} tone="muted" />
+        <LevelCount
+          label="Errors"
+          value={counts.error}
+          tone="down"
+          active={minLevel === 'error'}
+          onClick={() => setMinLevel('error')}
+        />
+        <LevelCount
+          label="Warnings"
+          value={counts.warn}
+          tone="warn"
+          active={minLevel === 'warn'}
+          onClick={() => setMinLevel('warn')}
+        />
+        <LevelCount
+          label="Info"
+          value={counts.info}
+          tone="info"
+          active={minLevel === 'info'}
+          onClick={() => setMinLevel('info')}
+        />
+        <LevelCount
+          label="Debug"
+          value={counts.debug}
+          tone="muted"
+          active={minLevel === 'debug'}
+          onClick={() => setMinLevel('debug')}
+        />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -336,10 +365,15 @@ function LevelCount({
   label,
   value,
   tone,
+  active,
+  onClick,
 }: {
   label: string
   value: number
   tone: 'down' | 'warn' | 'info' | 'muted'
+  /** This tile's severity floor is the one currently applied. */
+  active: boolean
+  onClick: () => void
 }) {
   const toneClass = {
     down: value > 0 ? 'border-down/45 text-down' : 'border-border text-muted-foreground',
@@ -349,12 +383,23 @@ function LevelCount({
   }[tone]
 
   return (
-    <div className={cn('bg-card flex flex-col gap-0.5 rounded-lg border px-3 py-2', toneClass)}>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={`Show ${label.toLowerCase()} and above`}
+      className={cn(
+        'bg-card flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left',
+        'hover:bg-accent/40 focus-visible:ring-ring transition-colors focus-visible:ring-2 focus-visible:outline-none',
+        toneClass,
+        active && 'ring-ring ring-1',
+      )}
+    >
       <span className="label-caps">{label}</span>
       <span className="font-display tnum text-lg leading-none font-bold">
         {value.toLocaleString()}
       </span>
-    </div>
+    </button>
   )
 }
 

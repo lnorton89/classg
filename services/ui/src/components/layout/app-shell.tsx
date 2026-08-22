@@ -276,11 +276,12 @@ function PaletteButton({ onOpen }: { onOpen: () => void }) {
         onClick={onOpen}
         aria-label="Open the command palette"
         aria-keyshortcuts="Control+K Meta+K"
-        // Desktop only. It is a keyboard accelerator with no keyboard to
-        // accelerate on a phone, and the width it costs in the mobile header
-        // pushes recording state and sensor health onto a second row.
-        // Everything it reaches is in the bottom nav or behind the gear.
-        className="hidden gap-2 md:inline-flex"
+        // Present at every width. It used to hide below md as "a keyboard
+        // accelerator with no keyboard" -- but the palette is also the only
+        // way to look a track up by serial or MAC, and hiding it left touch
+        // devices with no search at all. The width argument dated from the
+        // nine-control header; with three controls an icon costs nothing.
+        className="inline-flex gap-2"
       >
         <SearchIcon aria-hidden />
         <span className="text-muted-foreground hidden text-xs 2xl:inline">Search</span>
