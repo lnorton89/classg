@@ -4,6 +4,7 @@ import {
   ActivityIcon,
   ArrowLeftIcon,
   ChevronRightIcon,
+  DownloadIcon,
   FingerprintIcon,
   HistoryIcon,
   LocateFixedIcon,
@@ -28,9 +29,18 @@ import {
   type TrackDetailCard,
 } from '@/features/tracks/sortable-detail-grid'
 import { ShareTrack } from '@/features/tracks/share/share-track'
+import {
+  exportBasename,
+  pathGeoJson,
+  positionsCsv,
+  rssiCsv,
+} from '@/features/tracks/track-export'
+import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button-variants'
+import { downloadText } from '@/features/logs/log-store'
 import { ApiError } from '@/lib/api/client'
 import { trackDetectionsQuery, trackPathQuery, trackQuery } from '@/lib/api/queries'
-import type { Position } from '@/lib/api/types'
+import type { Position, Track } from '@/lib/api/types'
 import { EMPTY } from '@/lib/format'
 import { PageContainer } from '@/components/layout/page-container'
 
@@ -46,13 +56,27 @@ export const Route = createFileRoute('/tracks/$trackId')({
   },
   notFoundComponent: () => (
     <div className="p-6">
-      <Alert tone="info" title="Track not found">
+      <Alert
+        tone="info"
+        title="Track not found"
+        action={
+          <Link to="/tracks" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
+            <ArrowLeftIcon className="size-4" aria-hidden />
+            Back to tracks
+          </Link>
+        }
+      >
         This track is not in the configured store. Closed tracks remain available until the
         retention window removes them; the memory store also resets whenever the API restarts.
       </Alert>
     </div>
   ),
 })
+
+/** An identity field that was never broadcast arrives as '' as often as null. */
+function reported(value: string | null | undefined): string {
+  return value != null && value !== '' ? value : EMPTY
+}
 
 function TrackDetail() {
   const { trackId } = Route.useParams()
@@ -127,10 +151,14 @@ function TrackDetail() {
                 )
               }
             />
-            <DataRow label="Vendor" value={track.identity?.vendor ?? EMPTY} />
-            <DataRow label="Model hint" value={track.identity?.model_hint ?? EMPTY} />
-            <DataRow label="UA type" value={track.identity?.ua_type ?? EMPTY} />
-            <DataRow label="Operator ID" value={track.identity?.operator_id ?? EMPTY} mono />
+            {/* reported(), not `?? EMPTY`: identity fields arrive as empty
+                strings when never broadcast, and `??` let those render as
+                blank space -- a field that looks forgotten rather than one
+                that reads "not reported". */}
+            <DataRow label="Vendor" value={reported(track.identity?.vendor)} />
+            <DataRow label="Model hint" value={reported(track.identity?.model_hint)} />
+            <DataRow label="UA type" value={reported(track.identity?.ua_type)} />
+            <DataRow label="Operator ID" value={reported(track.identity?.operator_id)} mono />
             <DataRow
               label="MACs"
               mono
@@ -183,7 +211,7 @@ function TrackDetail() {
       content: (
         <>
           <TrackMap track={track} path={history} />
-          <PositionHistory history={history} />
+          <PositionHistory history={history} track={track} />
         </>
       ),
     },
@@ -299,7 +327,29 @@ function TrackDetail() {
       icon: ActivityIcon,
       title: 'Signal strength over time',
       description: `${rssiSamples.length} RSSI samples · peak ${peakRssi}`,
-      content: <RssiChart samples={rssiSamples} height={160} />,
+      content: (
+        <>
+          <RssiChart samples={rssiSamples} height={160} />
+          {rssiSamples.length > 0 ? (
+            <div className="mt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  downloadText(
+                    `${exportBasename(track)}-rssi.csv`,
+                    'text/csv',
+                    rssiCsv(rssiSamples),
+                  )
+                }
+              >
+                <DownloadIcon aria-hidden />
+                RSSI CSV
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ),
     },
   ]
 
@@ -363,7 +413,7 @@ function TrackDetail() {
  */
 const HISTORY_ROWS = 500
 
-function PositionHistory({ history }: { history: Position[] }) {
+function PositionHistory({ history, track }: { history: Position[]; track: Track }) {
   const format = useFormat()
   // Reversed once, here, instead of separately in each of the two renderings.
   const rows = [...history].reverse().slice(0, HISTORY_ROWS)
@@ -390,6 +440,42 @@ function PositionHistory({ history }: { history: Position[] }) {
       </summary>
 
       <div className="border-border bg-muted/10 border-t p-3">
+        {/* The whole recorded flight, not the HISTORY_ROWS render cap: the
+            export exists precisely for the data too long to read on screen.
+            CSV for spreadsheets; GeoJSON drops straight onto any map tool,
+            already in its lon-lat order. */}
+        {history.length > 0 ? (
+          <div className="mb-3 flex flex-wrap gap-1.5 px-1">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                downloadText(
+                  `${exportBasename(track)}-path.csv`,
+                  'text/csv',
+                  positionsCsv(history),
+                )
+              }
+            >
+              <DownloadIcon aria-hidden />
+              CSV
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                downloadText(
+                  `${exportBasename(track)}-path.geojson`,
+                  'application/geo+json',
+                  pathGeoJson(track, history),
+                )
+              }
+            >
+              <DownloadIcon aria-hidden />
+              GeoJSON
+            </Button>
+          </div>
+        ) : null}
         {history.length === 0 ? (
           <p className="text-muted-foreground px-1 py-3 text-sm">No position history.</p>
         ) : (
