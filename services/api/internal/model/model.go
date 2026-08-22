@@ -96,8 +96,22 @@ type Track struct {
 	// Clients must tolerate its absence either way (track.schema.json).
 	Operator *OperatorPosition `json:"operator,omitempty"`
 
-	RSSIdBm        *float64 `json:"rssi_dbm,omitempty"`
-	ADSBCorrelated bool     `json:"adsb_correlated"`
+	RSSIdBm *float64 `json:"rssi_dbm,omitempty"`
+	// Receivers attributes RSSIdBm to the radio that measured it, and records
+	// which radios heard this track at all. Carried through rather than
+	// recomputed: this struct is what a stored track decodes into, so a field
+	// missing here is a field silently dropped between fusion and every client.
+	Receivers      []Receiver `json:"receivers,omitempty"`
+	ADSBCorrelated bool       `json:"adsb_correlated"`
+}
+
+// Receiver mirrors the per-receiver entry in track.schema.json.
+type Receiver struct {
+	SensorID       string     `json:"sensor_id"`
+	SensorKind     string     `json:"sensor_kind"`
+	DetectionCount int        `json:"detection_count"`
+	RSSIdBm        *float64   `json:"rssi_dbm,omitempty"`
+	LastSeen       *time.Time `json:"last_seen,omitempty"`
 }
 
 // TrackStates is the closed set from track.schema.json, used to reject

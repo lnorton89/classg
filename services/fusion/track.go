@@ -164,6 +164,55 @@ func (m EvidenceMap) MarshalJSON() ([]byte, error) {
 	return json.Marshal(out)
 }
 
+// Receiver is one radio's contribution to a track.
+//
+// A unit carries several receivers covering different parts of the spectrum --
+// two Wi-Fi radios on a split channel plan, an SDR, an ADS-B feed. Until this
+// existed the track kept only sensor_KIND, so everything a second radio told you
+// that the first did not was discarded at the door: which radio heard it, how
+// much each contributed, and what each measured.
+//
+// The RSSI matters most. Track.RSSIdBm is the peak across every receiver, and
+// the two Wi-Fi adapters have different antennas and different gain, so that
+// peak is whichever radio hears loudest rather than how close the aircraft got.
+// Split out per receiver, each number is comparable with itself over time.
+//
+// This is the observation-provenance half of ADR-0009 stage 2 ("which sensors
+// contributed"), arrived at for the local two-radio case rather than the
+// networked one. The other half -- a weighted-centroid estimate and its error
+// radius -- deliberately does NOT live here: that needs the sensor-site
+// registry ADR-0009 stage 1 describes, because fusion still does not know where
+// any of its receivers are. Per-receiver RSSI without receiver positions is
+// evidence, not a fix, and must not be rendered as one.
+type Receiver struct {
+	SensorID       string    `json:"sensor_id"`
+	SensorKind     string    `json:"sensor_kind"`
+	DetectionCount int       `json:"detection_count"`
+	RSSIdBm        *float64  `json:"rssi_dbm,omitempty"`
+	LastSeen       time.Time `json:"last_seen"`
+}
+
+// ReceiverMap is the in-memory index, keyed by sensor id for O(1) update on
+// every detection. Same trade as EvidenceMap, and the same marshalling problem.
+type ReceiverMap map[string]*Receiver
+
+// MarshalJSON emits the schema shape: an array, sorted by sensor_id so the same
+// track serialises identically twice. Go randomises map iteration order, and a
+// track whose JSON changed on every publish would defeat every diff and cache
+// downstream of here.
+func (m ReceiverMap) MarshalJSON() ([]byte, error) {
+	ids := make([]string, 0, len(m))
+	for id := range m {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	out := make([]*Receiver, 0, len(m))
+	for _, id := range ids {
+		out = append(out, m[id])
+	}
+	return json.Marshal(out)
+}
+
 type Identity struct {
 	Serial     string   `json:"serial,omitempty"`
 	MACs       []string `json:"macs,omitempty"`
@@ -198,6 +247,11 @@ type Track struct {
 	// close did it get".
 	RSSIdBm *float64 `json:"rssi_dbm,omitempty"`
 
+	// Receivers attributes the line above. Empty is omitted, so a detection
+	// stream with no sensor_id -- which validate() already rejects -- degrades
+	// to exactly the previous wire shape rather than to an empty array.
+	Receivers ReceiverMap `json:"receivers,omitempty"`
+
 	ADSBCorrelated bool `json:"adsb_correlated"`
 }
 
@@ -226,6 +280,39 @@ func (t *Track) addEvidence(class, sensorKind string, weight float64, at time.Ti
 	e.Count++
 	e.LastSeen = at
 	t.recomputeConfidence()
+}
+
+// noteReceiver records which radio heard this detection and what it measured.
+//
+// Deliberately NOT folded into addEvidence: evidence is keyed by class, so two
+// radios reporting the same class collapse into one entry with count++ -- which
+// is right for confidence (they are not independent observations of a different
+// fact) and wrong for attribution (they are different radios). Keeping them
+// separate is what lets confidence stay honest while the track still records
+// that two receivers heard it.
+func (t *Track) noteReceiver(d Detection) {
+	if d.SensorID == "" {
+		return
+	}
+	if t.Receivers == nil {
+		t.Receivers = make(ReceiverMap)
+	}
+	r, ok := t.Receivers[d.SensorID]
+	if !ok {
+		r = &Receiver{SensorID: d.SensorID, SensorKind: d.SensorKind}
+		t.Receivers[d.SensorID] = r
+	}
+	r.DetectionCount++
+	// Guarded like Track.LastSeen: detections arrive out of order, and an older
+	// one must not drag this receiver's clock backwards.
+	if d.TS.After(r.LastSeen) {
+		r.LastSeen = d.TS
+	}
+	// Copied, not aliased, for the reason given at Track.RSSIdBm.
+	if v := d.RF.RSSIdBm; v != nil && (r.RSSIdBm == nil || *v > *r.RSSIdBm) {
+		peak := *v
+		r.RSSIdBm = &peak
+	}
 }
 
 func (t *Track) updateState(now time.Time, lifecycle Lifecycle) {
@@ -483,6 +570,7 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 	}
 	t.DetectionCount++
 	t.addEvidence(d.DetectionClass, d.SensorKind, s.weights[d.DetectionClass], d.TS)
+	t.noteReceiver(d)
 
 	// Copied, not aliased: d is a value here but holding a pointer into it
 	// keeps the whole Detection alive, and the next caller's frame is nobody's

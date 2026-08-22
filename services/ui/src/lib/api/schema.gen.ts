@@ -187,7 +187,23 @@ export interface Track {
    * SENSITIVE. Omitted by the API unless CLASSG_EXPOSE_OPERATOR_LOCATION=true. Clients MUST tolerate absence.
    */
   operator?: Position | null
+  /**
+   * Strongest signal ANY receiver on this track reported. On a unit with two Wi-Fi radios of different gain this is a mixed measure -- use `receivers` to attribute it before treating it as a range proxy.
+   */
   rssi_dbm?: number | null
+  /**
+   * Per-receiver contribution, sorted by sensor_id. A unit can carry several radios covering different parts of the spectrum, and the same aircraft heard by more than one of them is corroboration a single receiver cannot provide. Also the only place a per-radio RSSI survives: `rssi_dbm` above flattens them together.
+   */
+  receivers?: {
+    sensor_id: string
+    sensor_kind: 'wifi' | 'sdr' | 'ble' | 'net'
+    /**
+     * Detections this receiver contributed. These sum to detection_count, which therefore counts one beacon twice when two receivers both hear it -- unavoidable on overlapping channel plans, and visible here rather than only in the total.
+     */
+    detection_count: number
+    rssi_dbm?: number | null
+    last_seen?: string
+  }[]
   adsb_correlated?: boolean
 }
 export interface Position {

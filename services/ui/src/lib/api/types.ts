@@ -14,6 +14,8 @@ export type DetectionClass = Detection['detection_class']
 export type SensorKind = Detection['sensor_kind']
 export type TrackState = Track['state']
 export type Evidence = NonNullable<Track['evidence']>[number]
+/** One radio's contribution to a track: which heard it, and what it measured. */
+export type Receiver = NonNullable<Track['receivers']>[number]
 
 // ---------------------------------------------------------------------------
 // Health — the most important endpoint in the system.

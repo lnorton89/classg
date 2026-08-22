@@ -112,6 +112,7 @@ func TestGraphQLEveryFieldResolves(t *testing.T) {
           adsb_correlated rssi_dbm
           identity { serial macs vendor manufacturer_code model_hint operator_id ua_type }
           evidence { class sensor_kind weight count last_seen }
+          receivers { sensor_id sensor_kind detection_count rssi_dbm last_seen }
           current { lat lon alt_geodetic_m height_agl_m speed_mps track_deg at }
           history { lat lon at }
           operator { lat lon alt_m at }

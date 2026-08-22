@@ -72,6 +72,22 @@ var evidenceType = graphql.NewObject(graphql.ObjectConfig{
 	},
 })
 
+var receiverType = graphql.NewObject(graphql.ObjectConfig{
+	Name: "Receiver",
+	Description: "One radio's contribution to a track. Evidence answers 'why do we " +
+		"believe this is a drone'; this answers 'which of our radios heard it'. " +
+		"On a unit with two Wi-Fi adapters of different gain, the track's own " +
+		"rssi_dbm is the louder radio's peak rather than a range proxy -- this " +
+		"is where a per-radio figure survives.",
+	Fields: graphql.Fields{
+		"sensor_id":       &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		"sensor_kind":     &graphql.Field{Type: graphql.NewNonNull(graphql.String)},
+		"detection_count": &graphql.Field{Type: graphql.NewNonNull(graphql.Int)},
+		"rssi_dbm":        &graphql.Field{Type: graphql.Float},
+		"last_seen":       &graphql.Field{Type: graphql.DateTime},
+	},
+})
+
 var trackIdentityType = graphql.NewObject(graphql.ObjectConfig{
 	Name: "TrackIdentity",
 	Fields: graphql.Fields{
@@ -209,6 +225,7 @@ func init() {
 	trackType.AddFieldConfig("history", &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(positionType))})
 	trackType.AddFieldConfig("operator", &graphql.Field{Type: operatorPositionType})
 	trackType.AddFieldConfig("rssi_dbm", &graphql.Field{Type: graphql.Float})
+	trackType.AddFieldConfig("receivers", &graphql.Field{Type: graphql.NewList(graphql.NewNonNull(receiverType))})
 	trackType.AddFieldConfig("adsb_correlated", &graphql.Field{Type: graphql.NewNonNull(graphql.Boolean)})
 	// The whole reason this API exists alongside REST. Over REST, tracks plus
 	// their detections is one list call and then one call per track, on a link

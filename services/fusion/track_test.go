@@ -266,6 +266,121 @@ func TestTrackMarshalsEvidenceAsSchemaArray(t *testing.T) {
 	}
 }
 
+// detFrom is det() heard by a named radio. A unit carries more than one, and
+// until Receivers existed the track could not say which.
+func detFrom(sensorID, class, serial, mac string, ts time.Time) Detection {
+	d := det(class, serial, mac, ts)
+	d.SensorID = sensorID
+	return d
+}
+
+func withRSSI(d Detection, dbm float64) Detection {
+	d.RF.RSSIdBm = &dbm
+	return d
+}
+
+// The capability two radios actually buy, which fusion used to discard: the
+// same aircraft heard by both is corroboration one radio cannot give you.
+func TestTwoReceiversOnOneAircraftAreBothRecorded(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+
+	s.Ingest(detFrom("wifi-0", "A", "SER1", "", now), now)
+	tr := s.Ingest(detFrom("wifi-1", "A", "SER1", "", now.Add(time.Second)), now)
+
+	if len(tr.Receivers) != 2 {
+		t.Fatalf("receivers = %d, want both radios", len(tr.Receivers))
+	}
+	// One aircraft, one track -- the split is attribution, not duplication.
+	if tr.DetectionCount != 2 {
+		t.Fatalf("detection_count = %d, want 2", tr.DetectionCount)
+	}
+	total := 0
+	for _, r := range tr.Receivers {
+		total += r.DetectionCount
+	}
+	if total != tr.DetectionCount {
+		t.Fatalf("per-receiver counts sum to %d, track says %d", total, tr.DetectionCount)
+	}
+}
+
+// The reason this is worth a schema change. Track.RSSIdBm is the peak across
+// every radio, and the ALFA and the TP-Link have different antennas and
+// different gain -- so on its own that number says which radio hears loudest,
+// not how close the aircraft got.
+func TestPerReceiverRSSIIsNotFlattenedTogether(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+
+	s.Ingest(withRSSI(detFrom("wifi-0", "A", "SER1", "", now), -46), now)
+	s.Ingest(withRSSI(detFrom("wifi-0", "A", "SER1", "", now.Add(time.Second)), -52), now)
+	tr := s.Ingest(withRSSI(detFrom("wifi-1", "A", "SER1", "", now.Add(2*time.Second)), -71), now)
+
+	if tr.RSSIdBm == nil || *tr.RSSIdBm != -46 {
+		t.Fatalf("track peak = %v, want the overall peak -46 unchanged", tr.RSSIdBm)
+	}
+	if got := tr.Receivers["wifi-0"].RSSIdBm; got == nil || *got != -46 {
+		t.Fatalf("wifi-0 peak = %v, want -46", got)
+	}
+	if got := tr.Receivers["wifi-1"].RSSIdBm; got == nil || *got != -71 {
+		t.Fatalf("wifi-1 peak = %v, want -71 and not the other radio's -46", got)
+	}
+}
+
+// Confidence must NOT rise just because a second radio heard the same class.
+// The two are not independent observations of different facts, and noisy-OR
+// already overstates -- see Track.recomputeConfidence. This is why attribution
+// lives beside evidence rather than inside it.
+func TestASecondReceiverDoesNotInflateConfidence(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+
+	one := s.Ingest(detFrom("wifi-0", "A", "SER1", "", now), now).Confidence
+	two := s.Ingest(detFrom("wifi-1", "A", "SER1", "", now.Add(time.Second)), now).Confidence
+
+	if one != two {
+		t.Fatalf("confidence moved %v -> %v when a second radio heard the same class", one, two)
+	}
+}
+
+func TestReceiversMarshalAsASortedSchemaArray(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+	s.Ingest(detFrom("wifi-1", "A", "SER1", "", now), now)
+	tr := s.Ingest(detFrom("wifi-0", "A", "SER1", "", now.Add(time.Second)), now)
+
+	body, err := json.Marshal(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire struct {
+		Receivers []Receiver `json:"receivers"`
+	}
+	if err := json.Unmarshal(body, &wire); err != nil {
+		t.Fatalf("receivers did not decode as an array: %v; body=%s", err, body)
+	}
+	// Sorted by sensor_id despite arriving in the other order, so the same
+	// track serialises identically twice.
+	if len(wire.Receivers) != 2 || wire.Receivers[0].SensorID != "wifi-0" {
+		t.Fatalf("receivers = %+v, want wifi-0 first", wire.Receivers)
+	}
+}
+
+// A single-radio unit must serialise exactly as it did before this field
+// existed rather than growing an empty array in every track.
+func TestASingleReceiverStillEmitsOneEntryAndNoMore(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+	tr := s.Ingest(det("A", "SER1", "", now), now)
+
+	if len(tr.Receivers) != 1 {
+		t.Fatalf("receivers = %d, want 1", len(tr.Receivers))
+	}
+	if tr.Receivers["wifi-0"].SensorKind != "wifi" {
+		t.Fatalf("sensor_kind = %q", tr.Receivers["wifi-0"].SensorKind)
+	}
+}
+
 // speed_mps and track_deg are defined on the schema's position; a detection
 // that reports kinematics must not serve them as null forever.
 func TestPositionCarriesKinematics(t *testing.T) {

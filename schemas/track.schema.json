@@ -62,7 +62,30 @@
       "description": "SENSITIVE. Omitted by the API unless CLASSG_EXPOSE_OPERATOR_LOCATION=true. Clients MUST tolerate absence."
     },
 
-    "rssi_dbm": { "type": ["number", "null"] },
+    "rssi_dbm": {
+      "type": ["number", "null"],
+      "description": "Strongest signal ANY receiver on this track reported. On a unit with two Wi-Fi radios of different gain this is a mixed measure -- use `receivers` to attribute it before treating it as a range proxy."
+    },
+    "receivers": {
+      "type": "array",
+      "description": "Per-receiver contribution, sorted by sensor_id. A unit can carry several radios covering different parts of the spectrum, and the same aircraft heard by more than one of them is corroboration a single receiver cannot provide. Also the only place a per-radio RSSI survives: `rssi_dbm` above flattens them together.",
+      "items": {
+        "type": "object",
+        "required": ["sensor_id", "sensor_kind", "detection_count"],
+        "additionalProperties": false,
+        "properties": {
+          "sensor_id": { "type": "string" },
+          "sensor_kind": { "enum": ["wifi", "sdr", "ble", "net"] },
+          "detection_count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Detections this receiver contributed. These sum to detection_count, which therefore counts one beacon twice when two receivers both hear it -- unavoidable on overlapping channel plans, and visible here rather than only in the total."
+          },
+          "rssi_dbm": { "type": ["number", "null"] },
+          "last_seen": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
     "adsb_correlated": { "type": "boolean" }
   },
 

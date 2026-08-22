@@ -195,6 +195,12 @@ func TestTrackRoundTripsThroughTheSchema(t *testing.T) {
 	    "B": {"class": "B", "sensor_kind": "wifi", "weight": 0.3, "count": 12,
 	          "last_seen": "2026-08-11T14:23:59.000Z"}
 	  },
+	  "receivers": [
+	    {"sensor_id": "wifi-0", "sensor_kind": "wifi", "detection_count": 30,
+	     "rssi_dbm": -46.0, "last_seen": "2026-08-11T14:24:02.100Z"},
+	    {"sensor_id": "wifi-1", "sensor_kind": "wifi", "detection_count": 12,
+	     "rssi_dbm": -71.0, "last_seen": "2026-08-11T14:23:59.000Z"}
+	  ],
 	  "current": {"lat": 47.3769, "lon": 8.5417, "alt_geodetic_m": 510.0,
 	              "at": "2026-08-11T14:24:02.100Z"}
 	}`
@@ -232,5 +238,21 @@ func TestTrackRoundTripsThroughTheSchema(t *testing.T) {
 	}
 	if len(ev) != 2 {
 		t.Fatalf("evidence has %d entries, want 2", len(ev))
+	}
+
+	// Track is a struct, so a field it does not declare is dropped in silence
+	// on the way through -- the API would keep serving schema-valid tracks with
+	// the per-receiver attribution quietly missing, which is indistinguishable
+	// downstream from a unit that only ever had one radio.
+	rx, ok := round["receivers"].([]any)
+	if !ok {
+		t.Fatalf("receivers came out as %T, want an array", round["receivers"])
+	}
+	if len(rx) != 2 {
+		t.Fatalf("receivers has %d entries, want both radios", len(rx))
+	}
+	first, _ := rx[0].(map[string]any)
+	if first["sensor_id"] != "wifi-0" || first["rssi_dbm"] != -46.0 {
+		t.Fatalf("first receiver = %+v, want wifi-0 at -46 dBm", first)
 	}
 }
