@@ -198,10 +198,24 @@ def from_dji(sensor_id: str, beacon: Beacon,
         "id_type": "serial_ansi_cta_2063",
         "vendor_hint": "dji",
     }
+    # height_agl_m is NOT payload.height_m, however tempting the field names
+    # look. DJI DroneID's height is measured from the takeoff point -- see
+    # docs/ops/04-calibration.md, where a Mini 5 Pro was observed reporting
+    # exactly that -- and height_agl_m means height above the ground under the
+    # aircraft. The two agree only when the drone took off from directly below
+    # where it is now, so publishing one as the other is a number that is right
+    # on a hover and silently wrong on every flight that goes anywhere.
+    #
+    # The Class A path above has always had this right (it gates on the ODID
+    # height-type flag and drops the value when it means "over takeoff"); this
+    # one did not, so the same aircraft contradicted itself depending on which
+    # of its two beacons was decoded. The schema has no field for a
+    # takeoff-referenced height, so it is dropped rather than mislabelled --
+    # fusion derives a real height_agl_m from terrain when that is switched on,
+    # and the raw bytes are retained either way.
     d["position"] = _position(
         payload.lat, payload.lon,
         alt_geodetic_m=payload.altitude_m,
-        height_agl_m=payload.height_m,
     )
     d["kinematics"] = {
         "speed_mps": payload.speed_mps,
