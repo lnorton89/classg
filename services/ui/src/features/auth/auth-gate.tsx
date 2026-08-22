@@ -24,8 +24,10 @@
  * on screen before sign-in, including toasts announcing live detections.
  */
 import { useQuery } from '@tanstack/react-query'
+import { RotateCwIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/misc'
 import { authMeQuery } from '@/lib/api/queries'
 import { LoginScreen } from './login-screen'
@@ -45,7 +47,9 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }
 
   // The API is unreachable. Not a login problem, and saying "log in" here would
-  // send someone to type a password at a server that is not answering.
+  // send someone to type a password at a server that is not answering. The query
+  // keeps retrying on its own (see authMeQuery), so this screen is a degraded
+  // state that heals itself when the API returns -- not a dead end.
   if (me.isError && !me.data) {
     return (
       <div className="mx-auto w-full max-w-md p-8 text-center">
@@ -53,6 +57,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
           This is not a sign-in problem — the browser could not reach the ClassG API at all.
           Check that the service is running.
+        </p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          disabled={me.isFetching}
+          onClick={() => void me.refetch()}
+        >
+          <RotateCwIcon className="size-4" aria-hidden />
+          {me.isFetching ? 'Trying…' : 'Try again now'}
+        </Button>
+        <p className="text-muted-foreground/70 mt-3 text-xs">
+          Retrying automatically every few seconds.
         </p>
       </div>
     )

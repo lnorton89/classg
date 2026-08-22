@@ -10,7 +10,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query'
 
-import { api } from './client'
+import { ApiError, api } from './client'
 import { trackWithDetections } from './graphql'
 import type { Detection, DetectionsQuery, TracksQuery } from './types'
 
@@ -271,9 +271,19 @@ export const authMeQuery = () =>
     queryFn: () => api.authMe(),
     staleTime: 30_000,
     refetchOnWindowFocus: true,
-    // Never retried. A 401 is a definite answer, and retrying it three times
-    // just delays the login screen.
-    retry: false,
+    // An ApiError is a definite answer -- a 401 retried three times just delays
+    // the login screen. A network failure is not an answer at all: one dropped
+    // fetch during a page load used to latch the whole app on the "API is not
+    // answering" screen until somebody reloaded, so those get two quick retries.
+    retry: (failureCount, error) => !(error instanceof ApiError) && failureCount < 2,
+    // Quick, not exponential: a blip either clears in a moment or the operator
+    // needs the "not answering" screen (which keeps retrying anyway). The
+    // default backoff held a blank skeleton for three seconds first.
+    retryDelay: 400,
+    // And while the gate is showing that screen, keep asking. The console is
+    // designed to be left running unattended; it must find its own way back
+    // when the API returns rather than waiting for a human to reload it.
+    refetchInterval: (query) => (query.state.status === 'error' ? 5_000 : false),
   })
 
 export const hookRulesQuery = () =>

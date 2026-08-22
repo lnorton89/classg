@@ -101,10 +101,15 @@ describe('AuthGate', () => {
     authMe.mockRejectedValue(new Error('network down'))
     renderGate()
 
-    await waitFor(() =>
-      expect(screen.getByText(/The API is not answering/)).toBeInTheDocument(),
+    // The screen appears only after the two quick network retries
+    // (authMeQuery's retry + retryDelay), so this wait outlasts them.
+    await waitFor(
+      () => expect(screen.getByText(/The API is not answering/)).toBeInTheDocument(),
+      { timeout: 4000 },
     )
     expect(screen.queryByLabelText(/Password/)).not.toBeInTheDocument()
+    // Not a dead end any more: it offers a retry and keeps retrying itself.
+    expect(screen.getByRole('button', { name: /Try again now/ })).toBeInTheDocument()
   })
 
   it('surfaces an SSO failure passed back in the query string', async () => {
