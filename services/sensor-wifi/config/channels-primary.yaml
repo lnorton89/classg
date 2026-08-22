@@ -13,8 +13,10 @@
 #
 #   2. It hand-rolled a job the hopper already does better. On a detection the
 #      hopper locks to that channel for escalation_hold_s and still scans every
-#      escalation_scan_every dwells (~9% of listening time), so the fast lock is
-#      already there -- without giving up discovery to get it.
+#      escalation_scan_every dwells -- ~0.5% of listening time on this adapter
+#      once the hop cost was measured rather than assumed, not the ~9% this
+#      comment used to claim -- so the fast lock is already there, without
+#      giving up discovery to get it.
 #
 # The weights keep channel 6 dominant (~83% of dwells) so the intent survives:
 # 1 and 11 are the other two non-overlapping 2.4 GHz channels, visited often

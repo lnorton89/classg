@@ -126,7 +126,11 @@ the weighted sweep, drawn from every channel *except* the locked one. Without th
 the trade above stops being a trade: a drone transmitting continuously refreshes the hold
 forever, and on 2026-08-17 one held ch6 for a 2 m 45 s flight during which the radio visited no
 other channel at all — a second aircraft anywhere else would have been invisible for the
-duration. The reservation costs ~9% of listening time at the default 3× escalated dwell. Watch
+duration. The reservation was documented as costing ~9% of listening time; that came from the
+140 ms hop cost the hopper used to assume, and the measured cost (10.6 ms on the ALFA, 27 ms on
+the TP-Link — see [02-wifi-adapter.md](../ops/02-wifi-adapter.md)) makes it **~0.5% and ~1.3%**
+respectively. Scanning more often while locked is therefore far cheaper than the old figure
+implied. Watch
 `scan_dwells` against `escalations` in the efficiency report; flat while escalations climb
 means the lock is absolute again.
 

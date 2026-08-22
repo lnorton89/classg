@@ -28,6 +28,7 @@ If you read three documents, read these:
 | [Overview](architecture/overview.md) | Components, channel strategy, track lifecycle, failure modes |
 | [Data model](architecture/data-model.md) | Detection and Track types, confidence scoring, retention |
 | [API contract v1](architecture/api-contract.md) | Normative interface for the api service, CLI, and web app |
+| [API implementation notes](architecture/api-implementation.md) | Where the API knowingly deviates from that contract, and why |
 
 ### Decision records
 

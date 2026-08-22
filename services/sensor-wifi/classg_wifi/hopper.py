@@ -64,7 +64,7 @@ class ChannelHopper:
         self,
         channels: list[ChannelSpec],
         base_dwell_ms: int = 400,
-        hop_latency_ms: int = 140,
+        hop_latency_ms: int = 20,
         escalation_hold_s: float = 30.0,
         escalation_scan_every: int = 4,
         rng: random.Random | None = None,
@@ -107,7 +107,21 @@ class ChannelHopper:
         # any other channel for the whole flight: a 5.8 GHz emitter that had been
         # sampled twice before takeoff was never seen again, and a second
         # aircraft anywhere else would have been invisible for the duration.
-        # At the default 3x escalated dwell that costs ~9% of listening time.
+        # That reservation was described as costing ~9% of listening time, a
+        # figure that came from the 140 ms hop cost this class used to assume.
+        # With the measured cost it is nearly free. Per cycle of four dwells --
+        # three locked at 3x400 ms with no retune, one scan dwell at 400 ms
+        # costing two hops, away and back:
+        #
+        #     hop cost   listening/wall   reservation costs
+        #     140 ms       4000/4280           6.5%
+        #      10 ms ALFA  4000/4020           0.5%
+        #      27 ms TP-L  4000/4054           1.3%
+        #
+        # Arithmetic from the measured hop cost, not a field measurement of
+        # detections gained. It matters because the objection to scanning MORE
+        # often while locked was its cost, and that objection has largely gone:
+        # lowering escalation_scan_every is now cheap to try.
         self.escalation_scan_every = escalation_scan_every
         self._rng = rng or random.Random()
 
