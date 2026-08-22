@@ -842,6 +842,28 @@ if [ -f .gitmodules ]; then
     fi
 fi
 
+# `docker compose up` compares container config, not image identity, and on
+# this box that has left a service running an image its tag had moved past:
+# the api ran a day behind classg-api:local while `up` printed "Running",
+# because its layer cache re-minted the same tag in an earlier pass and
+# compose saw nothing to do. So trust is verified after every up: any service
+# whose running container is not on the image its tag currently names is
+# recreated by name. Prints one service per line; empty means no drift.
+drifted_services() (
+    cd "$REPO_DIR/docker" || exit 0
+    docker compose ${COMPOSE_ENV_ARGS[@]+"${COMPOSE_ENV_ARGS[@]}"} ps --format '{{.Service}}' 2>/dev/null |
+        while read -r svc; do
+            cid=$(docker compose ${COMPOSE_ENV_ARGS[@]+"${COMPOSE_ENV_ARGS[@]}"} ps -q "$svc" 2>/dev/null | head -n 1)
+            [ -n "$cid" ] || continue
+            running=$(docker inspect "$cid" --format '{{.Image}}' 2>/dev/null)
+            image_ref=$(docker inspect "$cid" --format '{{.Config.Image}}' 2>/dev/null)
+            tagged=$(docker image inspect "$image_ref" --format '{{.Id}}' 2>/dev/null)
+            if [ -n "$running" ] && [ -n "$tagged" ] && [ "$running" != "$tagged" ]; then
+                echo "$svc"
+            fi
+        done
+)
+
 # The web tier. --build because the images are built on this box; there is no
 # registry, and for one Pi there does not need to be.
 if changed_in "services/api" || changed_in "services/fusion" || changed_in "services/ui" || changed_in "docker"; then
@@ -849,6 +871,18 @@ if changed_in "services/api" || changed_in "services/fusion" || changed_in "serv
     if ! run_logged "$REPO_DIR/docker" 20 -- docker compose ${COMPOSE_ENV_ARGS[@]+"${COMPOSE_ENV_ARGS[@]}"} up -d --build; then
         DEPLOY_OK=0
         fail_step "docker compose could not build or start the web tier"
+    else
+        drifted=$(drifted_services)
+        if [ -n "$drifted" ]; then
+            log "recreating services running a stale image: $(echo "$drifted" | tr '
+' ' ')"
+            # $drifted is a newline list of single-word service names; splitting is the point.
+            # shellcheck disable=SC2086
+            if ! run_logged "$REPO_DIR/docker" 10 -- docker compose ${COMPOSE_ENV_ARGS[@]+"${COMPOSE_ENV_ARGS[@]}"} up -d --force-recreate --no-deps $drifted; then
+                DEPLOY_OK=0
+                fail_step "a service was left running a stale image and could not be recreated"
+            fi
+        fi
     fi
 else
     log "web tier unchanged; not rebuilding"
@@ -968,6 +1002,14 @@ log "$ROLLBACK_REASON; rolling back to ${LOCAL:0:8}"
 git checkout --quiet "$LOCAL" || die "rollback checkout failed -- this unit needs hands"
 if changed_in "services/api" || changed_in "services/fusion" || changed_in "services/ui" || changed_in "docker"; then
     run_logged "$REPO_DIR/docker" 5 -- docker compose ${COMPOSE_ENV_ARGS[@]+"${COMPOSE_ENV_ARGS[@]}"} up -d --build || true
+    # Best-effort, like the up above it: a rollback rebuild hits the same layer
+    # cache and can strand a container on the failed version's image.
+    drifted=$(drifted_services)
+    if [ -n "$drifted" ]; then
+        # Newline list of single-word service names; splitting is the point.
+        # shellcheck disable=SC2086
+        run_logged "$REPO_DIR/docker" 10 -- docker compose ${COMPOSE_ENV_ARGS[@]+"${COMPOSE_ENV_ARGS[@]}"} up -d --force-recreate --no-deps $drifted || true
+    fi
 fi
 log "rolled back. This unit stays on ${LOCAL:0:8} until someone looks at ${REMOTE:0:8}."
 DEPLOY_OK_JSON=false
