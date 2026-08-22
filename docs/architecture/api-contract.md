@@ -320,7 +320,7 @@ Milestone 0 is capture-driven, so this is first-class rather than an afterthough
   "capture_id": "01J8...", "filename": "2026-08-10-first-flight.pcap",
   "state": "completed",            // running | completed | failed
   "started_at": "...", "ended_at": "...",
-  "iface": "wlan1", "channel": 6, "duration_s": 120,
+  "iface": "wlan-alfa", "channel": 6, "duration_s": 120,
   "size_bytes": 481233, "frame_count": 1841,
   "analysis": { "analyzed": true, "drone_transmitters": 1, "class_a": 118, "class_b": 0 }
 } ] }
@@ -328,7 +328,7 @@ Milestone 0 is capture-driven, so this is first-class rather than an afterthough
 
 ### `POST /captures`
 ```jsonc
-{ "iface": "wlan1", "channel": 6, "duration_s": 120, "label": "first-flight" }
+{ "iface": "wlan-alfa", "channel": 6, "duration_s": 120, "label": "first-flight" }
 ```
 `202 Accepted` with the capture object. Runs the same path as `scripts/first-capture.sh`.
 

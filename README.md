@@ -236,7 +236,7 @@ recording the wrong channel. Set up monitor mode before every session:
 make monitor                 # wraps scripts/setup-monitor.sh; IFACE=wlan2 to override
 cd services/sensor-wifi
 .venv/bin/python -m classg_wifi.cli capture \
-  --iface wlan1 --channel 6 --out ../../captures/dji-first-flight.pcap
+  --iface wlan-alfa --channel 6 --out ../../captures/dji-first-flight.pcap
 ```
 
 Replaying your own capture works exactly like the synthetic one above. For the

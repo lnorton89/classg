@@ -8,7 +8,7 @@ layers down. Work bottom-up:
 ```
 1. Is the device enumerated?        lsusb, dmesg
 2. Is the driver bound?             dmesg | grep -i mt7921 / rtl
-3. Is the interface in the right mode?   iw dev wlan1 info
+3. Is the interface in the right mode?   iw dev wlan-alfa info
 4. Are frames arriving at all?      tcpdump -c 20
 5. Are drone IEs present?           wireshark: wlan.tag.number == 221
 6. Is the parser decoding them?     classg-sensor-wifi replay
@@ -27,10 +27,10 @@ assuming your stack is broken.
 
 | Check | Command |
 |---|---|
-| Frames arriving | `sudo tcpdump -i wlan1 -c 20 -e "type mgt subtype beacon"` |
-| On the right channel | `iw dev wlan1 info` — is it parked where the drone beacons? |
+| Frames arriving | `sudo tcpdump -i wlan-alfa -c 20 -e "type mgt subtype beacon"` |
+| On the right channel | `iw dev wlan-alfa info` — is it parked where the drone beacons? |
 | Interference taken the interface | `sudo airmon-ng check kill` |
-| Power management dropping frames | `iw dev wlan1 set power_save off` |
+| Power management dropping frames | `iw dev wlan-alfa set power_save off` |
 
 **Channel is the most common cause.** With weighted hopping the sensor is only on any given
 channel a fraction of the time. For debugging, **lock to one channel** and confirm detection
@@ -76,7 +76,7 @@ dwells for the sweep; `scan_dwells` in the hopper's efficiency report should cli
 |---|---|---|
 | Stops after minutes, interface still up | mt7921u wedged | Replug. Confirm you're not setting *active* monitor anywhere. |
 | Stops when the SDR is running | USB power brownout | `dmesg \| grep -i "usb.*reset"`. Powered hub or better PSU. |
-| Stops after a NetworkManager event | Interface reclaimed | `nmcli device set wlan1 managed no` |
+| Stops after a NetworkManager event | Interface reclaimed | `nmcli device set wlan-alfa managed no` |
 | Gradual degradation | Thermal throttling | `vcgencmd measure_temp` |
 
 ---
@@ -216,7 +216,7 @@ bench with no network. A unit on a tailnet is not that.
 
 ```bash
 # What's on this interface right now
-sudo tcpdump -i wlan1 -e -c 50 "type mgt subtype beacon" | awk '{print $NF}' | sort | uniq -c
+sudo tcpdump -i wlan-alfa -e -c 50 "type mgt subtype beacon" | awk '{print $NF}' | sort | uniq -c
 
 # Watch USB resets in real time
 dmesg -w | grep -i usb

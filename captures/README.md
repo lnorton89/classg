@@ -13,7 +13,7 @@ Milestone 0's exit criterion is a PCAP of your DJI. Everything downstream — ev
 offset, every calibration constant, every regression test — is built against it.
 
 ```bash
-sudo tcpdump -i wlan1 -w captures/dji-first-flight.pcap "type mgt subtype beacon"
+sudo tcpdump -i wlan-alfa -w captures/dji-first-flight.pcap "type mgt subtype beacon"
 ```
 
 Power on the drone → let it acquire GPS → hover → land. Then in Wireshark:

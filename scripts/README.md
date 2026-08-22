@@ -49,8 +49,8 @@ cannot be regenerated -- see
 Start with:
 
 ```bash
-./scripts/check-capture-env.sh wlan1
-sudo ./scripts/first-capture.sh wlan1 6
+./scripts/check-capture-env.sh wlan-alfa
+sudo ./scripts/first-capture.sh wlan-alfa 6
 ```
 
 `setup-monitor.sh` intentionally uses passive monitor mode. Do not switch the

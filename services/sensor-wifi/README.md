@@ -17,7 +17,7 @@ python3 -m venv .venv
 
 ```bash
 # Record beacon-only traffic; requires a monitor-mode interface and tcpdump.
-.venv/bin/python -m classg_wifi.cli capture --iface wlan1 --out ../../captures/capture.pcap
+.venv/bin/python -m classg_wifi.cli capture --iface wlan-alfa --out ../../captures/capture.pcap
 
 # Decode a capture without hardware.
 .venv/bin/python -m classg_wifi.cli replay ../../captures/capture.pcap

@@ -88,7 +88,7 @@ same thing and ages badly.
 **Disable Wi-Fi power management** — it will silently drop frames in monitor mode:
 
 ```bash
-sudo iw dev wlan1 set power_save off
+sudo iw dev wlan-alfa set power_save off
 ```
 
 **Reduce SD card wear** if not using NVMe:

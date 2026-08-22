@@ -100,9 +100,9 @@ transmission, no interaction with the drone.
    ([mt76 #839](https://github.com/openwrt/mt76/issues/839), [USB-WiFi #275](https://github.com/morrownr/USB-WiFi/issues/275))
    Use plain passive monitor:
    ```bash
-   sudo ip link set wlan1 down
-   sudo iw dev wlan1 set type monitor      # NOT: set monitor active
-   sudo ip link set wlan1 up
+   sudo ip link set wlan-alfa down
+   sudo iw dev wlan-alfa set type monitor      # NOT: set monitor active
+   sudo ip link set wlan-alfa up
    ```
 
 2. **Bluetooth and Wi-Fi conflict on this device.** On kernels 6.6+, the BT subsystem sharing

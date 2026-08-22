@@ -32,7 +32,7 @@ brought up yet, [01-pi-setup.md](01-pi-setup.md) →
 ### 1. Preflight — before the drone is airborne
 
 ```bash
-./scripts/check-capture-env.sh wlan1
+./scripts/check-capture-env.sh wlan-alfa
 ```
 
 Every check prints PASS/FAIL/WARN and it exits non-zero on anything blocking. Fix all failures
@@ -44,7 +44,7 @@ nothing in common as fixes.
 ### 2. Capture
 
 ```bash
-sudo ./scripts/first-capture.sh wlan1 6 120
+sudo ./scripts/first-capture.sh wlan-alfa 6 120
 ```
 
 This locks to **one channel** deliberately. With hopping enabled, an empty capture cannot
@@ -57,7 +57,7 @@ Power on the drone → let it acquire GPS → hover → land.
 **If nothing is found on channel 6:**
 
 ```bash
-sudo ./scripts/first-capture.sh wlan1 sweep
+sudo ./scripts/first-capture.sh wlan-alfa sweep
 ```
 
 Walks all 13 channels looking for OUI `26:37:12` and `fa:0b:bc`, then tells you which channel

@@ -126,7 +126,7 @@ The sweep engine stops at 1.766 GHz ([ADR-0004](../architecture/adr/0004-rtlsdr-
 so the Spectrum page has a second source for the bands it cannot reach at all.
 It is not a sweep and it is not an FFT — the Wi-Fi adapter cannot produce one.
 It is the per-channel counters mac80211 already keeps for its own channel
-selection, read with `iw dev wlan1 survey dump`:
+selection, read with `iw dev wlan-alfa survey dump`:
 
 | Reading | What it is |
 |---|---|
@@ -148,7 +148,7 @@ consequences worth knowing before reading the bars:
 ### What this adapter actually reports
 
 **Measured on the unit's ALFA AWUS036AXML (mt7921u) in monitor mode,
-2026-08-18: nothing usable.** `iw dev wlan1 survey dump` enumerates **98
+2026-08-18: nothing usable.** `iw dev wlan-alfa survey dump` enumerates **98
 entries** — every channel the adapter supports across 2.4, 5 and 6 GHz — and
 **not one of them carries busy time, receive time or a noise floor.** The driver
 lists the channels and maintains no statistics for any of them.

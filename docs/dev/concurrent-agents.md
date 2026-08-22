@@ -73,6 +73,44 @@ mess to clean up. Leave them, don't stage them, don't mention them in your
 message, and don't "helpfully" fix a lint error you spot in them — you will
 collide with an editor mid-write.
 
+### When one file holds two sessions' work
+
+The rules above assume a dirty file is *theirs* or *yours*. Sometimes it is
+both, and then following the rules correctly deadlocks everyone: each session
+refuses to commit the file because it carries the other's unfinished change, and
+nothing moves until somebody breaks the tie.
+
+That happened on 2026-08-21 in
+`services/ui/src/routes/tracks/$trackId.tsx`. One session was adding
+height-provenance marks, another a per-receiver signal breakdown. Both committed
+their new modules and held the shared page back — and each said so in its commit
+message, which is how it was eventually spotted. Left alone it would not have
+resolved on its own.
+
+**Check whose lines are in it before planning any commit:**
+
+```bash
+git diff -- path/to/shared.tsx | grep '^+' | grep -i <their-topic>
+```
+
+**Break the tie by removing your own lines, not theirs.**
+
+1. Save your hunk: `git diff -- <file> > scratch.patch`, and copy the file too.
+2. Back your own edits out with precise edits. **Never `git checkout -- <file>`**
+   — that discards their uncommitted work along with yours.
+3. Commit everything of yours that does not touch the shared file.
+4. When they land theirs, re-apply your blocks and commit the file alone.
+
+The file is then unambiguously theirs, so their commit is clean, and yours
+follows. It costs you one extra commit and loses nobody's work.
+
+**If the other session finishes without committing the shared file**, landing
+their work is defensible only when their own commit message says the change was
+finished and deliberately held back. Verify it first — run the checks, don't
+take it on trust — commit it *alone*, and say plainly in the message that the
+change is the other session's work and why this one landed it. Rule zero's harm
+is the silent sweep, not attributed rescue of a colleague's finished change.
+
 ### History rewriting
 
 `git commit --amend` is safe only when all three hold:
