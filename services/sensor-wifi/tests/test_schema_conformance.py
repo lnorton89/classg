@@ -143,12 +143,12 @@ def _dji_telemetry_ie(lat_deg: float, lon_deg: float) -> bytes:
     p += struct.pack("<ii", int(lat_deg * dji.RAD_SCALE), int(lon_deg * dji.RAD_SCALE))
     p += struct.pack("<ii", int(lon_deg * dji.RAD_SCALE), int(lat_deg * dji.RAD_SCALE))
     p += bytes([0x1A, 0x00])
-    return dji.DJI_OUI + bytes([0x00, dji.SUBCMD_TELEMETRY]) + bytes(p)
+    return dji.DJI_OUI + bytes([0x00, 0x00, 0x00, dji.SUBCMD_TELEMETRY]) + bytes(p)
 
 
 def _dji_flight_purpose_ie(purpose: bytes) -> bytes:
     body = b"1581F5FMD234A00A" + bytes([len(purpose)]) + purpose
-    return dji.DJI_OUI + bytes([0x00, dji.SUBCMD_FLIGHT_PURPOSE]) + body
+    return dji.DJI_OUI + bytes([0x00, 0x00, 0x00, dji.SUBCMD_FLIGHT_PURPOSE]) + body
 
 
 def _radiotap_without_channel(rssi_dbm: int = -60) -> bytes:

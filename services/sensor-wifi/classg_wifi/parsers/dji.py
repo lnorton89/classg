@@ -263,13 +263,19 @@ def parse_vendor_ie(ie_body: bytes) -> DjiTelemetry | DjiFlightPurpose | None:
 
     Returns None if this is not a DJI DroneID IE.
 
-    Layout: OUI(3) | vendor byte(1) | subcommand(1) | payload
+    Layout: OUI(3) | vendor_type(1) | unk1(1) | unk2(1) | subcommand(1) | payload
+
+    Confirmed against Kismet's independent dot11_ie_221_dji_droneid parser
+    (both the .h and the .ksy carry the same four single-byte fields ahead of
+    the subcommand) and against real Mavic sample captures on the unit, which
+    decode cleanly at this offset and garbage two bytes earlier. See
+    docs/ops/04-calibration.md.
     """
-    if len(ie_body) < 5 or ie_body[0:3] != DJI_OUI:
+    if len(ie_body) < 7 or ie_body[0:3] != DJI_OUI:
         return None
 
-    subcommand = ie_body[4]
-    r = _Reader(ie_body, 5)
+    subcommand = ie_body[6]
+    r = _Reader(ie_body, 7)
 
     if subcommand == SUBCMD_TELEMETRY:
         return _parse_telemetry(r)

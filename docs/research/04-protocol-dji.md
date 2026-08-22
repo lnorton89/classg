@@ -32,10 +32,18 @@ Reference parsers:
 ```
 Tag 221 (Vendor Specific)
 ├── OUI          26:37:12
-├── unk / vendor byte
+├── vendor_type  1 byte, unknown
+├── unk1         1 byte, unknown
+├── unk2         1 byte, unknown
 ├── subcommand   0x10 or 0x11
 └── payload
 ```
+
+Confirmed against Kismet's `dot11_ie_221_dji_droneid` parser (both the `.h` class and the
+`.ksy` Kaitai Struct definition): three single-byte unknown fields sit between the OUI and the
+subcommand, not one. An earlier version of this diagram showed a single "unk / vendor byte"
+and `parsers/dji.py` was written to match it, which put the subcommand two bytes too early —
+see the resolved entry in [04-calibration.md](../ops/04-calibration.md#resolved-the-header-offset-was-wrong-by-two-bytes--2026-08-22).
 
 Two subcommands:
 

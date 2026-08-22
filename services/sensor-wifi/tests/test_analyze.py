@@ -55,7 +55,7 @@ def _dji_ie() -> bytes:
     p += struct.pack("<ii", raw_lat, raw_lon)  # operator
     p += struct.pack("<ii", raw_lon, raw_lat)  # home
     p += bytes([0x1A, 0x00])
-    return dji.DJI_OUI + bytes([0x00, dji.SUBCMD_TELEMETRY]) + bytes(p)
+    return dji.DJI_OUI + bytes([0x00, 0x00, 0x00, dji.SUBCMD_TELEMETRY]) + bytes(p)
 
 
 @pytest.fixture

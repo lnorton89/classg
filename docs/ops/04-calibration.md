@@ -160,21 +160,45 @@ Mini 2 and older) hovering at an app-indicated 10 m within range of the Wi-Fi se
 `raw["height"]` straight out of the detection: 100 means decimetres, 10 means metres. Nothing
 short of transmitting hardware we do not have can substitute for this.
 
-### Unresolved: the header offset may be wrong by two bytes
+### Resolved: the header offset was wrong by two bytes — 2026-08-22
 
 The third-party Mavic samples on the unit
 (`~/RemoteIDReceiver/Receiver/resources/wifi/mavic_*_spoofed.pcapng`, 16 unique DJI IEs) all
-begin `26 37 12 | 58 62 13 10`. `parsers/dji.py` reads byte 3 as a vendor byte and byte 4 as
-the subcommand, so it sees subcommand `0x62` and raises `DjiParseError`; every one of those
-frames is rejected. Reading the marker as `58 62 13` followed by subcommand `0x10` — the
-existing `SUBCMD_TELEMETRY` — puts the payload at offset 7, and from there the declared field
-order decodes cleanly: version 2, a plausible sequence and state, a 16-character ASCII serial,
-and lat/lon over Bern where the samples were made.
+begin `26 37 12 | 58 62 13 10`. `parsers/dji.py` used to read byte 3 as a vendor byte and byte
+4 as the subcommand, so it saw subcommand `0x62` and raised `DjiParseError`; every one of those
+frames was rejected. Class B would have decoded nothing from an aircraft sending this shape.
 
-Not acted on here. The samples are synthetic spoof frames from an outside project, their
-kinematic fields are visibly random, and a parser offset should not be changed on the strength
-of data nobody in this project generated. It is the first thing to check against a real DJI
-Wi-Fi-mode capture.
+This was **not** acted on from the samples alone — they are synthetic spoof frames from an
+outside project, and a wire-format offset should not change on the strength of data nobody
+here generated. It was instead corroborated against an independent source, per the reference
+list in [04-protocol-dji.md](../research/04-protocol-dji.md): Kismet's
+`dot11_ie_221_dji_droneid` parser. Both its C++ header (`m_vendor_type`, `m_unk1`, `m_unk2`,
+`m_subcommand` — four single-byte fields) and its `.ksy` Kaitai Struct definition
+(`vendor_type`, `unk1`, `unk2`, `subcommand`, same order) agree: there are **three** bytes
+between the OUI and the subcommand, not one. That puts the subcommand at IE offset 6 and the
+payload at offset 7 — exactly what reading the Pi samples as `58 62 13` (vendor_type, unk1,
+unk2) followed by subcommand `0x10` predicted.
+
+Decoding one of the Pi samples at the corrected offset is additional evidence on its own: a
+misaligned read landing on a clean 16-character printable ASCII serial (`K6RE0WENAH9P8QAL`)
+and a small, sane `version` (2) rather than binary garbage would be a remarkable coincidence.
+
+**Fixed** in `parse_vendor_ie`: the header is now OUI(3) + vendor_type(1) + unk1(1) + unk2(1)
++ subcommand(1) = 7 bytes before the payload (was 5). A regression test using one of the real
+sample IEs as a committed hex vector lives in
+`services/sensor-wifi/tests/test_dji.py` — the sample carries no real person's data, only a
+synthetic serial and coordinates from the outside project's spoofer. The reader's
+truncated-payload defensiveness (short frames decode to partial telemetry, not an exception)
+was re-verified at the new offset in the same file.
+
+Every synthetic DJI IE builder in the test suite (`test_analyze.py`, `test_altitude_semantics.py`,
+`test_dot11.py`, `test_schema_conformance.py`) was updated in the same change to encode the
+corrected 7-byte header — they previously encoded the old 5-byte layout, which was
+self-consistent with the bug rather than with the wire format.
+
+This does not touch field *order* within the 0x10 payload (unchanged, still matches the
+project's reference implementations) or any of the `SCALES` unit hypotheses below, which
+remain unvalidated pending a real DJI Wi-Fi-mode aircraft.
 
 Public references disagree on units for several DJI DroneID fields, and DJI has shipped
 firmware with differing offsets. The parser in

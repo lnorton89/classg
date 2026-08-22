@@ -64,7 +64,7 @@ def _dji_telemetry_ie(*, altitude_m: int, height_m: int) -> bytes:
     p += struct.pack("<ii", int(LAT * dji.RAD_SCALE), int(LON * dji.RAD_SCALE))
     p += struct.pack("<ii", int(LON * dji.RAD_SCALE), int(LAT * dji.RAD_SCALE))
     p += bytes([0x1A, 0x00])
-    return dji.DJI_OUI + bytes([0x00, dji.SUBCMD_TELEMETRY]) + bytes(p)
+    return dji.DJI_OUI + bytes([0x00, 0x00, 0x00, dji.SUBCMD_TELEMETRY]) + bytes(p)
 
 
 def _position(vendor_ie: bytes) -> dict[str, Any]:

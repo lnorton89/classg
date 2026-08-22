@@ -107,7 +107,7 @@ class TestEndToEnd:
         payload += bytes([0x1A])                      # product type
         payload += bytes([0x00])                      # uuid len
 
-        ie = dji.DJI_OUI + bytes([0x00, dji.SUBCMD_TELEMETRY]) + bytes(payload)
+        ie = dji.DJI_OUI + bytes([0x00, 0x00, 0x00, dji.SUBCMD_TELEMETRY]) + bytes(payload)
 
         beacon = parse_beacon(beacon_frame(vendor_ies=[ie]))
         assert beacon is not None
@@ -130,7 +130,7 @@ class TestEndToEnd:
         payload += b"SERIAL0000000000"
         payload += struct.pack("<ii", 0, 0)  # lon, lat = no GPS fix
         payload += bytes(40)
-        ie = dji.DJI_OUI + bytes([0x00, dji.SUBCMD_TELEMETRY]) + bytes(payload)
+        ie = dji.DJI_OUI + bytes([0x00, 0x00, 0x00, dji.SUBCMD_TELEMETRY]) + bytes(payload)
         tel = dji.parse_vendor_ie(ie)
         assert isinstance(tel, dji.DjiTelemetry)
         assert tel.lat is None and tel.lon is None
