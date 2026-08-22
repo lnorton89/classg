@@ -132,6 +132,50 @@ sentinel. Absence of an operator position is normal, not a decode failure.
 **Status: NOT YET PERFORMED**, and possibly not applicable to the Mini 5 Pro — see the open
 question above.
 
+### Attempted against live data — 2026-08-21: no Class B exists to calibrate against
+
+Tried to settle `SCALES["altitude_m"]` / `SCALES["height_m"]` by regressing decoded Class B
+altitudes against the already-validated Class A ones from the same aircraft. **There are no
+Class B detections to regress.** The unit's database, copied from `classg-api` and covering
+2026-08-16T19:38Z → 2026-08-22T04:10Z:
+
+| Class | Sensor | Detections |
+|---|---|---|
+| D (SDR energy) | sdr | 134,399 |
+| A (ASTM F3411) | wifi | 2,430 |
+| C (vendor OUI heuristic) | wifi | 47 |
+| **B (DJI DroneID)** | — | **0** |
+
+All 2,430 Class A detections decode as `odid/2` and belong to one aircraft (Mini 5 Pro).
+`captures/20260810-141223-dji-first-flight.pcap` likewise holds 176 ODID IEs and zero
+`26:37:12` vendor IEs. **n = 0 paired A/B detections**, so no fit and no residual — the
+1.0 hypothesis is neither confirmed nor refuted, and `parsers/dji.py` is unchanged.
+
+Established in passing, from the Class A raw bytes: geodetic altitude minus the aircraft's
+own over-takeoff height is 14.1 ± 2.5 m (n = 2,325, median 13.5, range 5.5–26.5) — the launch
+elevation, and the baseline a paired Class B regression would work against once one exists.
+
+**What would settle it:** a DJI aircraft on a Wi-Fi link rather than OcuSync (Mavic Air,
+Mini 2 and older) hovering at an app-indicated 10 m within range of the Wi-Fi sensor. Read
+`raw["height"]` straight out of the detection: 100 means decimetres, 10 means metres. Nothing
+short of transmitting hardware we do not have can substitute for this.
+
+### Unresolved: the header offset may be wrong by two bytes
+
+The third-party Mavic samples on the unit
+(`~/RemoteIDReceiver/Receiver/resources/wifi/mavic_*_spoofed.pcapng`, 16 unique DJI IEs) all
+begin `26 37 12 | 58 62 13 10`. `parsers/dji.py` reads byte 3 as a vendor byte and byte 4 as
+the subcommand, so it sees subcommand `0x62` and raises `DjiParseError`; every one of those
+frames is rejected. Reading the marker as `58 62 13` followed by subcommand `0x10` — the
+existing `SUBCMD_TELEMETRY` — puts the payload at offset 7, and from there the declared field
+order decodes cleanly: version 2, a plausible sequence and state, a 16-character ASCII serial,
+and lat/lon over Bern where the samples were made.
+
+Not acted on here. The samples are synthetic spoof frames from an outside project, their
+kinematic fields are visibly random, and a parser offset should not be changed on the strength
+of data nobody in this project generated. It is the first thing to check against a real DJI
+Wi-Fi-mode capture.
+
 Public references disagree on units for several DJI DroneID fields, and DJI has shipped
 firmware with differing offsets. The parser in
 [`parsers/dji.py`](../../services/sensor-wifi/classg_wifi/parsers/dji.py) ships with
@@ -158,7 +202,7 @@ Full detail in [test-plan.md](../planning/test-plan.md#layer-2--dji-calibration-
 | # | Test | Procedure | Field | Result |
 |---|---|---|---|---|
 | 1 | Position sanity | Capture on the ground at a known location | `lat`/`lon` | ☐ |
-| 2 | Altitude units | Hover at an app-indicated 10 m | `SCALES["height_m"]` | ☐ |
+| 2 | Altitude units | Hover at an app-indicated 10 m | `SCALES["height_m"]` | ☐ blocked: no Class B |
 | 3 | Altitude reference | Compare `altitude` vs `height` at known elevation | AMSL vs AGL | ☐ |
 | 4 | Velocity units | Fly a straight line at a known speed | `SCALES["velocity_mps"]` | ☐ |
 | 5 | Attitude units | Yaw to a known heading | `SCALES["attitude_deg"]` | ☐ |
