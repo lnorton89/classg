@@ -643,3 +643,42 @@ func TestATwentyMinuteFlightKeepsItsTakeoffPoint(t *testing.T) {
 		t.Fatalf("trail starts at %v, flight started at %v", tr.History[0].At, start)
 	}
 }
+
+// The schema has promised rssi_dbm on every track from the start; until this
+// test's subject existed nothing ever wrote it, and the console rendered a
+// column of dashes. Peak, not latest: the number must survive the aircraft
+// leaving and answer "how close did it get".
+func TestTrackCarriesPeakRSSI(t *testing.T) {
+	s := newTestStore()
+	now := time.Now()
+
+	rssi := func(v float64) *float64 { return &v }
+
+	d := det("A", "SER1", "aa:bb:cc:dd:ee:ff", now)
+	d.RF.RSSIdBm = rssi(-72)
+	tr := s.Ingest(d, now)
+	if tr.RSSIdBm == nil || *tr.RSSIdBm != -72 {
+		t.Fatalf("first sample: got %v want -72", tr.RSSIdBm)
+	}
+
+	// Stronger (closer) replaces the peak...
+	d = det("A", "SER1", "aa:bb:cc:dd:ee:ff", now.Add(time.Second))
+	d.RF.RSSIdBm = rssi(-46)
+	tr = s.Ingest(d, now.Add(time.Second))
+	if *tr.RSSIdBm != -46 {
+		t.Fatalf("stronger sample: got %v want -46", *tr.RSSIdBm)
+	}
+
+	// ...weaker does not, and a detection with no RF reading changes nothing.
+	d = det("A", "SER1", "aa:bb:cc:dd:ee:ff", now.Add(2*time.Second))
+	d.RF.RSSIdBm = rssi(-80)
+	tr = s.Ingest(d, now.Add(2*time.Second))
+	if *tr.RSSIdBm != -46 {
+		t.Fatalf("weaker sample: got %v want -46", *tr.RSSIdBm)
+	}
+	d = det("A", "SER1", "aa:bb:cc:dd:ee:ff", now.Add(3*time.Second))
+	tr = s.Ingest(d, now.Add(3*time.Second))
+	if tr.RSSIdBm == nil || *tr.RSSIdBm != -46 {
+		t.Fatalf("no-RF sample: got %v want -46", tr.RSSIdBm)
+	}
+}

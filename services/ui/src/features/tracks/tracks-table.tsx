@@ -81,7 +81,7 @@ function columnLabel(id: string, format: Formatters): string {
     case 'detection_count':
       return 'Detections'
     case 'rssi':
-      return 'RSSI'
+      return 'Peak RSSI'
     case 'last_seen':
       return `Last seen (${format.zoneLabel})`
     case 'position':
@@ -170,7 +170,11 @@ function buildColumns(format: Formatters) {
 
     helper.accessor((track) => track.rssi_dbm ?? null, {
       id: 'rssi',
-      header: 'RSSI',
+      // "Peak", because that is what fusion now records here (the strongest
+      // sample the track ever produced), and because it matches the wording
+      // on the detail page. Tracks recorded before the field was populated
+      // still render the dash.
+      header: 'Peak RSSI',
       sortFn: 'basic',
       cell: (info) => <span className="font-mono text-xs">{format.rssi(info.getValue())}</span>,
     }),
@@ -415,7 +419,11 @@ export function TracksTable({
         <EmptyState title={tracks.length === 0 ? emptyTitle : 'No tracks match the filter'}>
           {tracks.length === 0
             ? emptyDescription
-            : 'Clear the search box or the state filter to see all tracks.'}
+            : // The closed-tracks table has no state dropdown, so its recovery
+              // hint must not send anyone hunting for one.
+              showStateFilter
+              ? 'Clear the search box or the state filter to see all tracks.'
+              : 'Clear the search box to see all tracks.'}
         </EmptyState>
       ) : null}
     </div>

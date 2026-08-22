@@ -188,6 +188,16 @@ type Track struct {
 	History  []Position `json:"history,omitempty"`
 	Operator *Position  `json:"operator,omitempty"`
 
+	// RSSIdBm is the strongest signal any detection on this track reported.
+	// track.schema.json has declared this field since the beginning, but
+	// nothing ever wrote it -- so every consumer, including the console's
+	// tracks table, rendered a dash in a column that could never fill. Peak
+	// rather than latest, deliberately: it matches what the detail page
+	// already summarises ("peak −46 dBm"), it stays meaningful on a CLOSED
+	// track, and it answers the operator's actual question, which is "how
+	// close did it get".
+	RSSIdBm *float64 `json:"rssi_dbm,omitempty"`
+
 	ADSBCorrelated bool `json:"adsb_correlated"`
 }
 
@@ -473,6 +483,14 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 	}
 	t.DetectionCount++
 	t.addEvidence(d.DetectionClass, d.SensorKind, s.weights[d.DetectionClass], d.TS)
+
+	// Copied, not aliased: d is a value here but holding a pointer into it
+	// keeps the whole Detection alive, and the next caller's frame is nobody's
+	// business to retain.
+	if r := d.RF.RSSIdBm; r != nil && (t.RSSIdBm == nil || *r > *t.RSSIdBm) {
+		peak := *r
+		t.RSSIdBm = &peak
+	}
 
 	if d.Position != nil {
 		p := Position{
