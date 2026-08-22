@@ -5,7 +5,7 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from 'lucide-react'
-import { useEffect } from 'react'
+import { Fragment, useEffect } from 'react'
 import type { ReactNode } from 'react'
 
 import { Badge } from '@/components/ui/badge'
@@ -20,8 +20,25 @@ import type { SensorHealth } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
 import { formatDetailValue } from './detail-format'
+import { groupSensorDetail, type DetailRow } from './sensor-detail-groups'
 import { SENSOR_ICONS } from './sensor-icons'
 import type { SkyState } from './sky-state'
+
+/**
+ * One detail row's value, with its unit made human.
+ *
+ * `59979.8` labelled "uptime s" was accurate and useless; "16h 39m" is what
+ * the number is for. Non-numeric values under a unit-bearing key fall back to
+ * the generic formatter rather than NaN-ing.
+ */
+function formatDetailRow(row: DetailRow, format: ReturnType<typeof useFormat>): string {
+  const v = row.value
+  if (row.kind === 'seconds' && typeof v === 'number') return format.duration(v)
+  if (row.kind === 'millis' && typeof v === 'number') return format.duration(v / 1000)
+  if (row.kind === 'fraction' && typeof v === 'number') return `${(v * 100).toFixed(1)}%`
+  if (row.kind === 'prose' && typeof v === 'string') return v
+  return formatDetailValue(v)
+}
 
 /**
  * The persistent system-status pill in the header. Present on every route,
@@ -252,13 +269,25 @@ export function SensorHealthCard({
               )
             }
           />
-          {Object.entries(sensor.detail ?? {}).map(([key, value]) => (
-            <DataRow
-              key={key}
-              label={key.replaceAll('_', ' ')}
-              value={formatDetailValue(value)}
-              mono
-            />
+          {/* Grouped and named rather than dumped: see sensor-detail-groups.ts.
+              The section heading is a <div> because <dl> permits div children
+              but not headings directly. */}
+          {groupSensorDetail(sensor.detail ?? {}).map((group) => (
+            <Fragment key={group.section}>
+              <div className="text-muted-foreground border-border mt-3 border-b pb-1 text-2xs font-medium tracking-wide uppercase first:mt-0">
+                {group.section}
+              </div>
+              {group.rows.map((row) => (
+                <DataRow
+                  key={row.key}
+                  label={row.label}
+                  value={formatDetailRow(row, format)}
+                  // Prose values (a driver's sentence) read as text, not as a
+                  // measurement; everything else keeps the tabular face.
+                  mono={row.kind !== 'prose'}
+                />
+              ))}
+            </Fragment>
           ))}
         </dl>
         {action}

@@ -294,9 +294,13 @@ function SensorRow({
           ) : null}
         </span>
         <span className="text-muted-foreground block truncate text-2xs">
+          {/* Spelled out: this was the one place in the app that said "det",
+              and an abbreviation that exists nowhere else is jargon. */}
           {sensor.healthy
             ? `${format.relative(sensor.last_heartbeat)}${
-                sensor.detections_5m !== undefined ? ` · ${sensor.detections_5m} det` : ''
+                sensor.detections_5m !== undefined
+                  ? ` · ${sensor.detections_5m} detections`
+                  : ''
               }`
             : 'unhealthy'}
         </span>
@@ -412,8 +416,7 @@ function SensorDetail({
                   {config?.restart_unavailable_reason ??
                     'No restart command is available in the API runtime.'}
                 </Alert>
-              ) : null}
-              {isConfirming ? (
+              ) : isConfirming ? (
                 <div className="mt-2 flex gap-2">
                   <Button
                     variant="destructive"
