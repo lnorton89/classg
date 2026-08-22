@@ -9,7 +9,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from '@tanstack/react-router'
 import { LogInIcon } from 'lucide-react'
-import { useState } from 'react'
 
 import { ClassGLogo } from '@/components/brand/classg-logo'
 import { Button } from '@/components/ui/button'
@@ -22,8 +21,6 @@ import type { SsoProvider } from '@/lib/api/types'
 export function LoginScreen({ providers }: { providers?: SsoProvider[] }) {
   const queryClient = useQueryClient()
   const router = useRouter()
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
 
   // An error carried in the query string, put there by the SSO callback when it
   // could not complete. It redirects rather than rendering JSON, because the
@@ -32,7 +29,7 @@ export function LoginScreen({ providers }: { providers?: SsoProvider[] }) {
   const ssoError = new URLSearchParams(window.location.search).get('error')
 
   const login = useMutation({
-    mutationFn: () => api.login({ username, password }),
+    mutationFn: (body: { username: string; password: string }) => api.login(body),
     onSuccess: (me) => {
       queryClient.setQueryData(queryKeys.authMe, me)
       // Everything cached was fetched as nobody. Drop it rather than showing a
@@ -75,36 +72,32 @@ export function LoginScreen({ providers }: { providers?: SsoProvider[] }) {
         className="space-y-3"
         onSubmit={(event) => {
           event.preventDefault()
-          login.mutate()
+          // Read from the form, not from React state. Chrome's autofill writes
+          // into the DOM without firing change events, so controlled state said
+          // the fields were empty while the user was looking at filled ones --
+          // and the submit button, gated on that state, ignored the first
+          // click on an autofilled form. Uncontrolled inputs plus FormData
+          // means what the user sees is what gets submitted.
+          const data = new FormData(event.currentTarget)
+          const field = (name: string) => {
+            const value = data.get(name)
+            return typeof value === 'string' ? value : ''
+          }
+          const body = { username: field('username'), password: field('password') }
+          if (!body.username || !body.password) return
+          login.mutate(body)
         }}
       >
         <FormField label="Username">
-          {(props) => (
-            <Input
-              {...props}
-              value={username}
-              autoComplete="username"
-              onChange={(event) => setUsername(event.target.value)}
-            />
-          )}
+          {(props) => <Input {...props} name="username" autoComplete="username" />}
         </FormField>
         <FormField label="Password">
           {(props) => (
-            <Input
-              {...props}
-              type="password"
-              value={password}
-              autoComplete="current-password"
-              onChange={(event) => setPassword(event.target.value)}
-            />
+            <Input {...props} name="password" type="password" autoComplete="current-password" />
           )}
         </FormField>
 
-        <Button
-          type="submit"
-          className="w-full"
-          disabled={login.isPending || !username || !password}
-        >
+        <Button type="submit" className="w-full" disabled={login.isPending}>
           <LogInIcon className="size-4" aria-hidden />
           {login.isPending ? 'Signing in…' : 'Sign in'}
         </Button>
