@@ -373,7 +373,18 @@ check_unit_drift() {
         # of the installed unit rather than guessed. Guessing the default made
         # any unit installed for a different adapter report drift on every pass,
         # for ever, which is how a real signal gets trained into noise.
-        iface="$(sed -n 's/.*--iface \([^ ]*\).*/\1/p' "$installed" | head -1)"
+        #
+        # Read back from whichever flag the TEMPLATE puts @IFACE@ behind, not
+        # from --iface by name. The primary unit's own interface is @IFACE@,
+        # but the companion unit's --iface is fixed and @IFACE@ is its
+        # --companion-iface. Reading --iface for both rendered the companion
+        # template with the companion's own name, diffed that against the
+        # installed file, and reported classg-sensor-wifi-tplink as out of date
+        # on every pass from the day it was installed -- the exact false alarm
+        # the comment above was written to prevent, one flag over.
+        iface_flag="$(sed -n 's/.*\(--[a-z-]*iface\) @IFACE@.*/\1/p' "$tpl" | head -1)"
+        [ -n "$iface_flag" ] || iface_flag="--iface"
+        iface="$(sed -n "s/.*$iface_flag \([^ ]*\).*/\1/p" "$installed" | head -1)"
         [ -n "$iface" ] || iface="${CLASSG_WIFI_IFACE:-wlan-alfa}"
         rendered="$(sed -e "s|@CLASSG_HOME@|$REPO_DIR|g" -e "s|@IFACE@|$iface|g" -e "s|@RUNAS@|$runas|g" "$tpl" 2>/dev/null)" || continue
         if ! printf '%s

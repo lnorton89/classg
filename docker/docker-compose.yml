@@ -20,6 +20,7 @@ services:
       CLASSG_TRACK_TOPIC: ${CLASSG_TRACK_TOPIC:-track.}
       CLASSG_FUSION_SENSOR_STALE_AFTER: ${CLASSG_FUSION_SENSOR_STALE_AFTER:-30s}
       CLASSG_FUSION_TRACK_TTL: ${CLASSG_FUSION_TRACK_TTL:-5m}
+      CLASSG_FUSION_RESUME_WITHIN: ${CLASSG_FUSION_RESUME_WITHIN:-30m}
       CLASSG_FUSION_REAP_INTERVAL: ${CLASSG_FUSION_REAP_INTERVAL:-1s}
     ports:
       # Loopback by default. The host sensors dial 127.0.0.1, and anything that
@@ -49,6 +50,11 @@ services:
     build:
       context: ..
       dockerfile: services/api/Dockerfile
+      args:
+        # Stamped into the binary for the About page. pi-autodeploy.sh and
+        # `make compose-up` set these from the checkout; unset means unstamped.
+        CLASSG_BUILD_REVISION: ${CLASSG_BUILD_REVISION:-}
+        CLASSG_BUILD_TIME: ${CLASSG_BUILD_TIME:-}
     # ADR-0007: Tier 1 only. Runtime settings live in the database in the
     # classg-data volume, seeded on first run from config/defaults.yaml.
     # Anything set here is reported by GET /config/settings as source "env" and

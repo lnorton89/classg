@@ -868,6 +868,13 @@ drifted_services() (
 # registry, and for one Pi there does not need to be.
 if changed_in "services/api" || changed_in "services/fusion" || changed_in "services/ui" || changed_in "docker"; then
     log "rebuilding the web tier"
+    # Stamped into the api image so About can name the commit it is running;
+    # the build context has no .git for the toolchain to read. Read here, after
+    # the fast-forward, so it is the commit being deployed and not the one
+    # being replaced.
+    CLASSG_BUILD_REVISION="$(git -C "$REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
+    CLASSG_BUILD_TIME="$(git -C "$REPO_DIR" log -1 --pretty=%cI 2>/dev/null || true)"
+    export CLASSG_BUILD_REVISION CLASSG_BUILD_TIME
     if ! run_logged "$REPO_DIR/docker" 20 -- docker compose ${COMPOSE_ENV_ARGS[@]+"${COMPOSE_ENV_ARGS[@]}"} up -d --build; then
         DEPLOY_OK=0
         fail_step "docker compose could not build or start the web tier"

@@ -31,9 +31,11 @@ import (
 type Build struct {
 	Version   string `json:"version"`
 	GoVersion string `json:"go_version"`
-	// Revision is empty in container builds: .dockerignore excludes .git, so
-	// the toolchain has no VCS to stamp. Reported as unavailable rather than
-	// as an empty string pretending to be a commit.
+	// Revision comes from the toolchain's VCS stamp when there is one, and
+	// otherwise from buildRevision below. Container builds have no .git
+	// (.dockerignore excludes it), so on a deployed unit only the ldflags
+	// route produces a value; absent both, it is reported as unavailable
+	// rather than as an empty string pretending to be a commit.
 	Revision string `json:"revision,omitempty"`
 	Dirty    bool   `json:"revision_dirty,omitempty"`
 	BuiltAt  string `json:"built_at,omitempty"`
@@ -106,13 +108,28 @@ func Collect(opts Options) Info {
 	}
 }
 
+// Set with -ldflags "-X .../internal/system.buildRevision=<sha>" (and
+// buildTime) by services/api/Dockerfile from the CLASSG_BUILD_REVISION and
+// CLASSG_BUILD_TIME build args. The deploy agent and `make compose-up` pass
+// the checked-out commit; a plain `docker build` leaves them empty, which is
+// the honest answer for an image nobody stamped. The VCS stamp wins when both
+// exist because it also carries `vcs.modified`, which a build arg cannot.
+var (
+	buildRevision string
+	buildTime     string
+)
+
 func collectBuild(version string) Build {
-	b := Build{Version: version, GoVersion: runtime.Version()}
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return b
+	var settings []debug.BuildSetting
+	if info, ok := debug.ReadBuildInfo(); ok {
+		settings = info.Settings
 	}
-	for _, s := range info.Settings {
+	return buildFrom(version, settings)
+}
+
+func buildFrom(version string, settings []debug.BuildSetting) Build {
+	b := Build{Version: version, GoVersion: runtime.Version()}
+	for _, s := range settings {
 		switch s.Key {
 		case "vcs.revision":
 			b.Revision = s.Value
@@ -121,6 +138,10 @@ func collectBuild(version string) Build {
 		case "vcs.modified":
 			b.Dirty = s.Value == "true"
 		}
+	}
+	if b.Revision == "" && buildRevision != "" {
+		b.Revision = buildRevision
+		b.BuiltAt = buildTime
 	}
 	return b
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -151,5 +152,34 @@ func TestBuildAlwaysCarriesAGoVersion(t *testing.T) {
 	}
 	if b.GoVersion == "" {
 		t.Fatal("go_version must always be available; it comes from the runtime")
+	}
+}
+
+// Container builds have no VCS stamp, so the build-arg route is the only one
+// that ever fills Revision on a deployed unit. The VCS stamp must still win
+// when present: it is the one that also knows whether the tree was dirty.
+func TestStampedRevisionFillsInWhenTheToolchainHasNone(t *testing.T) {
+	prevRev, prevTime := buildRevision, buildTime
+	t.Cleanup(func() { buildRevision, buildTime = prevRev, prevTime })
+
+	buildRevision, buildTime = "", ""
+	if got := buildFrom("0.1.0", nil); got.Revision != "" || got.BuiltAt != "" {
+		t.Fatalf("unstamped build reported revision %q built %q", got.Revision, got.BuiltAt)
+	}
+
+	buildRevision, buildTime = "20627aca", "2026-08-22T03:14:45-07:00"
+	got := buildFrom("0.1.0", nil)
+	if got.Revision != "20627aca" || got.BuiltAt != "2026-08-22T03:14:45-07:00" {
+		t.Fatalf("stamped build reported revision %q built %q", got.Revision, got.BuiltAt)
+	}
+
+	vcs := []debug.BuildSetting{
+		{Key: "vcs.revision", Value: "b86d5573"},
+		{Key: "vcs.time", Value: "2026-08-21T00:00:00Z"},
+		{Key: "vcs.modified", Value: "true"},
+	}
+	got = buildFrom("0.1.0", vcs)
+	if got.Revision != "b86d5573" || got.BuiltAt != "2026-08-21T00:00:00Z" || !got.Dirty {
+		t.Fatalf("VCS stamp lost to the build arg: %+v", got)
 	}
 }

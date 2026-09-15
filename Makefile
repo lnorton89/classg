@@ -150,7 +150,8 @@ dev-ui: env
 	cd services/ui && npm run dev
 
 compose-up: env
-	$(DOCKER) compose --env-file .env -f docker/docker-compose.yml up -d --build
+	CLASSG_BUILD_REVISION="$$(git rev-parse HEAD 2>/dev/null)" CLASSG_BUILD_TIME="$$(git log -1 --pretty=%cI 2>/dev/null)" \
+		$(DOCKER) compose --env-file .env -f docker/docker-compose.yml up -d --build
 
 compose-config: env
 	$(DOCKER) compose --env-file .env -f docker/docker-compose.yml config
