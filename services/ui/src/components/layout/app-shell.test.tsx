@@ -24,6 +24,8 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
   useRouter: () => ({ history: { back: vi.fn(), push: vi.fn() } }),
   useRouterState: () => ({ location: { pathname: '/' } }),
+  // Reached only by the header's search box, which is below the gate.
+  useNavigate: () => vi.fn(),
 }))
 
 function renderShell() {
@@ -61,7 +63,7 @@ describe('AppShell before sign-in', () => {
 
     // No navigation — the app's structure is itself information.
     expect(screen.queryByRole('navigation', { name: /Primary/i })).not.toBeInTheDocument()
-    for (const label of ['Live', 'Tracks', 'Sensors', 'Logs', 'Docs', 'Spectrum']) {
+    for (const label of ['Live', 'Flights', 'Sensors', 'Event log', 'Docs', 'Spectrum']) {
       expect(screen.queryByText(label)).not.toBeInTheDocument()
     }
 

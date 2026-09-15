@@ -84,14 +84,38 @@ function useLogEntries(): LogEntry[] {
   return useSyncExternalStore(logStore.subscribe, logStore.getSnapshot, logStore.getSnapshot)
 }
 
-export function LogsView() {
+/**
+ * The three narrowing controls are owned by the route, which keeps them in the
+ * URL — see `logsSearchSchema`. They used to be component state, so a reload,
+ * a shared link, or a Back out of a track lost whatever had been narrowed to,
+ * on the one screen someone narrows precisely because they are reconstructing
+ * a specific four minutes.
+ *
+ * Freeze and follow stay local on purpose: both are about how this browser is
+ * reading the tail right now, and neither means anything in a link.
+ */
+export interface LogsViewProps {
+  minLevel: LogLevel
+  onMinLevelChange: (level: LogLevel) => void
+  /** Which sources are shown. Every source, when nothing is selected. */
+  sources: Set<LogSource>
+  onSourcesChange: (sources: Set<LogSource>) => void
+  search: string
+  onSearchChange: (search: string) => void
+}
+
+export function LogsView({
+  minLevel,
+  onMinLevelChange,
+  sources,
+  onSourcesChange,
+  search,
+  onSearchChange,
+}: LogsViewProps) {
   const { preferences, setPreference } = usePreferences()
   const format = useFormat()
   const live = useLogEntries()
 
-  const [minLevel, setMinLevel] = useState<LogLevel>('info')
-  const [sources, setSources] = useState<Set<LogSource>>(() => new Set(LOG_SOURCES))
-  const [search, setSearch] = useState('')
   const [frozen, setFrozen] = useState<LogEntry[] | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -145,14 +169,12 @@ export function LogsView() {
   }, [follow, frozen, setPreference])
 
   const toggleSource = (source: LogSource) => {
-    setSources((old) => {
-      const next = new Set(old)
-      if (next.has(source)) next.delete(source)
-      else next.add(source)
-      // An empty selection shows nothing, which reads as a broken log rather
-      // than as a filter. Turning the last one off restores all of them.
-      return next.size === 0 ? new Set(LOG_SOURCES) : next
-    })
+    const next = new Set(sources)
+    if (next.has(source)) next.delete(source)
+    else next.add(source)
+    // An empty selection shows nothing, which reads as a broken log rather
+    // than as a filter. Turning the last one off restores all of them.
+    onSourcesChange(next.size === 0 ? new Set(LOG_SOURCES) : next)
   }
 
   const exportEntries = (kind: 'ndjson' | 'csv') => {
@@ -175,28 +197,28 @@ export function LogsView() {
           value={counts.error}
           tone="down"
           active={minLevel === 'error'}
-          onClick={() => setMinLevel('error')}
+          onClick={() => onMinLevelChange('error')}
         />
         <LevelCount
           label="Warnings"
           value={counts.warn}
           tone="warn"
           active={minLevel === 'warn'}
-          onClick={() => setMinLevel('warn')}
+          onClick={() => onMinLevelChange('warn')}
         />
         <LevelCount
           label="Info"
           value={counts.info}
           tone="info"
           active={minLevel === 'info'}
-          onClick={() => setMinLevel('info')}
+          onClick={() => onMinLevelChange('info')}
         />
         <LevelCount
           label="Debug"
           value={counts.debug}
           tone="muted"
           active={minLevel === 'debug'}
-          onClick={() => setMinLevel('debug')}
+          onClick={() => onMinLevelChange('debug')}
         />
       </div>
 
@@ -209,7 +231,7 @@ export function LogsView() {
           <Input
             type="search"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search messages, track IDs, reasons…"
             aria-label="Search the event log"
             className="pl-8"
@@ -219,7 +241,7 @@ export function LogsView() {
         <Segmented
           aria-label="Minimum log level"
           value={minLevel}
-          onValueChange={setMinLevel}
+          onValueChange={onMinLevelChange}
           options={MIN_LEVEL_OPTIONS}
         />
 
@@ -306,7 +328,7 @@ export function LogsView() {
             variant="ghost"
             size="sm"
             className="h-6 px-2"
-            onClick={() => setSources(new Set(LOG_SOURCES))}
+            onClick={() => onSourcesChange(new Set(LOG_SOURCES))}
           >
             <XIcon aria-hidden /> Reset
           </Button>

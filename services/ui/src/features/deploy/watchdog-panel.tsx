@@ -14,9 +14,9 @@ import { useQuery } from '@tanstack/react-query'
 import { HeartPulseIcon } from 'lucide-react'
 
 import { useFormat } from '@/app/use-format'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, DataList, DataRow, Skeleton } from '@/components/ui/misc'
+import { StatusPill } from '@/components/ui/status-pill'
 import { watchdogQuery } from '@/lib/api/queries'
 
 import { LogDisclosure } from './log-disclosure'
@@ -60,8 +60,16 @@ export function WatchdogPanel() {
         <CardTitle className="flex flex-wrap items-center gap-2">
           <HeartPulseIcon className="size-4" aria-hidden />
           Self-repair
-          {w.needs_hands ? <Badge variant="down">needs attention</Badge> : null}
-          {w.actions_taken > 0 ? <Badge variant="warn">repairing</Badge> : null}
+          {w.needs_hands ? (
+            <StatusPill tone="down" dot>
+              needs attention
+            </StatusPill>
+          ) : null}
+          {w.actions_taken > 0 ? (
+            <StatusPill tone="warn" dot pulse>
+              repairing
+            </StatusPill>
+          ) : null}
         </CardTitle>
         <CardDescription>
           The sensor units stop restarting themselves after five failures, on purpose — an
@@ -73,10 +81,16 @@ export function WatchdogPanel() {
       <CardContent className="space-y-3">
         {/* First, because it is the one thing here that is not self-correcting. */}
         {w.needs_hands ? (
-          <Alert tone="error" title="The watchdog has stopped trying">
-            <span className="font-mono">{w.needs_hands}</span> did not come back after every
-            attempt on the ladder. It is not being restarted any more — repeating a failed
-            repair for ever would turn this into background noise. This one needs a person.
+          // `needs_hands` is the watchdog's own sentence and already says what is
+          // wrong -- a unit that exhausted the restart ladder, or one whose
+          // installed file has drifted from its template and was never restarted
+          // at all. The panel used to append "did not come back after every
+          // attempt on the ladder" to whichever it was, which described a repair
+          // that never happened.
+          <Alert tone="error" title="The watchdog needs a person">
+            <span className="font-mono">{w.needs_hands}</span>. The watchdog will not act on
+            this by itself — repeating a failed repair for ever would turn it into background
+            noise — so it stays here until somebody fixes it on the unit.
           </Alert>
         ) : null}
 
@@ -103,9 +117,9 @@ export function WatchdogPanel() {
             label="API"
             value={
               w.api_healthy ? (
-                <Badge variant="ok">answering</Badge>
+                <StatusPill tone="ok">answering</StatusPill>
               ) : (
-                <Badge variant="down">down</Badge>
+                <StatusPill tone="down">down</StatusPill>
               )
             }
           />
@@ -113,9 +127,9 @@ export function WatchdogPanel() {
             label="Wi-Fi adapter"
             value={
               w.wifi_adapter_present ? (
-                <Badge variant="ok">on the bus</Badge>
+                <StatusPill tone="ok">on the bus</StatusPill>
               ) : (
-                <Badge variant="down">absent</Badge>
+                <StatusPill tone="down">absent</StatusPill>
               )
             }
             // An absent adapter is hardware. Saying so stops someone hunting a
@@ -132,9 +146,9 @@ export function WatchdogPanel() {
               label="Wi-Fi adapter (TP-Link)"
               value={
                 w.wifi_tplink_adapter_present ? (
-                  <Badge variant="ok">on the bus</Badge>
+                  <StatusPill tone="ok">on the bus</StatusPill>
                 ) : (
-                  <Badge variant="down">absent</Badge>
+                  <StatusPill tone="down">absent</StatusPill>
                 )
               }
               hint={
@@ -148,9 +162,9 @@ export function WatchdogPanel() {
             label="SDR"
             value={
               w.sdr_present ? (
-                <Badge variant="ok">on the bus</Badge>
+                <StatusPill tone="ok">on the bus</StatusPill>
               ) : (
-                <Badge variant="down">absent</Badge>
+                <StatusPill tone="down">absent</StatusPill>
               )
             }
             hint={w.sdr_present ? undefined : 'hardware — ADS-B will read degraded'}

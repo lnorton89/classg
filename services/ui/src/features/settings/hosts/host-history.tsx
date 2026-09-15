@@ -20,7 +20,7 @@ import { useMemo, useState } from 'react'
 import { useFormat, type Formatters } from '@/app/use-format'
 import { AccessibleChartTable } from '@/components/ui/accessible-chart-table'
 import { Segmented } from '@/components/ui/segmented'
-import { Skeleton } from '@/components/ui/misc'
+import { ErrorState, Skeleton } from '@/components/ui/misc'
 import { cn } from '@/lib/cn'
 import type { TelemetryResponse, TelemetrySample } from '@/lib/api/types'
 
@@ -168,11 +168,15 @@ export function HostHistory({
       </div>
 
       {isError ? (
-        <p className="text-muted-foreground mt-3 text-xs">
-          History is unavailable — the api did not answer{' '}
-          <code className="font-mono text-xs">/telemetry</code>. The instantaneous readings
-          above are unaffected.
-        </p>
+        // `ErrorState`, not the dimmed line this used to be. "No history
+        // recorded yet" and "could not ask for the history" were drawn
+        // identically, and on this product that particular confusion is the
+        // expensive one -- an absence of readings has to be distinguishable
+        // from an absence of answers.
+        <ErrorState title="History is unavailable" className="p-6">
+          The api did not answer <code className="font-mono text-xs">/telemetry</code>. The
+          instantaneous readings above are unaffected.
+        </ErrorState>
       ) : isPending ? (
         <div className="mt-3 space-y-3">
           {metrics.map((metric) => (

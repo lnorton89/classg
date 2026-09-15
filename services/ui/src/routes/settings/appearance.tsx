@@ -17,7 +17,14 @@ function AppearanceSettings() {
       <SettingsCard
         icon={EyeIcon}
         title="Display"
-        description="Dark is the default and stays the default: this runs outdoors at night, where a white screen costs night vision as well as legibility."
+        description="How the console is drawn. Dark is the default and stays the default."
+        why={
+          <>
+            This runs outdoors at night, where a white screen costs night vision as well as
+            legibility. Reduce motion is honoured automatically when your operating system asks
+            for it, so the switch is only for turning it on where the system has not.
+          </>
+        }
       >
         <SettingRow label="Theme">
           <Segmented
@@ -32,10 +39,7 @@ function AppearanceSettings() {
           />
         </SettingRow>
 
-        <SettingRow
-          label="Text size"
-          hint="Scales the whole interface, including map labels and table cells."
-        >
+        <SettingRow label="Text size" hint="Scales the whole interface, map labels included.">
           <Segmented
             aria-label="Text size"
             value={preferences.textScale}
@@ -49,10 +53,7 @@ function AppearanceSettings() {
           />
         </SettingRow>
 
-        <SettingRow
-          label="Density"
-          hint="Compact tightens table rows only. Buttons keep their 44px touch target either way."
-        >
+        <SettingRow label="Density" hint="Tightens rows only; buttons keep their touch target.">
           <Segmented
             aria-label="Density"
             value={preferences.density}
@@ -66,7 +67,6 @@ function AppearanceSettings() {
 
         <ToggleRow
           label="Reduce motion"
-          hint="Also honoured automatically when your operating system asks for it."
           checked={preferences.motion === 'reduced'}
           onCheckedChange={(checked) => setPreference('motion', checked ? 'reduced' : 'system')}
         />

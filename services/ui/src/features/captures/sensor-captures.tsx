@@ -4,6 +4,7 @@ import { DownloadIcon, FileTextIcon, PlayIcon, SquareIcon } from 'lucide-react'
 import { useState } from 'react'
 
 import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/ui/status-pill'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { FormField, Input } from '@/components/ui/field'
@@ -26,13 +27,11 @@ export function SensorCaptureControl({ sensor }: { sensor: SensorHealth }) {
   })
   const error = start.error instanceof ApiError ? start.error : null
 
-  if (!capture?.supported) {
-    return (
-      <p className="text-muted-foreground border-border mt-3 border-t pt-3 text-xs">
-        Capture is not implemented for {sensor.sensor_kind.toUpperCase()} sensors yet.
-      </p>
-    )
-  }
+  // Nothing, not a note. Capture being unimplemented for this sensor kind
+  // describes the build and not a fault, and it was one of two permanent boxes
+  // on the page saying so; the sensor detail collects both into a single muted
+  // line -- see `captureLimitation` in capture-limits.ts.
+  if (!capture?.supported) return null
 
   const iface = capture.interface ?? ''
 
@@ -125,13 +124,20 @@ export function CaptureHistory() {
           Capture history
         </h2>
         <p className="text-muted-foreground text-xs">
-          Passive recordings started from sensor settings or the host capture scripts.
+          Passive recordings started from a sensor&rsquo;s own controls or the host capture
+          scripts.
         </p>
       </div>
 
       {captures.length === 0 ? (
+        // Named rather than "above": this list has one home now, and a capture
+        // is started from the sensor that will make it, on another page.
         <EmptyState title="No captures yet">
-          Open Capture settings on a sensor above to start one.
+          Open a sensor on the{' '}
+          <Link to="/sensors" className="underline underline-offset-2">
+            Sensors
+          </Link>{' '}
+          page and start one from its Capture settings.
         </EmptyState>
       ) : (
         <ul className="grid gap-3">
@@ -167,7 +173,7 @@ function CaptureRow({ capture }: { capture: Capture }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="truncate font-mono text-sm">{capture.filename}</span>
-            <Badge variant={tone}>{capture.state}</Badge>
+            <StatusPill tone={tone}>{capture.state}</StatusPill>
             {capture.analysis?.analyzed ? (
               <Badge variant="muted">
                 {capture.analysis.drone_transmitters ?? 0} drone transmitters

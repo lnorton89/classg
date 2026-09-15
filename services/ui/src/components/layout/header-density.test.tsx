@@ -30,11 +30,15 @@ vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ history: { back: vi.fn(), push: vi.fn() } }),
   // The real hook takes a selector. Returning the raw state instead hands
   // SettingsButton an object where it expects a pathname string.
+  //
+  // `search` is part of a real location and the rail reads it to tell Sensors
+  // from Captures, so the stand-in carries one rather than an object the rail
+  // has to guess at.
   useRouterState: ({
     select,
   }: {
-    select: (s: { location: { pathname: string } }) => unknown
-  }) => select({ location: { pathname: '/' } }),
+    select: (s: { location: { pathname: string; search: Record<string, unknown> } }) => unknown
+  }) => select({ location: { pathname: '/', search: {} } }),
   useNavigate: () => vi.fn(),
 }))
 

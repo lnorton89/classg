@@ -13,18 +13,30 @@ import { useId } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/field'
 import { Switch } from '@/components/ui/switch'
+import { Why } from '@/components/ui/why'
 import { cn } from '@/lib/cn'
 
-/** A titled card with an explanation. One per topic within a category. */
+/**
+ * A titled card with one shared explanation. One per topic within a category.
+ *
+ * `description` is the sentence that applies to every control in the card, and
+ * it is meant to be the only prose above them: the per-field paragraphs that
+ * used to sit under each label are a `hint` of one line now, or gone where the
+ * in-app docs already carry them. Anything longer than the shared sentence —
+ * the reasoning behind a default, the failure it prevents — goes to `why`,
+ * where it is read once rather than on every visit.
+ */
 export function SettingsCard({
   icon: Icon,
   title,
   description,
+  why,
   children,
 }: {
   icon: LucideIcon
   title: string
   description?: ReactNode
+  why?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -35,6 +47,7 @@ export function SettingsCard({
           {title}
         </CardTitle>
         {description ? <p className="text-muted-foreground text-xs">{description}</p> : null}
+        {why ? <Why className="mt-1">{why}</Why> : null}
       </CardHeader>
       <CardContent className="space-y-4">{children}</CardContent>
     </Card>

@@ -3,10 +3,10 @@
  * worker the live app needs to mount, so the list-detail redesign here was
  * checked with a component-level render against the MSW node server instead
  * of eyeballing it. This pins the part that matters most: picking a sensor
- * or "Captures" from the list swaps the detail pane to the right content, a
- * sensor's own spectrum measurement (Wi-Fi occupancy vs. the SDR sweep)
- * follows its kind rather than being a page of its own, and the selection
- * lives in the URL rather than resetting on every render.
+ * from the list swaps the detail pane to it, a sensor's own spectrum
+ * measurement (Wi-Fi occupancy vs. the SDR sweep) follows its kind rather than
+ * being a page of its own, and the selection lives in the URL rather than
+ * resetting on every render.
  *
  * A real router, not a mocked one: the selection is now `Route.useSearch()`
  * state, which only exists inside an actual route match. A minimal root
@@ -140,10 +140,9 @@ describe('SensorsView', () => {
     sensors = [sensor('wifi-0', 'wifi'), sensor('sdr-0', 'sdr')]
     renderPage()
 
-    const nav = await screen.findByRole('navigation', { name: 'Sensors and captures' })
+    const nav = await screen.findByRole('navigation', { name: 'Sensors' })
     expect(await within(nav).findByText('wifi-0')).toBeVisible()
     expect(within(nav).getByText('sdr-0')).toBeVisible()
-    expect(within(nav).getByText('Captures')).toBeVisible()
 
     // wifi-0 is first, so it is the default detail -- its own occupancy view
     // comes with it, not the SDR's sweep.
@@ -151,7 +150,14 @@ describe('SensorsView', () => {
     expect(screen.queryByText('Band sweep')).not.toBeInTheDocument()
   })
 
-  it("switches the spectrum view to the SDR's own sweep when the SDR sensor is selected", async () => {
+  /**
+   * The sweep tool itself is a page now (`/spectrum`), not a panel folded into
+   * this card: comparing a band against itself over weeks is a task somebody
+   * comes to the console to do, and it was reachable only by knowing to select
+   * sdr-0 and scroll. What stays here is the trail between the measurement and
+   * the radio that takes it.
+   */
+  it('links the SDR to the sweep page rather than embedding the sweep tool', async () => {
     const user = userEvent.setup()
     sensors = [sensor('wifi-0', 'wifi'), sensor('sdr-0', 'sdr')]
     renderPage()
@@ -159,8 +165,13 @@ describe('SensorsView', () => {
     await screen.findByText('Channel occupancy')
     await user.click(screen.getByRole('button', { name: /sdr-0/ }))
 
-    expect(await screen.findByText('Band sweep')).toBeVisible()
+    expect(await screen.findByRole('link', { name: /Band sweeps/ })).toHaveAttribute(
+      'href',
+      '/spectrum',
+    )
+    // Neither the other sensor's measurement nor the sweep tool itself.
     expect(screen.queryByText('Channel occupancy')).not.toBeInTheDocument()
+    expect(screen.queryByText('Band sweep')).not.toBeInTheDocument()
   })
 
   it('reflects the selected sensor in the URL', async () => {
@@ -170,7 +181,7 @@ describe('SensorsView', () => {
 
     await screen.findByText('Channel occupancy')
     await user.click(screen.getByRole('button', { name: /sdr-0/ }))
-    await screen.findByText('Band sweep')
+    await screen.findByRole('link', { name: /Band sweeps/ })
 
     expect(router.state.location.search).toEqual({ sensor: 'sdr-0' })
   })
@@ -179,12 +190,22 @@ describe('SensorsView', () => {
     sensors = [sensor('wifi-0', 'wifi'), sensor('sdr-0', 'sdr')]
     renderPage('/sensors?sensor=sdr-0')
 
-    expect(await screen.findByText('Band sweep')).toBeVisible()
+    expect(await screen.findByRole('link', { name: /Band sweeps/ })).toBeVisible()
     expect(screen.queryByText('Channel occupancy')).not.toBeInTheDocument()
   })
 
-  it('shows capture history instead of a sensor when Captures is selected', async () => {
-    const user = userEvent.setup()
+  /**
+   * The captures pane is gone from this page: `/captures` is a real route, and
+   * a second copy of that list here meant two URLs for one list. What is left
+   * is the count and the way there — the count because "has this unit recorded
+   * anything" is a fair question to answer beside the radios that record, and
+   * the link because the list itself belongs to one page.
+   *
+   * `view=captures` is out of the search schema with it. TanStack strips an
+   * unknown key rather than failing on it, so a stale bookmark lands on the
+   * first sensor instead of an error.
+   */
+  it('links to the captures route with a count instead of listing them here', async () => {
     sensors = [sensor('wifi-0', 'wifi')]
     captures = [
       {
@@ -200,45 +221,31 @@ describe('SensorsView', () => {
       },
     ]
 
-    const { router } = renderPage()
+    renderPage()
 
     await screen.findByText('Channel occupancy')
-    await user.click(screen.getByRole('button', { name: /Captures/ }))
-
-    expect(await screen.findByText('wifi-0-capture.pcap')).toBeVisible()
-    expect(screen.queryByText('Channel occupancy')).not.toBeInTheDocument()
-    expect(router.state.location.search).toEqual({ view: 'captures' })
+    const nav = screen.getByRole('navigation', { name: 'Sensors' })
+    const link = await within(nav).findByRole('link', { name: /1 recording/ })
+    expect(link).toHaveAttribute('href', '/captures')
+    // The list itself is not duplicated here.
+    expect(screen.queryByText('wifi-0-capture.pcap')).not.toBeInTheDocument()
+    expect(screen.queryByText('Capture history')).not.toBeInTheDocument()
   })
 
-  // A failed capture used to render a red badge and nothing else, because the
-  // UI's Capture type never declared `error` -- so the API's reason for the
-  // failure arrived on every response and was thrown away. scripts/check-mirrors.py
-  // now compares the two field lists so the type cannot silently fall behind again.
-  it('shows why a capture failed, not just that it did', async () => {
-    const user = userEvent.setup()
-    sensors = [sensor('wifi-0', 'wifi')]
-    captures = [
-      {
-        capture_id: 'cap-2',
-        iface: 'wlan1',
-        channel: 6,
-        duration_s: 120,
-        state: 'failed',
-        filename: 'wifi-0-doomed.pcap',
-        size_bytes: 0,
-        frame_count: 0,
-        started_at: '2026-08-18T00:00:00Z',
-        error: 'wlan1 is not in monitor mode',
-      },
-    ]
+  it('drops the retired view=captures parameter instead of rendering a pane', async () => {
+    // The schema no longer knows the key, so it never reaches the component.
+    expect(sensorsSearchSchema.parse({ view: 'captures', sensor: 'sdr-0' })).toEqual({
+      sensor: 'sdr-0',
+    })
 
-    renderPage()
-    await screen.findByText('Channel occupancy')
-    await user.click(screen.getByRole('button', { name: /Captures/ }))
+    sensors = [sensor('wifi-0', 'wifi'), sensor('sdr-0', 'sdr')]
+    renderPage('/sensors?view=captures')
 
-    expect(await screen.findByText('wifi-0-doomed.pcap')).toBeVisible()
-    expect(screen.getByText('failed')).toBeVisible()
-    expect(screen.getByText('wlan1 is not in monitor mode')).toBeVisible()
+    // A stale bookmark lands on the first sensor rather than an error or an
+    // empty pane. TanStack leaves the unrecognised key in the raw URL; what
+    // matters is that nothing reads it.
+    expect(await screen.findByText('Channel occupancy')).toBeVisible()
+    expect(screen.queryByText('Capture history')).not.toBeInTheDocument()
   })
 
   // `expected` has always been on the wire and nothing rendered it, which is
@@ -264,16 +271,27 @@ describe('SensorsView', () => {
     expect(screen.queryByText(/Not declared/)).not.toBeInTheDocument()
   })
 
+  /**
+   * The way back moved into the page header's eyebrow, with every other detail
+   * view's — and it appears only once something has actually been selected.
+   * Before that the list is what a phone is showing, so there is nothing to go
+   * back to.
+   */
   it('can return to the list and select a different sensor', async () => {
     const user = userEvent.setup()
     sensors = [sensor('wifi-0', 'wifi'), sensor('sdr-0', 'sdr')]
     renderPage()
 
     await screen.findByText('Channel occupancy')
-    await user.click(screen.getByRole('button', { name: 'All sensors' }))
-    await user.click(screen.getByRole('button', { name: /sdr-0/ }))
+    expect(screen.queryByRole('button', { name: 'All sensors' })).not.toBeInTheDocument()
 
-    expect(await screen.findByText('Band sweep')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: /sdr-0/ }))
+    await screen.findByRole('link', { name: /Band sweeps/ })
+
+    await user.click(screen.getByRole('button', { name: 'All sensors' }))
+    await user.click(screen.getByRole('button', { name: /wifi-0/ }))
+
+    expect(await screen.findByText('Channel occupancy')).toBeVisible()
   })
 
   it('says so when nothing is reporting, instead of an empty pane', async () => {
@@ -282,5 +300,124 @@ describe('SensorsView', () => {
     renderPage()
 
     expect(await screen.findByText('No sensors are reporting')).toBeVisible()
+  })
+})
+
+/**
+ * The hierarchy pass, pinned.
+ *
+ * This page was the worst offender in the console: the richest data in the app
+ * rendered as a forty-row key-value dump with no grouping by importance, two
+ * permanent error-styled boxes describing the build rather than a fault, and
+ * the driver's survey note printed twice. Each of those is a separate
+ * regression a future edit could reintroduce without breaking anything else,
+ * so each gets its own case.
+ */
+describe('the sensor detail leads with the story, not the dump', () => {
+  const busyWifi: Record<string, unknown> = {
+    beacons: 8_100_000,
+    detections: 13_708,
+    listening_fraction: 0.8618,
+    hop_overhead_ms: 3_000_000,
+    hops: 41_000,
+    dwell_share: { '1': 0.281, '6': 0.576, '11': 0.143 },
+    subscribers: 1,
+    plan_swaps: 3,
+    reconnects: 0,
+  }
+
+  it('puts the summary on screen and the rest behind a disclosure', async () => {
+    sensors = [{ ...sensor('wifi-0', 'wifi'), detail: busyWifi }]
+    renderPage()
+
+    // The strip: heard, detected, what the hopping cost.
+    expect(await screen.findByText('Heard')).toBeVisible()
+    expect(screen.getByText('Drone detections')).toBeVisible()
+    expect(screen.getByText('Listening share')).toBeVisible()
+    expect(screen.getByText('Lost to hopping')).toBeVisible()
+
+    // `plan_swaps` is real and still reachable, but it is not the story, so
+    // it is inside a closed <details> rather than beside the headline figures.
+    const counters = screen.getByText(/All counters/)
+    expect(counters).toBeVisible()
+    expect(counters.closest('details')?.open).toBe(false)
+    expect(screen.getByText('Plan swaps').closest('details')).toBe(counters.closest('details'))
+  })
+
+  it('draws the per-channel dwell share as bars rather than as a comma list', async () => {
+    sensors = [{ ...sensor('wifi-0', 'wifi'), detail: busyWifi }]
+    const { container } = renderPage()
+
+    expect(await screen.findByText('Dwell share by channel')).toBeVisible()
+    expect(screen.getByText('ch 6')).toBeVisible()
+    expect(screen.getByText('57.6%')).toBeVisible()
+    expect(container.querySelectorAll('[role="img"]').length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('does not print a promoted reading twice', async () => {
+    sensors = [{ ...sensor('wifi-0', 'wifi'), detail: busyWifi }]
+    renderPage()
+
+    await screen.findByText('Heard')
+    // "Beacons heard" is the full list's label for `beacons`; the strip has
+    // taken it, so the row must be gone rather than restating it.
+    expect(screen.queryByText('Beacons heard')).not.toBeInTheDocument()
+    expect(screen.queryByText('Dwell share by channel')).toBeVisible()
+    expect(screen.queryByText('Time lost to hopping')).not.toBeInTheDocument()
+  })
+
+  it('reduces the two build-limitation boxes to one muted line', async () => {
+    sensors = [
+      {
+        ...sensor('sdr-0', 'sdr'),
+        config: sensorConfig({
+          restart_available: false,
+          restart_unavailable_reason: 'systemctl is not available in the API runtime',
+          capture: { supported: false },
+        }),
+      },
+    ]
+    renderPage()
+
+    const line = await screen.findByText(/Not available in this build/)
+    expect(line).toBeVisible()
+    expect(line.textContent).toContain('systemctl is not available in the API runtime')
+    expect(line.textContent).toContain('capture is not implemented for SDR sensors')
+    // One line, not two alerts. An alert is for a fault; this is a build.
+    expect(screen.queryByText('Restart unavailable')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('says nothing about the build when the build can do everything', async () => {
+    sensors = [
+      {
+        ...sensor('wifi-0', 'wifi'),
+        config: sensorConfig({
+          restart_available: true,
+          capture: { supported: true, interface: 'wlan1' },
+        }),
+      },
+    ]
+    renderPage()
+
+    await screen.findByText('Channel occupancy')
+    expect(screen.queryByText(/Not available in this build/)).not.toBeInTheDocument()
+  })
+
+  it('prints the survey note once, in the panel that owns it', async () => {
+    sensors = [
+      {
+        ...sensor('wifi-0', 'wifi'),
+        detail: {
+          ...busyWifi,
+          survey_available: false,
+          survey_reason: 'this adapter exposes no survey counters',
+        },
+      },
+    ]
+    renderPage()
+
+    await screen.findByText('Heard')
+    expect(screen.getAllByText(/this adapter exposes no survey counters/)).toHaveLength(1)
   })
 })

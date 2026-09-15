@@ -3,6 +3,16 @@ import type { ComponentProps } from 'react'
 
 import { cn } from '@/lib/cn'
 
+/**
+ * A label chip: an event name, an action, "SSO", "you".
+ *
+ * Deliberately has no health tones. It used to carry ok/warn/down alongside
+ * `StatusPill`, and having two primitives that could both say "degraded" is
+ * how the app ended up with six subtly different reds. Anything that reports
+ * a *state* belongs in `StatusPill` (status-pill.tsx), which owns that
+ * vocabulary; removing the variants here is what keeps it owning it — a
+ * status written against this component now fails to typecheck.
+ */
 const badgeVariants = cva(
   'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs font-medium whitespace-nowrap',
   {
@@ -10,9 +20,6 @@ const badgeVariants = cva(
       variant: {
         default: 'border-border bg-secondary text-secondary-foreground',
         outline: 'border-border text-foreground',
-        ok: 'border-ok/35 bg-ok/15 text-ok',
-        warn: 'border-warn/35 bg-warn/15 text-warn',
-        down: 'border-down/40 bg-down/15 text-down',
         muted: 'border-transparent bg-muted text-muted-foreground',
       },
     },

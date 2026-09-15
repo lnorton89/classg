@@ -89,7 +89,7 @@ describe('AdminRoute', () => {
     await screen.findByText('Accounts')
     await user.click(screen.getByRole('button', { name: /This unit/ }))
 
-    expect(await screen.findByText(/Drag card handles/)).toBeVisible()
+    expect(await screen.findByText('Deployment')).toBeVisible()
     expect(router.state.location.search).toEqual({ section: 'unit' })
 
     await user.click(screen.getByRole('button', { name: /Outbound/ }))
@@ -101,5 +101,38 @@ describe('AdminRoute', () => {
     renderPage('/admin?section=outbound')
     expect(await screen.findByText('Alert rules')).toBeVisible()
     expect(screen.queryByText('Accounts')).not.toBeInTheDocument()
+  })
+
+  /**
+   * The three unit panels were a drag-to-reorder grid, remembered per browser,
+   * which meant every layout was equally endorsed — including the ones that
+   * put the deploy history above the button that deploys. The order is fixed
+   * now, and it is the order of the question: is this unit current, is it
+   * repairing itself, what has it done before.
+   */
+  it('shows the unit panels in a fixed order, with Deployment as the one primary card', async () => {
+    renderPage('/admin?section=unit')
+
+    // Each panel skeletons until its own query lands, so wait for the slowest
+    // before reading the order — otherwise this asserts on whichever arrived
+    // first, which is the very thing being pinned.
+    await screen.findByRole('heading', { name: 'Deployment' })
+    await screen.findByRole('heading', { name: 'Self-repair' })
+    const headings = screen.getAllByRole('heading', {
+      name: /Deployment|Self-repair|Deploy history/,
+    })
+    expect(headings.map((node) => node.textContent.trim())).toEqual([
+      'Deployment',
+      'Self-repair',
+      'Deploy history',
+    ])
+
+    // No handle to drag, and nothing offering to put the layout back.
+    expect(screen.queryByText(/Drag card handles/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Reset layout/i })).not.toBeInTheDocument()
+
+    const primaries = document.querySelectorAll('[data-card-weight="primary"]')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0]?.textContent).toContain('Deployment')
   })
 })

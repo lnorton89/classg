@@ -10,9 +10,12 @@
  *      evidence map instead of an evidence array is a bad trade.
  */
 import type {
+  AircraftLabel,
+  AircraftLabelsResponse,
   ApiErrorBody,
   AuthMe,
   AuthUser,
+  SetAircraftLabelRequest,
   CreateUserRequest,
   DeploymentHistory,
   DeploymentStatus,
@@ -233,6 +236,9 @@ export const api = {
       `/tracks${buildQuery({
         state: query.state ?? [],
         since: query.since,
+        until: query.until,
+        serial: query.serial,
+        vendor: query.vendor,
         min_confidence: query.min_confidence,
         limit: query.limit,
         cursor: query.cursor,
@@ -265,6 +271,38 @@ export const api = {
         cursor: query.cursor,
       })}`,
     )
+  },
+
+  // --- aircraft labels ---
+
+  /**
+   * Every label at once. There are as many labels as there are aircraft an
+   * operator has bothered to name — tens, not thousands — so the Tracks list
+   * fetches the set once and looks serials up in it, rather than a request per
+   * group header.
+   */
+  aircraftLabels(): Promise<AircraftLabelsResponse> {
+    return request<AircraftLabelsResponse>('/aircraft/labels')
+  },
+
+  /** One aircraft's label. Rejects with a 404 `ApiError` when it has none. */
+  aircraftLabel(serial: string): Promise<AircraftLabel> {
+    return request<AircraftLabel>(`/aircraft/${encodeURIComponent(serial)}/label`)
+  },
+
+  /**
+   * Sets or clears one aircraft's label. An empty label with an empty flag
+   * deletes it, and the API answers `204` — hence the `undefined` half of the
+   * return type, which is how a caller tells a clear from a save.
+   */
+  setAircraftLabel(
+    serial: string,
+    body: SetAircraftLabelRequest,
+  ): Promise<AircraftLabel | undefined> {
+    return request<AircraftLabel | undefined>(`/aircraft/${encodeURIComponent(serial)}/label`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    })
   },
 
   // --- auth ---

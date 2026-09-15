@@ -72,7 +72,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
     to: '/settings/tracks',
     label: 'Tracks',
     icon: RadarIcon,
-    hint: 'Detail layout',
+    hint: 'Flight path colouring',
     scope: 'browser',
   },
   {

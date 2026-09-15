@@ -1,7 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
-  HeartPulseIcon,
-  HistoryIcon,
   RocketIcon,
   ShieldCheckIcon,
   UsersIcon,
@@ -13,12 +11,10 @@ import { z } from 'zod'
 import { PageContainer } from '@/components/layout/page-container'
 import { PageHeader } from '@/components/layout/page-header'
 import { Alert } from '@/components/ui/misc'
-import { SortableCardGrid } from '@/components/ui/sortable-card-grid'
 import { AdminUsers } from '@/features/auth/admin-users'
 import { useHasRole } from '@/features/auth/use-auth'
 import { DeployHistory } from '@/features/deploy/deploy-history'
 import { DeploymentPanel } from '@/features/deploy/deployment-panel'
-import { unitPanelOrderStore } from '@/features/deploy/unit-panel-order'
 import { WatchdogPanel } from '@/features/deploy/watchdog-panel'
 import { HooksPanel } from '@/features/hooks/hooks-panel'
 import { cn } from '@/lib/cn'
@@ -184,43 +180,23 @@ function BackToCategories({ onBack }: { onBack: () => void }) {
 }
 
 /**
- * Deployment, its history, and self-repair — three panels an administrator
- * compares against each other more than they read any one in isolation, so
- * they get the same drag-to-reorder treatment as a track's detail cards.
+ * Deployment, self-repair, deploy history — in that order, fixed.
  *
- * `variant: 'plain'` on all three: each already draws its own Card and a
- * header carrying live state (a pulsing "deploying" badge, a CI result) that
- * a generic title cannot express, so the grid contributes only the drag
- * handle, floated over the panel's own header rather than adding a second one.
+ * These were three draggable cards, remembered per browser. The reasoning was
+ * that an administrator compares them against each other, and the cost was
+ * that this page had no answer to "what am I looking at first": every layout
+ * was equally endorsed, including the ones that put the deploy history above
+ * the button that deploys. There is an order here, and it is the order of the
+ * question being asked — is this unit current, is it repairing itself, and
+ * what has it done before. Deployment is the page's one primary card; the
+ * other two are the context for it.
  */
 function UnitPanels() {
   return (
-    <SortableCardGrid
-      store={unitPanelOrderStore}
-      gridClassName="md:grid-cols-1 xl:grid-cols-2"
-      cards={[
-        {
-          id: 'deployment',
-          label: 'Deployment',
-          icon: RocketIcon,
-          variant: 'plain',
-          content: <DeploymentPanel />,
-        },
-        {
-          id: 'history',
-          label: 'Deploy history',
-          icon: HistoryIcon,
-          variant: 'plain',
-          content: <DeployHistory />,
-        },
-        {
-          id: 'watchdog',
-          label: 'Self-repair',
-          icon: HeartPulseIcon,
-          variant: 'plain',
-          content: <WatchdogPanel />,
-        },
-      ]}
-    />
+    <div className="flex flex-col gap-3">
+      <DeploymentPanel />
+      <WatchdogPanel />
+      <DeployHistory />
+    </div>
   )
 }

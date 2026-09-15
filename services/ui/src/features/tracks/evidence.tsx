@@ -9,7 +9,9 @@
  * a drone"; colouring it like a threat scale would restate it as one.
  */
 import { BarMeter } from '@/components/ui/bar-meter'
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/ui/status-pill'
+import { TeachingBanner } from '@/components/ui/teaching-banner'
+import type { Teaching } from '@/components/ui/use-teaching'
 import { Tooltip } from '@/components/ui/tooltip'
 import type { Evidence } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
@@ -274,29 +276,48 @@ export function EvidenceBreakdown({
   )
 }
 
-/** Small state badge used in tables and headers. */
+/**
+ * Small state badge used in tables and headers.
+ *
+ * The labels stay the lifecycle's own words — there is no way to say COASTING
+ * in four generic tones — but the tones are the app's one status vocabulary,
+ * so a coasting track and a degraded sensor look alike because they mean alike:
+ * still there, do not trust it without reading why. TENTATIVE takes `info`
+ * rather than the old neutral fill: it is a state worth naming, and neither
+ * good news nor bad.
+ */
 export function TrackStateBadge({ state }: { state: string }) {
-  const variant =
+  const tone =
     state === 'CONFIRMED'
       ? ('ok' as const)
       : state === 'COASTING'
         ? ('warn' as const)
         : state === 'CLOSED'
           ? ('muted' as const)
-          : ('default' as const)
+          : ('info' as const)
   return (
-    <Badge variant={variant} className="uppercase">
+    <StatusPill tone={tone} className="uppercase">
       {state.toLowerCase()}
-    </Badge>
+    </StatusPill>
   )
 }
 
-/** The lifecycle is time-driven, so changing badges are expected and need a key. */
-export function TrackStateKey() {
+/**
+ * The lifecycle is time-driven, so changing badges are expected and need a key.
+ *
+ * Once, though. Four states with one sentence each is something an operator
+ * learns on their first visit and then reads past on every visit after, and on
+ * this page it was pushing the flight history it explains below the fold every
+ * time. Dismissible, remembered, and back from the "?" in the page header.
+ */
+export const TRACK_STATE_KEY_TITLE = 'the track state key'
+
+export function TrackStateKey({ teaching }: { teaching: Teaching }) {
   return (
-    <section
-      aria-labelledby="track-state-key-title"
-      className="border-border bg-card/50 rounded-lg border px-3 py-2"
+    <TeachingBanner
+      teaching={teaching}
+      title={TRACK_STATE_KEY_TITLE}
+      titleId="track-state-key-title"
     >
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <h2 id="track-state-key-title" className="text-xs font-semibold">
@@ -316,6 +337,6 @@ export function TrackStateKey() {
           </div>
         ))}
       </dl>
-    </section>
+    </TeachingBanner>
   )
 }

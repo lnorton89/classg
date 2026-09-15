@@ -35,6 +35,7 @@ import type { Track, TrackState } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
 import { ConfidenceBar, EvidenceChips, TrackStateBadge } from './evidence'
+import { searchableIdentity } from './flight-filters'
 
 const features = tableFeatures({
   columnFilteringFeature,
@@ -47,21 +48,6 @@ const features = tableFeatures({
 })
 
 const helper = createColumnHelper<typeof features, Track>()
-
-/** Everything a free-text search should match, flattened into one string. */
-function searchableIdentity(track: Track): string {
-  return [
-    track.identity?.serial,
-    track.identity?.manufacturer_code,
-    track.identity?.vendor,
-    track.identity?.model_hint,
-    track.identity?.operator_id,
-    track.track_id,
-    ...(track.identity?.macs ?? []),
-  ]
-    .filter(Boolean)
-    .join(' ')
-}
 
 /**
  * The card view's row labels.

@@ -94,6 +94,40 @@ describe('applyFrame', () => {
     ).toMatchObject({ tracks: [], total: 0 })
   })
 
+  it('keeps a serial-filtered list to its own aircraft', () => {
+    // The track detail page's "This aircraft" block asks the API for one
+    // serial. Before matchesQuery knew about `serial`, every socket update for
+    // every other airframe was appended to that entry, and the block listed
+    // flights this aircraft never made.
+    const client = new QueryClient()
+    const key = queryKeys.tracks({ serial: 'MINE', limit: 1000 })
+    client.setQueryData<TracksResponse>(key, { tracks: [], next_cursor: null, total: 0 })
+
+    const mine = { ...track('T1'), identity: { serial: 'MINE' } }
+    const theirs = { ...track('T2'), identity: { serial: 'THEIRS' } }
+    applyFrame(client, { type: 'track.update', ts: FRAME_TS, track: theirs })
+    applyFrame(client, { type: 'track.update', ts: FRAME_TS, track: mine })
+
+    expect(client.getQueryData<TracksResponse>(key)).toMatchObject({
+      tracks: [{ track_id: 'T1' }],
+      total: 1,
+    })
+  })
+
+  it('compares a vendor filter without case, as the API does', () => {
+    const client = new QueryClient()
+    const key = queryKeys.tracks({ vendor: 'dji' })
+    client.setQueryData<TracksResponse>(key, { tracks: [], next_cursor: null, total: 0 })
+
+    applyFrame(client, {
+      type: 'track.update',
+      ts: FRAME_TS,
+      track: { ...track('T1'), identity: { vendor: 'DJI' } },
+    })
+
+    expect(client.getQueryData<TracksResponse>(key)?.tracks).toHaveLength(1)
+  })
+
   it('removes a track from a filtered list when an update moves it outside the filter', () => {
     const client = new QueryClient()
     const key = queryKeys.tracks({ state: ['TENTATIVE'] })

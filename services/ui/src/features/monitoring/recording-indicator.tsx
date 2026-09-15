@@ -2,8 +2,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PauseIcon } from 'lucide-react'
 import { useState } from 'react'
 
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { StatusPill } from '@/components/ui/status-pill'
 import { api } from '@/lib/api/client'
 import { healthQuery, monitoringQuery, queryKeys } from '@/lib/api/queries'
 import type { MonitoringState } from '@/lib/api/types'
@@ -59,7 +59,7 @@ export function RecordingIndicator({ className }: { className?: string }) {
 
   return (
     <div className={cn('flex items-center gap-2', className)}>
-      {/* The same Badge, height and padding as the stream and system pills
+      {/* The same pill, height and padding as the stream and system pills
           beside it. It used to be a rounded-full chip of its own size, which
           read as a stray element in the cluster once the label was dropped on
           mobile and only the dot was left.
@@ -67,33 +67,26 @@ export function RecordingIndicator({ className }: { className?: string }) {
           hues licensed to carry urgency here. Muted rather than destructive for
           paused, because the health pill next to it already carries red for
           absent coverage, and saying it twice trains people to skim past both. */}
-      <Badge
-        variant={RECORDING_TONE[state]}
+      <StatusPill
+        tone={RECORDING_TONE[state]}
         title={RECORDING_DESCRIPTION[state]}
-        className="h-7 gap-1.5 px-2"
+        className="h-7 px-2"
+        dot
+        // Only a genuinely recording system gets the live pulse: a pulsing dot
+        // reads as "working" and must not appear when nothing is.
+        pulse={RECORDING_TONE[state] === 'ok'}
         // Announced, because a change here is consequential and a screen-reader
         // user should not have to poll a badge to learn recording stopped.
         role="status"
         aria-live="polite"
       >
-        <span
-          aria-hidden
-          className={cn(
-            // `bg-current` inherits the variant's own colour, so the dot can
-            // never drift out of step with the pill around it.
-            'size-1.5 shrink-0 rounded-full bg-current',
-            // Only a genuinely recording system gets the live pulse: a pulsing
-            // dot reads as "working" and must not appear when nothing is.
-            RECORDING_TONE[state] === 'ok' && 'animate-pulse',
-          )}
-        />
         {/* The dot carries the state on a phone -- pulsing green for recording,
             flat grey for paused, amber for on-but-blind -- and the word is the
             widest thing in the header. Hidden visually, never removed: the
             colour of a 6px dot is not a label, so the text stays in the
             accessible name and in the `role="status"` announcement. */}
         <span className="sr-only sm:not-sr-only">{RECORDING_LABEL[state]}</span>
-      </Badge>
+      </StatusPill>
 
       {!recording && data.discarded_while_paused > 0 && (
         // A paused system must not be mistakable for a quiet one.

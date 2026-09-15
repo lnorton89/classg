@@ -15,7 +15,7 @@ import { usePreferences } from '@/app/preferences-context'
 import { Segmented } from '@/components/ui/segmented'
 import { Panel, ResizableSplit, ResizeHandle } from '@/components/ui/resizable'
 import { LG_QUERY, useMediaQuery } from '@/lib/use-media-query'
-import { StatTile } from '@/components/ui/stat'
+import { MetricStrip } from '@/components/ui/metric-strip'
 import { aircraftFromDetections } from '@/features/map/aircraft'
 import { ContactsPanel } from '@/features/map/contacts-panel'
 import { LiveMap } from '@/features/map/live-map'
@@ -147,32 +147,45 @@ function LiveView() {
           the map entirely" are not, and those are the two that change what the
           picture means.
         */}
-      <div className="border-border grid grid-cols-2 gap-2 border-b p-2 sm:grid-cols-4 lg:grid-cols-2">
-        <StatTile
-          label="Active"
-          value={activeTracks.length}
-          icon={PlaneIcon}
-          hint="tracks fusion is watching"
-        />
-        <StatTile
-          label="Confirmed"
-          value={confirmed}
-          icon={RadarIcon}
-          tone={confirmed > 0 ? 'ok' : 'default'}
-          hint="corroborated by evidence"
-        />
-        <StatTile
-          label="Manned"
-          value={adsb.length}
-          icon={SatelliteDishIcon}
-          hint="ADS-B, context only"
-        />
-        <StatTile
-          label="No position"
-          value={unplotted}
-          icon={MapPinOffIcon}
-          tone={unplotted > 0 ? 'warn' : 'muted'}
-          hint={unplotted > 0 ? 'in the list, not on the map' : 'all tracks plotted'}
+      <div className="border-border border-b p-2">
+        {/* lg:grid-cols-2 on top of the strip's own four-across: above lg this
+            is a narrow rail beside the map, not a page-width header. */}
+        <MetricStrip
+          label="Airspace summary"
+          columns={4}
+          className="lg:grid-cols-2"
+          metrics={[
+            {
+              id: 'active',
+              label: 'Active',
+              value: activeTracks.length,
+              icon: PlaneIcon,
+              hint: 'tracks fusion is watching',
+            },
+            {
+              id: 'confirmed',
+              label: 'Confirmed',
+              value: confirmed,
+              icon: RadarIcon,
+              tone: confirmed > 0 ? 'ok' : 'default',
+              hint: 'corroborated by evidence',
+            },
+            {
+              id: 'manned',
+              label: 'Manned',
+              value: adsb.length,
+              icon: SatelliteDishIcon,
+              hint: 'ADS-B, context only',
+            },
+            {
+              id: 'unplotted',
+              label: 'No position',
+              value: unplotted,
+              icon: MapPinOffIcon,
+              tone: unplotted > 0 ? 'warn' : 'muted',
+              hint: unplotted > 0 ? 'in the list, not on the map' : 'all tracks plotted',
+            },
+          ]}
         />
       </div>
 

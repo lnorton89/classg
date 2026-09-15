@@ -19,7 +19,9 @@
  * the arithmetic and the tests.
  *
  * Retention is shown as the horizon it is: rows older than it are gone, which
- * is why an empty stretch on the Timeline is not necessarily a quiet sky.
+ * is why an empty stretch on the Flights lanes view is not necessarily a quiet
+ * sky. (That view was the Timeline page until it was folded into Flights as
+ * `?view=lanes`; the retention horizon is what it can draw at all.)
  */
 import { useQuery } from '@tanstack/react-query'
 import { HardDriveIcon, TrendingDownIcon, UserRoundIcon } from 'lucide-react'
@@ -46,7 +48,7 @@ const RETENTION_KEYS: { key: string; label: string; note: string }[] = [
   {
     key: 'retention.tracks',
     label: 'Tracks',
-    note: 'Fused tracks and their history. What the Timeline draws.',
+    note: "Fused tracks and their history. What the Flights page's lanes view draws.",
   },
   {
     key: 'retention.telemetry',
@@ -147,15 +149,21 @@ export function StoragePanel() {
           </CardTitle>
           <CardDescription>
             The one field in this system that is personal data about a person rather than a
-            measurement of an aircraft. It is included by default for this deployment, and this
-            switch is the single place that decides — every read path honours it, and turning it
-            off strips it from tracks, detections, exports, the live stream, GraphQL and
-            outgoing webhooks alike. Webhooks were missing from that list, and they are the one
-            path that sends it to somebody else&rsquo;s server rather than to this operator.
+            measurement of an aircraft. This switch is the single place that decides who sees
+            it.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           <SettingsGroup
+            why={
+              <>
+                It is included by default for this deployment. Every read path honours the
+                switch: turning it off strips the position from tracks, detections, exports, the
+                live stream, GraphQL and outgoing webhooks alike. Webhooks were missing from
+                that list, and they are the one path that sends it to somebody else&rsquo;s
+                server rather than to this operator.
+              </>
+            }
             fields={[
               {
                 key: 'api.expose_operator_location',
@@ -182,8 +190,8 @@ export function StoragePanel() {
           <CardTitle>Retention</CardTitle>
           <CardDescription>
             How far back each kind of record is kept. Anything older is deleted by the retention
-            job, which is why an empty stretch at the left edge of a long Timeline window may be
-            purged history rather than a quiet sky.
+            job, which is why an empty stretch at the left edge of a long window on the Flights
+            lanes view may be purged history rather than a quiet sky.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -223,19 +231,25 @@ export function StoragePanel() {
             </dl>
           )}
 
+          {/* Titled, because the horizons above it are read-only and the Save
+              below is not about them. Without a heading the button sits under
+              a list of durations it cannot write, which is the exact confusion
+              this pass exists to remove. */}
           <SettingsGroup
+            title="Schedule"
+            description="How often the horizons above are enforced, and how fast the table they are enforced against grows. Save writes these two, not the horizons."
             fields={[
               {
                 key: 'retention.interval',
                 label: 'Run the retention job every',
                 kind: 'text',
-                hint: 'How often the horizons above are enforced. Between passes, rows past their horizon are still on disk.',
+                hint: 'Between passes, rows past their horizon are still on disk.',
               },
               {
                 key: 'telemetry.interval',
                 label: 'Record a telemetry sample every',
                 kind: 'text',
-                hint: 'The other half of the fill rate above: this decides how fast the telemetry table grows.',
+                hint: 'The other half of the fill rate on this page.',
               },
             ]}
           />

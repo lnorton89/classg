@@ -108,7 +108,7 @@
           "description": "Fusion reads the shared root environment before it starts its bus loops.",
           "items": [
             { "title": "Bus topology", "body": "CLASSG_DETECTION_ENDPOINT, CLASSG_TRACK_ENDPOINT, CLASSG_DETECTION_TOPIC, CLASSG_HEARTBEAT_TOPIC, CLASSG_TRACK_TOPIC, and CLASSG_FUSION_DETECTION_SOCKET_MODE define transport roles." },
-            { "title": "Track lifecycle", "body": "CLASSG_FUSION_SENSOR_STALE_AFTER, CLASSG_FUSION_TRACK_TTL, and CLASSG_FUSION_REAP_INTERVAL control coasting, closure, and cleanup cadence.", "path": ".env.example" }
+            { "title": "Track lifecycle", "body": "CLASSG_FUSION_SENSOR_STALE_AFTER, CLASSG_FUSION_TRACK_TTL, CLASSG_FUSION_RESUME_WITHIN, and CLASSG_FUSION_REAP_INTERVAL control coasting, closure, how long a closed flight can be resumed by an aircraft returning from out of range, and cleanup cadence.", "path": ".env.example" }
           ]
         },
         {
@@ -176,8 +176,8 @@
           "description": "Every view is designed around evidence and coverage rather than invented threat labels.",
           "items": [
             { "title": "Live map", "body": "Plots aircraft, operators when supplied by policy, trails, range rings, and visually distinct ADS-B traffic, beside a resizable detail pane." },
-            { "title": "Tracks and evidence", "body": "Shows identity, lifecycle, position history, RSSI, and the exact evidence behind confidence." },
-            { "title": "Timeline", "body": "Reads recorded history back: what was seen, when, and which sensor saw it, over a window rather than the live moment." },
+            { "title": "Flights and evidence", "body": "Flights (still at /tracks) is every flight this unit has heard, one row per flight and grouped by aircraft, with a day histogram and filter chips above it. A flight's own page is a fixed order: summary stats, a full-width map whose route is shaded by speed and whose scrubber replays the flight, height/speed/RSSI profiles on one time axis, identity and receivers, and the same aircraft's other flights. Evidence collapses to a line with the noisy-OR arithmetic behind a disclosure; position history stays as an export-oriented table." },
+            { "title": "Lanes view", "body": "The same flights as a band of time — one bar per flight, packed into lanes, over the window and filters the list is using. Picking a bar opens that flight's row. It was the Timeline page; /timeline redirects here. An empty band is never drawn without saying which of the three things it means: a quiet sky, nothing watching, or history the retention job has already deleted." },
             { "title": "Spectrum", "body": "Two sources, because no one radio covers the band. The SDR sweeps sub-2 GHz and returns power per frequency bin; the Wi-Fi adapter reports per-channel busy time across 2.4 and 5 GHz, which the SDR cannot tune. Both measure, neither identifies." },
             { "title": "Operations", "body": "Sensor health, capture workflow, configuration editors, and this documentation are available without a Node runtime in deployment." },
             { "title": "Administration", "body": "Accounts and sessions, outbound hooks and their delivery history, deployment status and control, and the host watchdog, all gated on the admin role." },

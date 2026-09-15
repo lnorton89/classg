@@ -21,11 +21,12 @@ export const queryKeys = {
   monitoring: ['monitoring'] as const,
   telemetry: (window: string) => ['telemetry', window] as const,
   tracks: (query: TracksQuery = {}) => ['tracks', 'list', query] as const,
-  trackHistory: ['tracks', 'history'] as const,
+  trackHistory: (since?: string) => ['tracks', 'history', since ?? 'all'] as const,
   track: (trackId: string) => ['tracks', 'detail', trackId] as const,
   trackDetections: (trackId: string) => ['tracks', 'detections', trackId] as const,
   trackPath: (trackId: string) => ['tracks', 'path', trackId] as const,
   detections: (query: DetectionsQuery = {}) => ['detections', query] as const,
+  aircraftLabels: ['aircraft', 'labels'] as const,
   captures: ['captures'] as const,
   authMe: ['auth', 'me'] as const,
   users: ['admin', 'users'] as const,
@@ -122,6 +123,20 @@ export const tracksQuery = (query: TracksQuery = {}) =>
   })
 
 /**
+ * Per-aircraft labels, fetched once and looked up by serial while rendering.
+ *
+ * Nothing pushes these over the socket -- they only change when this operator
+ * types one -- so the staleTime is long and there is no interval. A label is a
+ * note about an airframe, not a reading from it.
+ */
+export const aircraftLabelsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.aircraftLabels,
+    queryFn: () => api.aircraftLabels(),
+    staleTime: 5 * 60_000,
+  })
+
+/**
  * Closed-track history, paged on the API's `next_cursor`.
  *
  * Deliberately NOT keyed under `['tracks', 'list']`: the live socket writes
@@ -129,14 +144,18 @@ export const tracksQuery = (query: TracksQuery = {}) =>
  * query's cache entry is `{ pages, pageParams }` -- sharing the prefix would
  * let the first pushed frame corrupt it. History is what fusion has already
  * stopped monitoring, so nothing is lost by leaving it out of the live path.
+ *
+ * `since` is part of the key, not just the request: the Tracks page's window
+ * chips switch between windows and back, and sharing one cache entry between
+ * them would page an unbounded cursor into a bounded view.
  */
 const HISTORY_PAGE_SIZE = 100
 
-export const closedTracksHistoryQuery = () =>
+export const closedTracksHistoryQuery = (since?: string) =>
   infiniteQueryOptions({
-    queryKey: queryKeys.trackHistory,
+    queryKey: queryKeys.trackHistory(since),
     queryFn: ({ pageParam }) =>
-      api.tracks({ state: ['CLOSED'], limit: HISTORY_PAGE_SIZE, cursor: pageParam }),
+      api.tracks({ state: ['CLOSED'], limit: HISTORY_PAGE_SIZE, cursor: pageParam, since }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.next_cursor ?? undefined,
     staleTime: 30_000,

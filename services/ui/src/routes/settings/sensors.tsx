@@ -18,7 +18,7 @@ function SensorSettings() {
       <ToggleRow
         icon={ShieldQuestionIcon}
         label="Confirm before restarting a sensor"
-        hint="A restart drops coverage for several seconds. Off makes the button act immediately."
+        hint="A restart drops coverage for several seconds."
         checked={preferences.confirmDestructive}
         onCheckedChange={(checked) => setPreference('confirmDestructive', checked)}
       />

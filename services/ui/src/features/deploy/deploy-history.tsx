@@ -15,9 +15,9 @@ import { useQuery } from '@tanstack/react-query'
 import { CheckCircle2Icon, HammerIcon, HistoryIcon, XCircleIcon } from 'lucide-react'
 
 import { useFormat } from '@/app/use-format'
-import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, EmptyState, Skeleton } from '@/components/ui/misc'
+import { StatusPill } from '@/components/ui/status-pill'
 import { deploymentHistoryQuery } from '@/lib/api/queries'
 import type { DeploymentRun } from '@/lib/api/types'
 
@@ -123,7 +123,7 @@ function RunRow({ run }: { run: DeploymentRun }) {
               scans source text for whole class names and generates no CSS for
               a name that only exists once the template is evaluated. */}
           <Icon className={`size-4 shrink-0 ${result.iconClass}`} aria-hidden />
-          <Badge variant={result.tone}>{result.label}</Badge>
+          <StatusPill tone={result.tone}>{result.label}</StatusPill>
           {run.commit ? (
             <code className="font-mono text-xs">{run.commit.slice(0, 8)}</code>
           ) : null}
@@ -136,10 +136,19 @@ function RunRow({ run }: { run: DeploymentRun }) {
             {format.relative(run.finished_at)}
             {took ? ` · ${took}` : ''}
           </span>
+          {/* Why it failed belongs on the row, not behind the disclosure: two
+              "failed" rows from a transient "git fetch failed" looked like a
+              broken unit until somebody expanded them. A success needs no
+              reason and gets none. */}
+          {run.reason && result.tone !== 'ok' ? (
+            <span className="text-muted-foreground basis-full text-2xs">{run.reason}</span>
+          ) : null}
         </summary>
 
         <div className="space-y-2 pb-3 pl-6">
-          {run.reason ? (
+          {/* Already on the row for anything that went wrong; repeating it
+              here would only make a search for the text find it twice. */}
+          {run.reason && result.tone === 'ok' ? (
             <p className="text-muted-foreground text-xs leading-relaxed">{run.reason}</p>
           ) : null}
 

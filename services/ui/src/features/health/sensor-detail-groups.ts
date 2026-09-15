@@ -111,9 +111,22 @@ export interface DetailGroup {
   rows: DetailRow[]
 }
 
-export function groupSensorDetail(detail: Record<string, unknown>): DetailGroup[] {
+/**
+ * `omit` exists for the readings a page has already promoted — the summary
+ * strip's six tiles, the per-channel bars, the survey note the occupancy panel
+ * prints in full. Filtering at the call site rather than dropping them from
+ * `KNOWN` keeps this module's contract intact: every key a sensor sends still
+ * has a label and a section, and a caller that promotes nothing still gets
+ * everything.
+ */
+export function groupSensorDetail(
+  detail: Record<string, unknown>,
+  omit: readonly string[] = [],
+): DetailGroup[] {
+  const omitted = new Set(omit)
   const bySection = new Map<DetailSection, DetailRow[]>()
   for (const [key, value] of Object.entries(detail)) {
+    if (omitted.has(key)) continue
     const known = KNOWN[key]
     const section = known?.section ?? 'Other'
     const rows = bySection.get(section) ?? []

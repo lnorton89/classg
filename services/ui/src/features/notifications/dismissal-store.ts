@@ -12,8 +12,13 @@
  * which would let a dismissal from three days ago silently suppress a
  * genuinely new occurrence.
  *
- * One factory rather than one hand-rolled copy per banner, for the same
- * reason `card-order-store.ts` is a factory rather than one copy per grid.
+ * One factory rather than one hand-rolled copy per banner.
+ *
+ * Not to be confused with `components/ui/teaching-banner.tsx`, which is
+ * localStorage and means "I know what this means". This one is sessionStorage
+ * and means "I have seen this occurrence": the difference matters, because a
+ * sky-state dismissal that outlived the tab would let a three-day-old "Quiet
+ * sky" suppress a genuinely new one.
  */
 export interface DismissalStore {
   /** The value most recently dismissed in this group, or null if none / storage unavailable. */

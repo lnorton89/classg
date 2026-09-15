@@ -87,7 +87,7 @@ describe('WatchdogPanel', () => {
     )
     renderPanel()
 
-    expect(await screen.findByText('The watchdog has stopped trying')).toBeVisible()
+    expect(await screen.findByText('The watchdog needs a person')).toBeVisible()
     expect(screen.getByText('classg-sensor-wifi-tplink.service')).toBeVisible()
     expect(screen.getByText('needs attention')).toBeVisible()
   })

@@ -14,9 +14,17 @@ function LogSettings() {
     <SettingsCard
       icon={ScrollTextIcon}
       title="Event log"
-      description="The log is held in memory for this browser session. A larger buffer keeps more history and costs more memory — this box has 4 GB."
+      description="The log is held in memory for this browser session, so both of these are gone when the tab is."
+      why={
+        <>
+          A larger buffer keeps more history and costs more memory; the Pi this usually runs
+          against has 4 GB, and the browser reading it may have much less. Oldest entries are
+          dropped once the buffer is full. Following suspends automatically while you scroll
+          back, so leaving it on does not fight you during a review.
+        </>
+      }
     >
-      <SettingRow label="Buffer size" hint="Oldest entries are dropped once it is full.">
+      <SettingRow label="Buffer size">
         <Segmented
           aria-label="Log buffer size"
           value={String(preferences.logLimit)}
@@ -31,7 +39,7 @@ function LogSettings() {
 
       <ToggleRow
         label="Follow new entries"
-        hint="Scrolls to the newest entry as it arrives. Suspends automatically while you scroll back."
+        hint="Scrolls to the newest entry as it arrives."
         checked={preferences.logFollow}
         onCheckedChange={(checked) => setPreference('logFollow', checked)}
       />

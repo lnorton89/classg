@@ -78,7 +78,7 @@ function AboutSettings() {
                 ? info.build.revision_dirty
                   ? 'Built from a dirty working tree'
                   : undefined
-                : 'Container builds exclude .git, so the toolchain has no commit to record'
+                : 'This image was built without CLASSG_BUILD_REVISION; the deploy agent and make compose-up pass it, a plain docker build does not'
             }
           />
           {info?.build.built_at ? (

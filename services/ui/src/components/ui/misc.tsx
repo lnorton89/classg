@@ -137,7 +137,9 @@ export function DataList({
   children: ReactNode
 }) {
   return (
-    <div className={cn('min-w-0', className)}>
+    // Same density hook as KeyValueGroup: the compact preference tightens the
+    // seams between consecutive groups, and a DataList is one of them.
+    <div data-density-group className={cn('min-w-0', className)}>
       {label ? <p className="label-caps mb-0.5">{label}</p> : null}
       <dl className="divide-border/60 divide-y">{children}</dl>
     </div>
@@ -229,6 +231,48 @@ export function EmptyState({
       {Icon ? <Icon className="size-6 opacity-60" aria-hidden /> : null}
       <p className="text-foreground text-sm font-medium">{title}</p>
       {children ? <div className="max-w-sm text-xs">{children}</div> : null}
+    </div>
+  )
+}
+
+/**
+ * A panel that could not load, as distinct from one with nothing in it.
+ *
+ * The two were being drawn the same way in several places — a dimmed line of
+ * text where a chart should be — and on this product that confusion is the
+ * expensive one: "no detections" and "could not ask" are the difference
+ * between a quiet sky and an unwatched one. `EmptyState`'s shape, in the down
+ * tone, so they cannot be mistaken for each other at a glance.
+ *
+ * For a failed *action* (a restart, a save) keep `Alert tone="error"`: that
+ * belongs in the flow next to the control that failed, not in place of
+ * content.
+ */
+export function ErrorState({
+  title,
+  children,
+  action,
+  className,
+}: {
+  title: ReactNode
+  /** What was tried and what it said. A reason is not optional here. */
+  children?: ReactNode
+  /** A retry, or a link to where the fault can be acted on. */
+  action?: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      role="alert"
+      className={cn(
+        'text-muted-foreground flex flex-col items-center justify-center gap-2 p-8 text-center',
+        className,
+      )}
+    >
+      <XCircleIcon className="text-down size-6" aria-hidden />
+      <p className="text-foreground text-sm font-medium">{title}</p>
+      {children ? <div className="max-w-sm text-xs">{children}</div> : null}
+      {action ? <div className="mt-1">{action}</div> : null}
     </div>
   )
 }

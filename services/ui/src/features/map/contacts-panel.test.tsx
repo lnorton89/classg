@@ -6,6 +6,7 @@
  * itself, that the detail is the payload and not a re-render of the summary,
  * and that a drone and an aircraft can never be selected at the same time.
  */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
@@ -16,12 +17,34 @@ import {
   createRouter,
 } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { Detection, Track } from '@/lib/api/types'
+import type * as ApiClient from '@/lib/api/client'
+import type { AircraftLabelsResponse, Detection, Track } from '@/lib/api/types'
 
 import { ContactsPanel } from './contacts-panel'
 import { useContactSelection } from './selection'
+
+type ApiClientModule = typeof ApiClient
+
+/**
+ * The panel asks for the aircraft labels so a named airframe is listed by its
+ * name. Mocked at the client rather than stubbed at the hook: what these are
+ * checking is that the label reaches the heading, and a stubbed hook would
+ * prove only that the fixture was returned.
+ */
+const aircraftLabels = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/api/client', async (importOriginal) => {
+  const actual = await importOriginal<ApiClientModule>()
+  return { ...actual, api: { ...actual.api, aircraftLabels } }
+})
+
+const noLabels: AircraftLabelsResponse = { labels: [] }
+
+beforeEach(() => {
+  aircraftLabels.mockReset().mockResolvedValue(noLabels)
+})
 
 const track: Track = {
   schema_version: '1.0',
@@ -64,6 +87,35 @@ const vendorMatchOnly: Track = {
   evidence: [{ class: 'C', sensor_kind: 'wifi', weight: 0.1, count: 8 }],
 }
 
+/**
+ * Four flights of one airframe, the shape the deployed unit actually produces:
+ * the same serial over and over, distinguishable only by when each one was.
+ */
+const firstAircraftFlights: Track[] = [18, 19, 20, 21].map((hour) => ({
+  schema_version: '1.0',
+  track_id: `closed-${hour}`,
+  state: 'CLOSED',
+  first_seen: `2026-08-10T${hour}:00:00Z`,
+  last_seen: `2026-08-10T${hour}:09:00Z`,
+  detection_count: 400,
+  confidence: 0.6,
+  identity: { serial: 'SERIAL-FIRST', vendor: 'dji' },
+  evidence: [{ class: 'A', sensor_kind: 'wifi', weight: 0.6, count: 400 }],
+}))
+
+/** A closed track nothing ever identified: a MAC, two detections, no aircraft. */
+const closedFingerprint: Track = {
+  schema_version: '1.0',
+  track_id: 'closed-fingerprint',
+  state: 'CLOSED',
+  first_seen: '2026-08-10T17:00:00Z',
+  last_seen: '2026-08-10T17:00:08Z',
+  detection_count: 2,
+  confidence: 0.1,
+  identity: { macs: ['06:11:22:33:44:55'], vendor: 'dji' },
+  evidence: [{ class: 'C', sensor_kind: 'wifi', weight: 0.1, count: 2 }],
+}
+
 const helicopter: Detection = {
   ...airliner,
   detection_id: 'det-2',
@@ -79,11 +131,15 @@ function Panel({
   adsb = [airliner],
   tracks = [track],
   unidentifiedTracks = [],
+  closedTracks = [],
+  showClosed = false,
   splitId,
 }: {
   adsb?: Detection[]
   tracks?: Track[]
   unidentifiedTracks?: Track[]
+  closedTracks?: Track[]
+  showClosed?: boolean
   splitId?: string
 }) {
   const { selectedTrackId, selectedMannedIcao, selectTrack, selectManned } =
@@ -93,8 +149,9 @@ function Panel({
       splitId={splitId}
       tracks={tracks}
       unidentifiedTracks={unidentifiedTracks}
+      closedTracks={closedTracks}
       adsb={adsb}
-      showClosed={false}
+      showClosed={showClosed}
       selectedTrackId={selectedTrackId}
       onSelectTrack={selectTrack}
       selectedMannedIcao={selectedMannedIcao}
@@ -120,7 +177,12 @@ async function renderInRouter(component: ReactNode) {
     history: createMemoryHistory({ initialEntries: ['/'] }),
   })
 
-  const result = render(<RouterProvider router={router} />)
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+  const result = render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  )
   await screen.findByText(/Manned traffic/)
   return result
 }
@@ -278,15 +340,32 @@ describe('drone and manned selection are mutually exclusive', () => {
  * aircraft on 2026-08-17.
  */
 describe('unidentified RF', () => {
+  /** The shelf is closed until asked for; everything below it needs it open. */
+  async function openShelf() {
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /Unidentified RF/ }))
+  }
+
   it('is kept out of the drone track count', async () => {
     await renderInRouter(<Panel unidentifiedTracks={[vendorMatchOnly]} />)
 
     expect(screen.getByText('Active drone tracks (1)')).toBeInTheDocument()
-    expect(screen.getByText('Unidentified RF (1)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Unidentified RF \(1\)/ })).toBeInTheDocument()
   })
 
-  it('names the vendor and says it is never plotted', async () => {
+  it('is shelved rather than listed, and says how many it is holding', async () => {
+    // Open by default it was a standing list of access points beside the
+    // aircraft, which is the confusion the section exists to end.
     await renderInRouter(<Panel unidentifiedTracks={[vendorMatchOnly]} />)
+
+    const shelf = screen.getByRole('button', { name: /Unidentified RF/ })
+    expect(shelf).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('0c:9a:e6:47:3c:89')).not.toBeInTheDocument()
+  })
+
+  it('names the vendor and says it is never plotted, once opened', async () => {
+    await renderInRouter(<Panel unidentifiedTracks={[vendorMatchOnly]} />)
+    await openShelf()
 
     const section = screen.getByRole('region', { name: /Unidentified RF/ })
     expect(within(section).getByText('0c:9a:e6:47:3c:89')).toBeInTheDocument()
@@ -296,6 +375,7 @@ describe('unidentified RF', () => {
 
   it('does not describe a contact still being heard as closed', async () => {
     await renderInRouter(<Panel unidentifiedTracks={[vendorMatchOnly]} />)
+    await openShelf()
 
     const section = screen.getByRole('region', { name: /Unidentified RF/ })
     expect(within(section).queryByText(/closed/i)).not.toBeInTheDocument()
@@ -305,6 +385,94 @@ describe('unidentified RF', () => {
     await renderInRouter(<Panel />)
 
     expect(screen.queryByText(/Unidentified RF/)).not.toBeInTheDocument()
+  })
+
+  /*
+   * The shelf takes closed fingerprints too. On the deployed unit those are
+   * MAC-only contacts with one or two detections, and they sat in the closed
+   * list between real flights, each one looking like an aircraft that had been
+   * up.
+   */
+  it('takes a closed track nothing ever identified, away from the flights', async () => {
+    await renderInRouter(
+      <Panel showClosed closedTracks={[closedFingerprint, ...firstAircraftFlights]} />,
+    )
+
+    expect(screen.getByRole('button', { name: /Unidentified RF \(1\)/ })).toBeInTheDocument()
+    const flights = screen.getByRole('region', { name: /Closed flights/ })
+    expect(within(flights).queryByText('06:11:22:33:44:55')).not.toBeInTheDocument()
+  })
+
+  it('leaves a closed fingerprint out of the shelf when closed tracks are hidden', async () => {
+    // Hiding the closed section has to hide all of it. A shelf that kept
+    // counting them would be a claim about the sky the operator opted out of.
+    await renderInRouter(<Panel closedTracks={[closedFingerprint]} />)
+
+    expect(screen.queryByText(/Unidentified RF/)).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * The closed list repeated one serial 29 times on the deployed unit, every row
+ * saying "closed 4 hours ago" and nothing that told them apart. Identity is
+ * stated once now and each row under it is a flight.
+ */
+describe('closed flights', () => {
+  it('states the airframe once and lists its flights under it', async () => {
+    await renderInRouter(<Panel showClosed closedTracks={firstAircraftFlights} />)
+
+    const flights = screen.getByRole('region', { name: /Closed flights/ })
+    expect(within(flights).getAllByText('SERIAL-FIRST')).toHaveLength(1)
+    expect(within(flights).getByText('4 flights')).toBeInTheDocument()
+  })
+
+  it('shows the last few and offers the rest on the Flights page', async () => {
+    await renderInRouter(<Panel showClosed closedTracks={firstAircraftFlights} />)
+
+    const flights = screen.getByRole('region', { name: /Closed flights/ })
+    // Three of four, so one is behind the link.
+    const more = within(flights).getByRole('link', { name: /1 more flight/ })
+    expect(more).toHaveAttribute('href', expect.stringContaining('q=SERIAL-FIRST'))
+  })
+
+  it('shows no "more" link when every flight is listed', async () => {
+    await renderInRouter(<Panel showClosed closedTracks={firstAircraftFlights.slice(0, 2)} />)
+
+    expect(screen.queryByRole('link', { name: /more flight/ })).not.toBeInTheDocument()
+  })
+
+  it('lists the newest flight first', async () => {
+    await renderInRouter(<Panel showClosed closedTracks={firstAircraftFlights} />)
+
+    const flights = screen.getByRole('region', { name: /Closed flights/ })
+    const rows = within(flights).getAllByRole('link', { name: /2026/ })
+    // Default preferences render an absolute timestamp; the newest of the four
+    // starts at 21:00 and the oldest listed at 19:00.
+    expect(rows[0]).toHaveTextContent('21:0')
+    expect(rows[2]).toHaveTextContent('19:0')
+  })
+
+  it('calls the aircraft by the name the operator gave it', async () => {
+    aircraftLabels.mockResolvedValue({
+      labels: [
+        {
+          serial: 'SERIAL-FIRST',
+          label: "Neighbour's Mini 4 Pro",
+          flag: 'known',
+          updated_at: '2026-09-01T00:00:00Z',
+        },
+      ],
+    })
+    await renderInRouter(<Panel showClosed closedTracks={firstAircraftFlights} />)
+
+    expect(await screen.findByText("Neighbour's Mini 4 Pro")).toBeInTheDocument()
+    expect(screen.queryByText('SERIAL-FIRST')).not.toBeInTheDocument()
+  })
+
+  it('says so rather than claiming an empty sky when there are none', async () => {
+    await renderInRouter(<Panel showClosed />)
+
+    expect(screen.getByText('Closed flights (0)')).toBeInTheDocument()
   })
 })
 
@@ -353,9 +521,12 @@ describe('resizable sections', () => {
  */
 describe('section boundaries', () => {
   it('gives every scrollable section a faded edge and clearance under it', async () => {
+    const user = userEvent.setup()
     await renderInRouter(
       <Panel splitId="test-contacts" unidentifiedTracks={[vendorMatchOnly]} />,
     )
+    // The shelf has no list to clip while it is closed.
+    await user.click(screen.getByRole('button', { name: /Unidentified RF/ }))
 
     for (const name of [/Active drone tracks/, /Unidentified RF/, /Manned traffic/]) {
       const region = screen.getByRole('region', { name })

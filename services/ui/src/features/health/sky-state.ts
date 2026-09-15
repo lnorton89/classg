@@ -107,16 +107,35 @@ export function computeSkyState(health: Health | undefined, trackCount: number):
     }
   }
 
-  const detections5m = health.sensors.reduce((sum, s) => sum + (s.detections_5m ?? 0), 0)
+  // Manned traffic is not a failed correlation. The SDR and any network feed
+  // report ADS-B, and class D never becomes a track by design (it is
+  // suppression only), so folding those into "did not correlate" told an
+  // operator on a quiet day that fusion was dropping hundreds of detections --
+  // 470 in five minutes, read off this banner on 2026-09-15 -- when it was
+  // hearing airliners. Split by sensor kind: health carries no per-class
+  // counts, and on this hardware an SDR detection is an ADS-B report.
+  const isManned = (s: SensorHealth) => s.sensor_kind === 'sdr' || s.sensor_kind === 'net'
+  const count = (pick: (s: SensorHealth) => boolean) =>
+    health.sensors.filter(pick).reduce((sum, s) => sum + (s.detections_5m ?? 0), 0)
+  const manned = count(isManned)
+  const drone = count((s) => !isManned(s))
+  const reporting = `All ${healthy.length} sensors are reporting.`
+  let detail: string
+  if (drone > 0 && manned > 0) {
+    detail = `${reporting} ${drone} detections in the last 5 minutes did not correlate into a track; the ${manned} ADS-B reports are manned aircraft.`
+  } else if (drone > 0) {
+    detail = `${reporting} ${drone} detections in the last 5 minutes did not correlate into a track.`
+  } else if (manned > 0) {
+    detail = `${reporting} ${manned} ADS-B reports from manned aircraft in the last 5 minutes and nothing from a drone — the empty map means an empty sky.`
+  } else {
+    detail = `All ${healthy.length} sensors are reporting and have seen nothing for 5 minutes. The empty map means an empty sky.`
+  }
   return {
     ...base,
     kind: 'quiet',
     absenceIsEvidence: true,
     title: 'Quiet sky',
-    detail:
-      detections5m > 0
-        ? `All ${healthy.length} sensors are reporting. ${detections5m} detections in the last 5 minutes did not correlate into a track.`
-        : `All ${healthy.length} sensors are reporting and have seen nothing for 5 minutes. The empty map means an empty sky.`,
+    detail,
     tone: 'ok',
   }
 }

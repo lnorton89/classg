@@ -25,9 +25,9 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import {
   ArchiveIcon,
   ArrowLeftIcon,
+  AudioWaveformIcon,
   RotateCwIcon,
   SlidersHorizontalIcon,
-  type LucideIcon,
 } from 'lucide-react'
 import { useState } from 'react'
 import { z } from 'zod'
@@ -37,25 +37,33 @@ import { useFormat, useTicker } from '@/app/use-format'
 import { PageContainer } from '@/components/layout/page-container'
 import { PageHeader } from '@/components/layout/page-header'
 import { Button } from '@/components/ui/button'
-import { Alert, DataRow, EmptyState } from '@/components/ui/misc'
+import { buttonVariants } from '@/components/ui/button-variants'
+import { KeyValueGroup } from '@/components/ui/key-value-group'
+import { Alert, EmptyState } from '@/components/ui/misc'
+import { Why } from '@/components/ui/why'
 import { useToast } from '@/components/ui/toast-primitives'
-import { CaptureHistory, SensorCaptureControl } from '@/features/captures/sensor-captures'
+import { captureLimitation } from '@/features/captures/capture-limits'
+import { SensorCaptureControl } from '@/features/captures/sensor-captures'
 import { SensorHealthCard } from '@/features/health/components'
 import { SENSOR_ICONS } from '@/features/health/sensor-icons'
 import { log } from '@/features/logs/log-store'
-import { SpectrumPanel } from '@/features/spectrum/spectrum-panel'
 import { WifiOccupancyPanel } from '@/features/spectrum/wifi-occupancy'
 import { ApiError, api } from '@/lib/api/client'
 import { capturesQuery, healthQuery, queryKeys, sensorsQuery } from '@/lib/api/queries'
 import type { RestartSensorResponse, SensorHealth } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
+import { EMPTY } from '@/lib/format'
 
-// In the URL, not component state, so a reload or a shared link lands back
-// on the sensor (or Captures) someone was reading instead of resetting to
-// the first sensor every time.
+// In the URL, not component state, so a reload or a shared link lands back on
+// the sensor someone was reading instead of resetting to the first every time.
+//
+// `view=captures` used to live here too, selecting a captures pane inside this
+// page. `/captures` is a real route now, so the pane was a second copy of the
+// same list at a URL that only this page understood -- and a link that landed
+// there had no way to say which of the two an operator meant. The sensor list
+// keeps a count and a link; the list and its detail live on `/captures` alone.
 export const sensorsSearchSchema = z.object({
   sensor: z.string().optional().catch(undefined),
-  view: z.literal('captures').optional().catch(undefined),
 })
 
 export const Route = createFileRoute('/sensors')({
@@ -69,8 +77,6 @@ export const Route = createFileRoute('/sensors')({
     ])
   },
 })
-
-type Selection = { kind: 'sensor'; id: string } | { kind: 'captures' }
 
 export function SensorsView() {
   const queryClient = useQueryClient()
@@ -88,23 +94,15 @@ export function SensorsView() {
   // the first entry below so its detail pane is never empty; a phone stays
   // on the list until the operator taps something, per the pattern this
   // reads from — see the file header.
-  const selected: Selection | undefined =
-    search.view === 'captures'
-      ? { kind: 'captures' }
-      : search.sensor
-        ? { kind: 'sensor', id: search.sensor }
-        : undefined
+  const selected = search.sensor
 
   // replace: true -- switching the selected sensor is not a new page to walk
   // back through with the browser's back button, the way opening this page was.
   function selectSensor(id: string) {
-    void navigate({ search: () => ({ sensor: id, view: undefined }), replace: true })
-  }
-  function selectCaptures() {
-    void navigate({ search: () => ({ sensor: undefined, view: 'captures' }), replace: true })
+    void navigate({ search: () => ({ sensor: id }), replace: true })
   }
   function goBack() {
-    void navigate({ search: () => ({ sensor: undefined, view: undefined }), replace: true })
+    void navigate({ search: () => ({ sensor: undefined }), replace: true })
   }
 
   const restart = useMutation({
@@ -128,27 +126,36 @@ export function SensorsView() {
   const sensors = sensorsData ?? health?.sensors ?? []
   const captures = capturesData?.captures ?? []
 
-  const defaultSelection: Selection | null = sensors[0]
-    ? { kind: 'sensor', id: sensors[0].sensor_id }
-    : captures.length > 0
-      ? { kind: 'captures' }
-      : null
-  const effective = selected ?? defaultSelection
-  const selectedSensor =
-    effective?.kind === 'sensor' ? sensors.find((s) => s.sensor_id === effective.id) : undefined
+  const effective = selected ?? sensors[0]?.sensor_id
+  const selectedSensor = sensors.find((s) => s.sensor_id === effective)
 
   return (
     <PageContainer>
       <PageHeader
         icon={SlidersHorizontalIcon}
         title="Sensors"
-        description="Coverage, spectrum, and recordings for one sensor at a time — pick a sensor to see what it measures and manage it."
+        description="Coverage and recordings for one sensor at a time — pick a sensor to see what it measures and manage it."
+        // The way back out of a selection, in the same slot every other detail
+        // view puts it. Only below lg, where selecting replaces the list: on a
+        // wide screen both panes are on screen and there is nothing to go back
+        // to.
+        eyebrow={
+          selected ? (
+            <button
+              type="button"
+              onClick={goBack}
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded text-xs lg:hidden"
+            >
+              <ArrowLeftIcon className="size-3.5" aria-hidden /> All sensors
+            </button>
+          ) : null
+        }
       />
 
       <div className="grid items-start gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
         {/* min-w-0 so a long sensor id truncates instead of widening the column. */}
         <nav
-          aria-label="Sensors and captures"
+          aria-label="Sensors"
           className={cn(
             'border-border bg-card/70 min-w-0 flex-col gap-3 rounded-lg border p-2 lg:sticky lg:top-20 lg:flex',
             selected ? 'hidden lg:flex' : 'flex',
@@ -159,7 +166,7 @@ export function SensorsView() {
               <li key={sensor.sensor_id}>
                 <SensorRow
                   sensor={sensor}
-                  active={effective?.kind === 'sensor' && effective.id === sensor.sensor_id}
+                  active={effective === sensor.sensor_id}
                   onSelect={() => selectSensor(sensor.sensor_id)}
                 />
               </li>
@@ -171,14 +178,24 @@ export function SensorsView() {
             ) : null}
           </ul>
 
+          {/* One line and a link, not a pane. The recordings are their own
+              route now, and a second copy of that list inside this page meant
+              two places to look and two URLs that meant the same thing. What
+              belongs here is the count -- a recording is made BY a sensor, so
+              "does this unit have any" is a fair question to answer on the
+              sensor page -- and the way to the list. Starting one is still a
+              per-sensor action, in that sensor's own detail. */}
           <div className="border-border border-t pt-2">
-            <ListEntry
-              icon={ArchiveIcon}
-              label="Captures"
-              caption={captures.length === 1 ? '1 recording' : `${captures.length} recordings`}
-              active={effective?.kind === 'captures'}
-              onSelect={selectCaptures}
-            />
+            <Link
+              to="/captures"
+              className="text-muted-foreground hover:bg-accent/50 hover:text-foreground flex min-h-11 items-center gap-2.5 rounded-md px-2.5 py-2 transition-colors"
+            >
+              <ArchiveIcon className="size-4 shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1 truncate text-sm">
+                {captures.length === 1 ? '1 recording' : `${captures.length} recordings`}
+              </span>
+              <span className="shrink-0 text-xs">Captures →</span>
+            </Link>
           </div>
 
           <SystemFooter
@@ -191,17 +208,9 @@ export function SensorsView() {
         {/* min-w-0 so a wide child -- the spectrum charts -- scrolls inside its
             own container instead of stretching the grid column. */}
         <div className={cn('min-w-0 flex-col gap-3', selected ? 'flex' : 'hidden lg:flex')}>
-          <button
-            type="button"
-            onClick={goBack}
-            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 self-start rounded text-xs lg:hidden"
-          >
-            <ArrowLeftIcon className="size-3.5" aria-hidden /> All sensors
-          </button>
-
-          {effective?.kind === 'captures' ? (
-            <CaptureHistory />
-          ) : selectedSensor ? (
+          {/* The way back lives in the page header's eyebrow now, with every
+              other detail view's. */}
+          {selectedSensor ? (
             <SensorDetail
               key={selectedSensor.sensor_id}
               sensor={selectedSensor}
@@ -219,40 +228,6 @@ export function SensorsView() {
         </div>
       </div>
     </PageContainer>
-  )
-}
-
-function ListEntry({
-  icon: Icon,
-  label,
-  caption,
-  active,
-  onSelect,
-}: {
-  icon: LucideIcon
-  label: string
-  caption: string
-  active: boolean
-  onSelect: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-current={active ? 'true' : undefined}
-      className={cn(
-        'flex min-h-11 w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors',
-        active
-          ? 'bg-accent text-foreground'
-          : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
-      )}
-    >
-      <Icon className="size-4 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium">{label}</span>
-        <span className="text-muted-foreground block truncate text-2xs">{caption}</span>
-      </span>
-    </button>
   )
 }
 
@@ -321,19 +296,25 @@ function SystemFooter({
   const format = useFormat()
   return (
     <div className="border-border border-t pt-2">
-      <dl>
-        <DataRow label="Status" value={status ?? '—'} mono />
-        <DataRow
-          label="Uptime"
-          value={uptimeS !== undefined ? format.duration(uptimeS) : '—'}
-          mono
-        />
-        <DataRow label="Version" value={version ?? '—'} mono />
-      </dl>
-      <p className="text-muted-foreground mt-1 text-2xs leading-relaxed">
+      <KeyValueGroup
+        entries={[
+          { id: 'status', label: 'Status', value: status ?? EMPTY, mono: true },
+          {
+            id: 'uptime',
+            label: 'Uptime',
+            value: uptimeS !== undefined ? format.duration(uptimeS) : EMPTY,
+            mono: true,
+          },
+          { id: 'version', label: 'Version', value: version ?? EMPTY, mono: true },
+        ]}
+      />
+      {/* The rule an operator needs once and then knows. It was three lines of
+          standing prose at the bottom of the nav column, which is a lot of the
+          only rail this page has for a sentence nobody re-reads. */}
+      <Why label="What does zero detections mean?" className="mt-2">
         Zero detections from a <em>healthy</em> sensor is a quiet sky. Zero from an{' '}
         <em>unhealthy</em> one means nothing — do not trust the quiet.
-      </p>
+      </Why>
     </div>
   )
 }
@@ -359,18 +340,29 @@ function SensorDetail({
   const isConfirming = confirmingId === sensor.sensor_id
   const restartFailed = restart.isError && restart.variables === sensor.sensor_id
 
-  // The SDR sweep is the SDR sensor's own measurement and Wi-Fi occupancy is
-  // the Wi-Fi sensor's -- see the file header. The occupancy panel is told
-  // WHICH Wi-Fi sensor: it used to take the first one it found, which was the
-  // same thing while there was only one, and became wrong the day a second
+  // Collected rather than rendered where each is discovered: separately they
+  // are two alerts, together they are one sentence about the build.
+  const limitations = [
+    restartAvailable
+      ? null
+      : (config?.restart_unavailable_reason ??
+        'no restart command is available in the API runtime'),
+    captureLimitation(sensor),
+  ].filter((limit): limit is string => limit !== null)
+
+  // Wi-Fi occupancy is the Wi-Fi sensor's own measurement, and the panel is
+  // told WHICH Wi-Fi sensor: it used to take the first one it found, which was
+  // the same thing while there was only one, and became wrong the day a second
   // receiver arrived -- selecting wifi-1 rendered a card measuring wifi-0's
-  // radio, under wifi-1's heading. There is still only one SDR.
+  // radio, under wifi-1's heading.
+  //
+  // The SDR's band sweep used to sit here on the same reasoning, and it is the
+  // one that did not hold: a sweep is a task an operator comes to the console
+  // to perform and compare over weeks, not a reading to glance at, and buried
+  // under a health card it was reachable only by already knowing it existed.
+  // It has its own page again; the card keeps a link to it.
   const spectrum =
-    sensor.sensor_kind === 'wifi' ? (
-      <WifiOccupancyPanel sensorId={sensor.sensor_id} />
-    ) : sensor.sensor_kind === 'sdr' ? (
-      <SpectrumPanel />
-    ) : null
+    sensor.sensor_kind === 'wifi' ? <WifiOccupancyPanel sensorId={sensor.sensor_id} /> : null
 
   return (
     <div className="flex min-w-0 flex-col gap-3">
@@ -409,14 +401,16 @@ function SensorDetail({
       <div className={cn('grid min-w-0 items-start gap-4', spectrum && 'xl:grid-cols-2')}>
         <SensorHealthCard
           sensor={sensor}
+          // The one primary card on this page: the selected sensor is what the
+          // page is for, and the spectrum panel beside it is what that sensor
+          // happens to measure.
+          weight="primary"
           action={
             <div className="mt-3">
-              {!restartAvailable ? (
-                <Alert tone="warn" title="Restart unavailable">
-                  {config?.restart_unavailable_reason ??
-                    'No restart command is available in the API runtime.'}
-                </Alert>
-              ) : isConfirming ? (
+              {/* No restart control, and no box explaining its absence: the
+                  reason is a property of this build, not a fault, and it is
+                  collected into the one muted line below with the other. */}
+              {!restartAvailable ? null : isConfirming ? (
                 <div className="mt-2 flex gap-2">
                   <Button
                     variant="destructive"
@@ -449,6 +443,31 @@ function SensorDetail({
                 </Button>
               )}
               <SensorCaptureControl sensor={sensor} />
+              {/* The sweep tool moved to its own page; this is the trail
+                  between the measurement and the radio that takes it. */}
+              {sensor.sensor_kind === 'sdr' ? (
+                <Link
+                  to="/spectrum"
+                  className={cn(
+                    buttonVariants({ variant: 'outline', size: 'sm' }),
+                    'mt-2 w-full',
+                  )}
+                >
+                  <AudioWaveformIcon aria-hidden />
+                  Band sweeps →
+                </Link>
+              ) : null}
+              {/* One muted line, last. These were two permanent error-styled
+                  boxes describing what this BUILD cannot do -- systemctl is
+                  not reachable from the API container, capture is unwritten
+                  for SDR sensors -- which on a unit where both are always true
+                  meant the sensor page opened on two red-edged alerts about
+                  nothing being wrong. A fault gets an alert; a build does not. */}
+              {limitations.length > 0 ? (
+                <p className="text-muted-foreground border-border mt-3 border-t pt-3 text-2xs leading-relaxed">
+                  Not available in this build: {limitations.join('; ')}.
+                </p>
+              ) : null}
             </div>
           }
         />

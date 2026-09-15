@@ -201,10 +201,42 @@ export interface DetectionsResponse {
 
 export interface TracksQuery {
   state?: TrackState[]
+  /** `last_seen >= since`, inclusive. */
   since?: string
+  /** `last_seen <= until`, inclusive — the closing half of the window. */
+  until?: string
+  /** Exact match on `identity.serial`. */
+  serial?: string
+  /** Exact match on `identity.vendor`, compared without case by the API. */
+  vendor?: string
   min_confidence?: number
   limit?: number
   cursor?: string
+}
+
+/**
+ * An operator's note about one airframe, keyed by its broadcast serial.
+ *
+ * A note and nothing else: nothing reads the flag to change what the sensors
+ * do, and `ignore` does not stop a track being recorded. ClassG is
+ * receive-only.
+ */
+export type AircraftFlag = '' | 'known' | 'watch' | 'ignore'
+
+export interface AircraftLabel {
+  serial: string
+  label: string
+  flag: AircraftFlag
+  updated_at: string
+}
+
+export interface AircraftLabelsResponse {
+  labels: AircraftLabel[]
+}
+
+export interface SetAircraftLabelRequest {
+  label: string
+  flag: AircraftFlag
 }
 
 export interface DetectionsQuery {

@@ -34,6 +34,20 @@ type QueryClientLike = ReturnType<typeof useQueryClient>
 function matchesQuery(track: Track, query: TracksQuery): boolean {
   if (query.state && query.state.length > 0 && !query.state.includes(track.state)) return false
   if (query.since && track.last_seen < query.since) return false
+  if (query.until && track.last_seen > query.until) return false
+  // The track detail page's "This aircraft" block asks the API for one serial.
+  // Without these two, a socket update for a DIFFERENT aircraft matched that
+  // query and was appended to its cache entry, so the block grew flights that
+  // were never this airframe's. Every filter the API supports has to be
+  // mirrored here or the socket undoes it.
+  if (query.serial !== undefined && track.identity?.serial !== query.serial) return false
+  // Compared without case, as the API compares it.
+  if (
+    query.vendor !== undefined &&
+    (track.identity?.vendor ?? '').toLowerCase() !== query.vendor.toLowerCase()
+  ) {
+    return false
+  }
   if (query.min_confidence !== undefined && track.confidence < query.min_confidence)
     return false
   return true

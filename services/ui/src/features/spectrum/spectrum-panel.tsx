@@ -15,7 +15,7 @@ import { AlertTriangleIcon, ActivityIcon, RadioIcon } from 'lucide-react'
 import { useState } from 'react'
 
 import { useFormat } from '@/app/use-format'
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/ui/status-pill'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, EmptyState, Skeleton } from '@/components/ui/misc'
@@ -36,15 +36,22 @@ import { formatMHz } from './trace-series'
 /** Trace width requested from the api. Comfortably more than a chart's pixels. */
 const TRACE_BINS = 1400
 
-export function SpectrumPanel() {
+export interface SpectrumPanelProps {
+  /**
+   * The band to show, from the URL. Undefined means "whatever the sensor
+   * offers first" — the choice is derived rather than synced into state by an
+   * effect, because the band list arrives asynchronously and copying it into
+   * state means a render where the picker is empty and the Sweep button is
+   * disabled for no reason the operator can see.
+   */
+  band: string | undefined
+  onBandChange: (band: string) => void
+}
+
+export function SpectrumPanel({ band: bandChoice, onBandChange }: SpectrumPanelProps) {
   const queryClient = useQueryClient()
   const format = useFormat()
 
-  // Null means "whatever the sensor offers first". Derived rather than synced
-  // into state by an effect: the band list arrives asynchronously, and copying
-  // it into state means a render where the picker is empty and the Sweep button
-  // is disabled for no reason the operator can see.
-  const [bandChoice, setBandChoice] = useState<string | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const bands = useQuery(spectrumBandsQuery())
@@ -62,7 +69,11 @@ export function SpectrumPanel() {
 
   // Defaulted from the sensor's own plan rather than a name hardcoded here, so
   // the picker cannot offer a band the binary does not have.
-  const band = bandChoice ?? bands.data?.bands[0]?.name ?? ''
+  // A band named in the URL that this binary does not have falls through to the
+  // first one it does, rather than leaving the picker showing a band the Sweep
+  // button would refuse.
+  const known = bands.data?.bands.some((b) => b.name === bandChoice) ?? false
+  const band = (known ? bandChoice : undefined) ?? bands.data?.bands[0]?.name ?? ''
 
   const start = useMutation({
     mutationFn: (name: string) => api.startSweep({ band: name }),
@@ -113,7 +124,7 @@ export function SpectrumPanel() {
                     id="sweep-band"
                     aria-label="Band to sweep"
                     value={band}
-                    onValueChange={setBandChoice}
+                    onValueChange={onBandChange}
                     disabled={running || start.isPending}
                     options={(bands.data?.bands ?? []).map((b) => ({
                       value: b.name,
@@ -230,9 +241,13 @@ export function SpectrumPanel() {
 }
 
 function SweepStateBadge({ state }: { state: SpectrumSweep['state'] }) {
-  if (state === 'completed') return <Badge variant="ok">completed</Badge>
-  if (state === 'failed') return <Badge variant="down">failed</Badge>
-  return <Badge variant="warn">running</Badge>
+  if (state === 'completed') return <StatusPill tone="ok">completed</StatusPill>
+  if (state === 'failed') return <StatusPill tone="down">failed</StatusPill>
+  return (
+    <StatusPill tone="warn" dot pulse>
+      running
+    </StatusPill>
+  )
 }
 
 function SweepRow({

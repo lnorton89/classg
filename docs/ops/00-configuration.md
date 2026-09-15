@@ -63,8 +63,9 @@ them rather than through `curl`:
 |---|---|
 | `api.expose_operator_location` | Settings → Storage |
 | `retention.*`, `telemetry.interval` | Settings → Storage |
-| `sensors.stale_after`, `fusion.track_ttl`, `fusion.max_history`, `spectrum.sweep_timeout`, `capture.analyze_timeout` | Settings → Calibration |
-| `map.receiver_position`, the channel plan, fusion weights | Settings → Calibration |
+| `sensors.stale_after`, `fusion.track_ttl`, `fusion.resume_within`, `fusion.max_history`, `spectrum.sweep_timeout`, `capture.analyze_timeout` | Settings → Calibration |
+| `map.receiver_position`, fusion weights | Settings → Calibration |
+| the channel plan | Settings → Calibration, **read-only** — each Wi-Fi receiver loads its own `config/channels-*.yaml` at startup and nothing writes those from here, so the page shows what the radios reported loading beside the recorded plan, and offers that plan as YAML to paste |
 | `fusion.net_adsb*`, `fusion.terrain*`, `sensors.oui_registry`, `fusion.aircraft_db` | Settings → External data |
 | `hooks.allow_private_targets` | Administration → Outbound |
 | `sensors.expected` | Settings → Calibration |

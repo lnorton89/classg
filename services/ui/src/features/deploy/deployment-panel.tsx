@@ -16,10 +16,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2Icon, CircleDashedIcon, RocketIcon, XCircleIcon } from 'lucide-react'
 
 import { useFormat } from '@/app/use-format'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, DataList, DataRow, Skeleton } from '@/components/ui/misc'
+import { StatusPill } from '@/components/ui/status-pill'
 import { ApiError, api } from '@/lib/api/client'
 import { deploymentQuery, queryKeys } from '@/lib/api/queries'
 import type { DeploymentStatus } from '@/lib/api/types'
@@ -55,7 +55,10 @@ export function DeploymentPanel() {
 
   if (!d.configured) {
     return (
-      <Card>
+      // Primary either way: whether this unit is running current code is the
+      // question the category exists to answer, and "there is no deploy agent"
+      // is that question's answer rather than a lesser one.
+      <Card weight="primary">
         <CardHeader>
           <CardTitle>Deployment</CardTitle>
         </CardHeader>
@@ -72,7 +75,11 @@ export function DeploymentPanel() {
   const deploying = d.last_result === 'deploying'
 
   return (
-    <Card>
+    // The one primary card on Administration › This unit. Whether the unit is
+    // running current code, and the button that makes it so, is what an
+    // administrator opens this category for; self-repair and the run history
+    // are the context around that answer.
+    <Card weight="primary">
       <CardHeader>
         <CardTitle className="flex flex-wrap items-center gap-2">
           Deployment
@@ -80,14 +87,15 @@ export function DeploymentPanel() {
               something is happening right now, and it makes both of the others
               moot for as long as it is true. */}
           {deploying ? (
-            <Badge variant="warn" className="gap-1.5">
-              <span className="bg-warn size-1.5 animate-pulse rounded-full" aria-hidden />
+            <StatusPill tone="warn" dot pulse>
               deploying
-            </Badge>
+            </StatusPill>
           ) : (
             <>
-              {d.update_available ? <Badge variant="warn">update available</Badge> : null}
-              {d.deploy_requested ? <Badge variant="warn">deploy queued</Badge> : null}
+              {d.update_available ? (
+                <StatusPill tone="warn">update available</StatusPill>
+              ) : null}
+              {d.deploy_requested ? <StatusPill tone="warn">deploy queued</StatusPill> : null}
             </>
           )}
         </CardTitle>
@@ -171,9 +179,9 @@ export function DeploymentPanel() {
                 <span className="flex flex-wrap items-center gap-2">
                   {format.timestamp(d.last_deploy_at)}
                   {d.last_deploy_ok ? (
-                    <Badge variant="ok">ok</Badge>
+                    <StatusPill tone="ok">ok</StatusPill>
                   ) : (
-                    <Badge variant="down">rolled back</Badge>
+                    <StatusPill tone="down">rolled back</StatusPill>
                   )}
                 </span>
               ) : (
@@ -185,9 +193,9 @@ export function DeploymentPanel() {
             label="Automatic deploys"
             value={
               d.timer_enabled ? (
-                <Badge variant="ok">on</Badge>
+                <StatusPill tone="ok">on</StatusPill>
               ) : (
-                <Badge variant="muted">off</Badge>
+                <StatusPill tone="muted">off</StatusPill>
               )
             }
           />
@@ -236,31 +244,31 @@ export function DeploymentPanel() {
 function CiBadge({ ci }: { ci: DeploymentStatus['remote_ci'] }) {
   if (ci === 'success') {
     return (
-      <Badge variant="ok">
+      <StatusPill tone="ok">
         <CheckCircle2Icon className="size-3" aria-hidden />
         CI green
-      </Badge>
+      </StatusPill>
     )
   }
   if (ci === 'failure') {
     return (
-      <Badge variant="down">
+      <StatusPill tone="down">
         <XCircleIcon className="size-3" aria-hidden />
         CI failed
-      </Badge>
+      </StatusPill>
     )
   }
   if (ci === 'pending') {
     return (
-      <Badge variant="warn">
+      <StatusPill tone="warn">
         <CircleDashedIcon className="size-3" aria-hidden />
         CI running
-      </Badge>
+      </StatusPill>
     )
   }
   // "unknown" is the honest answer when the agent had no reason to check --
   // the unit was already up to date, so it never asked GitHub.
-  return <Badge variant="muted">CI not checked</Badge>
+  return <StatusPill tone="muted">CI not checked</StatusPill>
 }
 
 /**

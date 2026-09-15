@@ -15,25 +15,95 @@ export function hasPosition(track: Track): track is Track & { current: Position 
   return track.current != null
 }
 
-/** Trails, one LineString per track that has at least two history points. */
+/**
+ * Silence longer than this between two recorded positions is a gap in
+ * reception, not a leg of the flight.
+ *
+ * The same 30 s after which fusion marks a track COASTING: the map already
+ * says "not being heard" at that point, so its trail should not draw a
+ * confident line across the same interval. Measured on 2026-09-15 (DJI, serial
+ * ...003045J0): a flight went 762 m out, past Wi-Fi range, was silent for
+ * 7m42s, and came back 999 m out. A solid line joining the two ends read as a
+ * straight-line dash across a field the aircraft never crossed.
+ */
+export const TRAIL_GAP_MS = 30_000
+
+export interface TrailGap {
+  from: Position
+  to: Position
+  seconds: number
+}
+
+/** The reception gaps in a history, in flight order. */
+export function trailGaps(history: Position[]): TrailGap[] {
+  const gaps: TrailGap[] = []
+  let from: Position | undefined
+  for (const to of history) {
+    if (from?.at && to.at) {
+      const elapsed = Date.parse(to.at) - Date.parse(from.at)
+      if (Number.isFinite(elapsed) && elapsed > TRAIL_GAP_MS) {
+        gaps.push({ from, to, seconds: Math.round(elapsed / 1000) })
+      }
+    }
+    from = to
+  }
+  return gaps
+}
+
+/**
+ * Trails, one feature per track that has at least two history points, plus
+ * one dashed feature per reception gap.
+ *
+ * The heard segments are one MultiLineString carrying the track's own
+ * properties, so styling by confidence and state is unchanged. Each gap is its
+ * own LineString with `gap: true`, drawn by a separate dashed layer: the
+ * aircraft went from one end to the other, but nothing knows how.
+ */
 export function trailsGeoJson(tracks: Track[]): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = []
   for (const track of tracks) {
     const history = track.history ?? []
     if (history.length < 2) continue
-    features.push({
-      type: 'Feature',
-      id: track.track_id,
-      properties: {
-        track_id: track.track_id,
-        confidence: track.confidence,
-        state: track.state,
-        stale: track.state === 'COASTING',
-      },
-      geometry: {
-        type: 'LineString',
-        coordinates: history.map((p) => [p.lon, p.lat]),
-      },
+
+    const gaps = trailGaps(history)
+    const resumesAt = new Set(gaps.map((g) => g.to))
+    let leg: GeoJSON.Position[] = []
+    const segments: GeoJSON.Position[][] = [leg]
+    for (const p of history) {
+      if (resumesAt.has(p)) {
+        leg = []
+        segments.push(leg)
+      }
+      leg.push([p.lon, p.lat])
+    }
+    const heard = segments.filter((s) => s.length >= 2)
+    if (heard.length > 0) {
+      features.push({
+        type: 'Feature',
+        id: track.track_id,
+        properties: {
+          track_id: track.track_id,
+          confidence: track.confidence,
+          state: track.state,
+          stale: track.state === 'COASTING',
+          gap: false,
+        },
+        geometry: { type: 'MultiLineString', coordinates: heard },
+      })
+    }
+    gaps.forEach((g, i) => {
+      features.push({
+        type: 'Feature',
+        id: `${track.track_id}-gap-${i}`,
+        properties: { track_id: track.track_id, gap: true, gap_s: g.seconds },
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [g.from.lon, g.from.lat],
+            [g.to.lon, g.to.lat],
+          ],
+        },
+      })
     })
   }
   return { type: 'FeatureCollection', features }

@@ -139,7 +139,15 @@
 
   --ok: oklch(0.52 0.13 155);
   --ok-foreground: oklch(0.99 0.005 240);
-  --warn: oklch(0.55 0.14 62);
+  /*
+   * Dropped from 0.55. Measured against the ground it is actually read on —
+   * not white, but `bg-warn/15`, which is what every warn pill, badge and
+   * alert puts behind it — 0.55 came out at 4.44:1 at 13px, just under the
+   * line. 0.50 is 5.2:1 there and 6.5:1 on plain card. The other three tones
+   * already clear it on their own tints in both themes; this was the one that
+   * did not, because amber is the hue whose luminance moves fastest with L.
+   */
+  --warn: oklch(0.5 0.14 62);
   --warn-foreground: oklch(0.99 0.005 240);
   --down: oklch(0.52 0.21 27);
   --down-foreground: oklch(0.99 0.005 240);
@@ -396,10 +404,16 @@
 }
 
 /*
- * Compact density. Only the two paddings that actually dominate vertical
- * rhythm — table cells and list rows — are touched. A blanket scale would
- * shrink touch targets, which is the one thing that must not shrink in a
- * field-use interface.
+ * Compact density. Only the paddings that actually dominate vertical rhythm —
+ * table cells, list rows, and the seams between grouped lists — are touched. A
+ * blanket scale would shrink touch targets, which is the one thing that must
+ * not shrink in a field-use interface, so buttons, switches and nav rows keep
+ * their 44px regardless.
+ *
+ * Unlayered on purpose. These rules have to beat the `py-2` a component sets
+ * on its own row, and unlayered CSS wins over anything in `@layer` whatever
+ * the specificity, which is more predictable than counting selectors against
+ * a utility class.
  */
 :root[data-density='compact'] {
   --row-py: 0.25rem;
@@ -413,6 +427,27 @@
 :root[data-density='compact'] [data-density-row] {
   padding-top: 0.375rem;
   padding-bottom: 0.375rem;
+}
+
+/*
+ * A grouped key-value list is mostly seams: on the sensor page a compact run
+ * of forty rows across five groups spent more height on the gaps between
+ * headings than on the readings. The heading itself keeps its size — shrinking
+ * the thing that makes a long list navigable would undo what the grouping is
+ * for.
+ */
+:root[data-density='compact'] [data-density-group] + [data-density-group] {
+  margin-top: 0.5rem;
+}
+
+:root[data-density='compact'] [data-density-group] > .label-caps {
+  margin-bottom: 0;
+}
+
+/* The summary strip is the one thing on a page that is meant to be read from
+   across a room, so its tiles keep their size; only the gutter closes up. */
+:root[data-density='compact'] [data-density-strip] {
+  gap: 0.375rem;
 }
 
 /* MapLibre's own stylesheet, scoped tweaks for dark mode and focus. */

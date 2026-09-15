@@ -13,11 +13,18 @@ function MapSettings() {
     <SettingsCard
       icon={MapIcon}
       title="Live map"
-      description="What the map and its contacts panel show alongside the aircraft. Neither of these changes what is detected or plotted — only how much of it is on screen at once."
+      description="How much of the map's own furniture is on screen at once. Neither of these changes what is detected or plotted."
+      why={
+        <>
+          The legend is worth leaving on until the symbols are second nature: a drone, a manned
+          aircraft and a person on the ground are three of the four things drawn, and they are
+          easy to confuse. Closed tracks stay listed for review whether or not the contacts
+          panel shows them — they are recorded either way, and the Tracks page has all of them.
+        </>
+      }
     >
       <ToggleRow
         label="Show the legend"
-        hint="Three of the four things on the map are easy to confuse — a drone, a manned aircraft, and a person on the ground. Worth leaving on until the symbols are second nature."
         checked={preferences.mapLegend}
         onCheckedChange={(checked) => setPreference('mapLegend', checked)}
       />
@@ -25,7 +32,7 @@ function MapSettings() {
       <ToggleRow
         icon={ArchiveIcon}
         label="Show closed tracks in the contacts panel"
-        hint="Tracks that have ended stay listed for review. Turning this off shortens the panel during a busy watch; the tracks are still recorded and still on the Tracks page."
+        hint="Shortens the panel during a busy watch."
         checked={preferences.showClosedContacts}
         onCheckedChange={(checked) => setPreference('showClosedContacts', checked)}
       />

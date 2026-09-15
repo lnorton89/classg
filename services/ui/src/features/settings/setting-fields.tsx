@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button'
 import { FormField, Input } from '@/components/ui/field'
 import { Alert } from '@/components/ui/misc'
 import { Switch } from '@/components/ui/switch'
+import { Why } from '@/components/ui/why'
 import { ApiError, api } from '@/lib/api/client'
 import { queryKeys, settingsQuery } from '@/lib/api/queries'
 import type { SettingValue } from '@/lib/api/types'
@@ -81,11 +82,33 @@ function isLocked(setting: SettingValue | undefined): boolean {
  * scope: these are stored on the Pi, shared by every client, and can change
  * what the system detects. A toggle that reconfigured a detector the moment a
  * thumb brushed it would be the wrong affordance.
+ *
+ * The group is also the unit of explanation. Every field used to carry its own
+ * paragraph, which on a page of six fields is six paragraphs between an
+ * operator and the thing they came to change — so the shared reasoning belongs
+ * to `description` (one or two lines) or, where it is background rather than
+ * instruction, to `why`. What is left on a field is a `hint`: one line, or the
+ * registry's own `doc`.
+ *
+ * Save sits at the foot of the group it saves and nowhere else, because the
+ * question "what is this button about to write" has to be answerable without
+ * scrolling.
  */
 export function SettingsGroup({
+  title,
+  description,
+  why,
+  saveLabel = 'Save',
   fields,
   children,
 }: {
+  /** Heading, when a card holds more than one group. */
+  title?: string
+  /** The one shared explanation for everything in the group. */
+  description?: ReactNode
+  /** Background the operator needs once, folded away. */
+  why?: ReactNode
+  saveLabel?: string
   fields: FieldSpec[]
   children?: ReactNode
 }) {
@@ -130,6 +153,18 @@ export function SettingsGroup({
         if (dirty) save.mutate(draft)
       }}
     >
+      {title || description || why ? (
+        <div className="flex flex-col gap-1.5" data-density-group>
+          {title ? <h3 className="text-sm font-semibold">{title}</h3> : null}
+          {description ? (
+            <p className="text-muted-foreground max-w-2xl text-xs leading-relaxed">
+              {description}
+            </p>
+          ) : null}
+          {why ? <Why>{why}</Why> : null}
+        </div>
+      ) : null}
+
       {fields.map((field) => {
         const setting = data?.settings[field.key]
         const locked = isLocked(setting)
@@ -216,13 +251,17 @@ export function SettingsGroup({
         </Alert>
       ) : null}
 
+      {/* Dirty state as a word, not only as an enabled button. A disabled Save
+          answers "is there anything to write"; it does not answer "did that
+          keystroke register", which is the question an operator who has just
+          typed into one of six fields is actually asking. */}
       <div className="flex items-center gap-3">
         <Button type="submit" disabled={!dirty || save.isPending}>
-          {save.isPending ? 'Saving…' : 'Save'}
+          {save.isPending ? 'Saving…' : saveLabel}
         </Button>
         {dirty ? (
-          <p className="text-muted-foreground text-xs">
-            Unsaved. Stored on the Pi and shared by every client.
+          <p className="text-warn text-xs font-medium" role="status">
+            Unsaved changes
           </p>
         ) : null}
       </div>

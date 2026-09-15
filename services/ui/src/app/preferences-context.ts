@@ -15,6 +15,7 @@
 import { createContext, use } from 'react'
 
 import type { LogLevel } from '@/features/logs/log-store'
+import type { PathColourMode } from '@/features/map/path-colour'
 import type { NotifyCategory } from '@/features/notifications/feed'
 import type {
   ClockFormat,
@@ -60,6 +61,14 @@ export interface Preferences {
   mapLegend: boolean
   /** Show the closed-tracks section in the contacts panel. */
   showClosedContacts: boolean
+  /**
+   * What the track detail map's route is shaded by when a flight is opened.
+   *
+   * A display choice, not a measurement: the ramp changes which question the
+   * map answers first, and different operators open a flight asking different
+   * ones. Nothing about the recorded flight changes with it.
+   */
+  trackPathColour: PathColourMode
 }
 
 export const TEXT_SCALE_VALUES: Record<TextScale, number> = {
@@ -96,6 +105,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
   notifyMinLevel: 'info',
   mapLegend: true,
   showClosedContacts: true,
+  // Speed, because it is the reading that turns a polyline into a flight: the
+  // transit out, the slow pass, and the hover are three different shades of
+  // one line rather than one undifferentiated thread.
+  trackPathColour: 'speed',
 }
 
 export interface PreferencesContextValue {

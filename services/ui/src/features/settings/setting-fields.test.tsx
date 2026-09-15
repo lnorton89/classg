@@ -136,6 +136,79 @@ describe('SettingsGroup', () => {
     expect(put).toHaveBeenCalledWith({ 'fusion.net_adsb': 'true' })
   })
 
+  /**
+   * Dirty state as a word, not only as an enabled button.
+   *
+   * The Settings pass moved Save to the foot of the group it writes and took
+   * the per-field paragraphs out from between the two, which makes the button
+   * easier to find and the moment of "did that register" easier to miss —
+   * there is no longer a wall of prose scrolling under the cursor to prove
+   * something moved. Three states, all pinned here: clean and disabled, dirty
+   * and announced, saved and confirmed.
+   */
+  it('announces unsaved changes, then confirms the save', async () => {
+    server.use(
+      http.get(`${API}/config/settings`, () =>
+        HttpResponse.json({
+          settings: {
+            'fusion.net_adsb': { value: false, source: 'db', mutable: true },
+            'fusion.net_adsb_radius_nm': { value: 25, source: 'db', mutable: true },
+          },
+          env_overridden: [],
+        }),
+      ),
+      http.put(`${API}/config/settings`, () => HttpResponse.json({ restart_required: false })),
+    )
+    const user = userEvent.setup()
+    wrap(<SettingsGroup fields={FIELDS} />)
+
+    const save = await screen.findByRole('button', { name: /save/i })
+    expect(save).toBeDisabled()
+    expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('switch', { name: 'Poll a network aggregator' }))
+    expect(screen.getByText('Unsaved changes')).toBeVisible()
+    expect(save).toBeEnabled()
+
+    await user.click(save)
+
+    // Saved, in effect, and nothing left to write.
+    expect(await screen.findByText('Stored on the Pi and in effect.')).toBeVisible()
+    expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /save/i })).toBeDisabled()
+  })
+
+  // The heading and the ONE shared explanation the group carries instead of a
+  // paragraph under every field. The rest is behind Why, closed on arrival.
+  it('carries one explanation for the group, with the background folded away', async () => {
+    server.use(
+      http.get(`${API}/config/settings`, () =>
+        HttpResponse.json({
+          settings: {
+            'fusion.net_adsb': { value: false, source: 'db', mutable: true },
+            'fusion.net_adsb_radius_nm': { value: 25, source: 'db', mutable: true },
+          },
+          env_overridden: [],
+        }),
+      ),
+    )
+    wrap(
+      <SettingsGroup
+        title="Network ADS-B"
+        description="Manned traffic from community receivers."
+        why="It suppresses false positives and never adds to a track's confidence."
+        fields={FIELDS}
+      />,
+    )
+
+    expect(
+      await screen.findByRole('heading', { level: 3, name: 'Network ADS-B' }),
+    ).toBeVisible()
+    expect(screen.getByText('Manned traffic from community receivers.')).toBeVisible()
+    const why = screen.getByText(/suppresses false positives/)
+    expect(why.closest('details')?.open).toBe(false)
+  })
+
   // The API serves the RUNNING config, so a saved value does not come back in
   // the refetch. Found against the live API: clearing the draft on success made
   // the toggle spring back to its old position, which reads as a failed save.

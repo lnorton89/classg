@@ -42,7 +42,14 @@ function GeneralSettings() {
       <SettingsCard
         icon={RulerIcon}
         title="Units"
-        description="Detections are recorded in SI and converted only for display, so switching this never alters a stored measurement."
+        description="How measurements are written down here. Detections are recorded in SI and converted only for display, so neither of these alters a stored value."
+        why={
+          <>
+            Decimal degrees paste cleanly into mapping tools; degrees-and-minutes is what an
+            aviation chart uses, which is the form to pick if the coordinate is going to be read
+            aloud or compared against a sectional.
+          </>
+        }
       >
         <SettingRow label="Unit system" hint="Altitude, height above ground, speed and range.">
           <Segmented
@@ -61,10 +68,7 @@ function GeneralSettings() {
           />
         </SettingRow>
 
-        <SettingRow
-          label="Coordinate format"
-          hint="Decimal degrees paste cleanly into mapping tools; degrees-and-minutes is what an aviation chart uses."
-        >
+        <SettingRow label="Coordinate format" hint="Every position in the interface.">
           <Select
             aria-label="Coordinate format"
             value={preferences.coordFormat}
@@ -88,9 +92,17 @@ function GeneralSettings() {
       <SettingsCard
         icon={ClockIcon}
         title="Time"
-        description="UTC is the default because detections get correlated against sensor logs and other systems, and a timestamp that means something different on each machine costs an hour during a review."
+        description="Applies to every timestamp in the interface. UTC is the default."
+        why={
+          <>
+            Detections get correlated against sensor logs and other systems during a review, and
+            a timestamp that means something different on each machine costs an hour of that
+            review before anyone notices. Relative reads faster on screen; absolute is what goes
+            in a report.
+          </>
+        }
       >
-        <SettingRow label="Time zone" hint="Applies to every timestamp in the interface.">
+        <SettingRow label="Time zone">
           <Segmented
             aria-label="Time zone"
             value={preferences.timeZone}
@@ -114,10 +126,7 @@ function GeneralSettings() {
           />
         </SettingRow>
 
-        <SettingRow
-          label="Timestamp style"
-          hint="Relative reads faster; absolute is what goes in a report."
-        >
+        <SettingRow label="Timestamp style">
           <Segmented
             aria-label="Timestamp style"
             value={preferences.timestampStyle}

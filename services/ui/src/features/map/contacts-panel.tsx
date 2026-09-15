@@ -6,17 +6,40 @@
  * to read the situation on a phone, so it is visible rather than sr-only.
  */
 import { Link } from '@tanstack/react-router'
-import { ArchiveIcon, PlaneIcon, RadioIcon, SatelliteDishIcon, UserIcon } from 'lucide-react'
+import {
+  ArchiveIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  PlaneIcon,
+  RadioIcon,
+  SatelliteDishIcon,
+  UserIcon,
+} from 'lucide-react'
+import { useMemo, useState } from 'react'
 
 import { useFormat, useTicker, type Formatters } from '@/app/use-format'
 import { Badge } from '@/components/ui/badge'
 import { EmptyState } from '@/components/ui/misc'
 import { Panel, ResizableSplit, ResizeHandle } from '@/components/ui/resizable'
-import type { Detection, Track } from '@/lib/api/types'
+import type { AircraftLabel, Detection, Track } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
 import { ConfidenceBar, EvidenceChips } from '../tracks/evidence'
+import { groupByAircraft, type AircraftGroup } from '../tracks/flight-groups'
+import { flightDurationS, orderFlights } from '../tracks/flight-metrics'
+import { isIdentified } from '../tracks/tier'
+import { useAircraftLabels } from '../tracks/use-aircraft-label'
 import { bearingDegrees, distanceMetres } from './geo'
+
+/**
+ * How many of an aircraft's flights the panel lists before it stops and offers
+ * the Flights page instead.
+ *
+ * Three, because this is a sidebar beside a live map and not a history view:
+ * on the deployed unit one serial accounted for 29 of the 29 closed rows, and
+ * what the panel is for is "this airframe has been up again", not the log.
+ */
+const FLIGHTS_PER_AIRCRAFT = 3
 
 export interface ContactsPanelProps {
   tracks: Track[]
@@ -30,9 +53,11 @@ export interface ContactsPanelProps {
   closedTracks?: Track[]
   /**
    * Settings › Live map. Hides the whole closed section rather than passing an
-   * empty list: "Closed tracks (0) — no archived tracks" is a claim about the
+   * empty list: "Closed flights (0) — no archived flights" is a claim about the
    * sky, and it would be a false one whenever the operator has simply chosen
-   * not to look at them.
+   * not to look at them. It also withholds the closed fingerprints from the
+   * unidentified shelf, for the same reason — hiding the closed set has to hide
+   * all of it.
    */
   showClosed?: boolean
   adsb: Detection[]
@@ -74,9 +99,36 @@ export function ContactsPanel({
   // arrives to re-render this panel, so it drives its own clock — slowly, since
   // it redraws every contact row and the ages it shows are coarse anyway.
   useTicker(5000)
+  const labels = useAircraftLabels()
+  // Collapsed until asked for. The shelf is the answer to "is that RF anything?"
+  // and the answer is almost always no; open by default it was a standing list
+  // of access points beside the aircraft, which is the confusion it exists to
+  // end rather than to restage in a quieter font.
+  const [shelfOpen, setShelfOpen] = useState(false)
 
   const plotted = tracks.filter((t) => t.current)
   const unplotted = tracks.filter((t) => !t.current)
+
+  /*
+   * A closed track that nothing ever identified as an aircraft is not a flight.
+   * On the deployed unit those are MAC-only fingerprints with one or two
+   * detections, and they sat in the closed list between real flights, each one
+   * looking like an aircraft that had been up. They go on the shelf with the
+   * live vendor matches instead — same evidence, same claim, one place.
+   */
+  const closedFlights = useMemo(() => closedTracks.filter(isIdentified), [closedTracks])
+  const shelved = useMemo(() => {
+    const unidentifiedClosed = showClosed ? closedTracks.filter((t) => !isIdentified(t)) : []
+    return [...unidentifiedTracks, ...unidentifiedClosed]
+  }, [unidentifiedTracks, closedTracks, showClosed])
+
+  // Newest flight first inside each aircraft: `orderFlights` is the app's one
+  // total order over flights and it runs oldest-first for the detail page's
+  // prev/next, so this reverses rather than inventing a second comparator.
+  const aircraft = useMemo(
+    () => groupByAircraft(orderFlights(closedFlights).reverse()),
+    [closedFlights],
+  )
 
   /*
    * The three reference sections used to be capped at max-h-64 each, a height
@@ -149,38 +201,66 @@ export function ContactsPanel({
 
   const referenceSections = (
     <>
-      {unidentifiedTracks.length > 0 ? (
-        <section aria-labelledby="contacts-unidentified" className={secondaryBox}>
+      {shelved.length > 0 ? (
+        <section
+          aria-labelledby="contacts-unidentified"
+          className={cn(
+            'border-border flex min-h-0 flex-col border-t',
+            // Only claims a share of the pane while it is open. Collapsed it is
+            // one heading, and a shelf nobody opened must not take a third of
+            // the column away from the flights beside it.
+            shelfOpen ? (splitId ? 'flex-1 basis-0' : 'max-h-64') : 'shrink-0',
+          )}
+        >
           <h2 id="contacts-unidentified" className={secondaryHeading}>
-            Unidentified RF ({unidentifiedTracks.length})
+            <button
+              type="button"
+              aria-expanded={shelfOpen}
+              onClick={() => {
+                setShelfOpen((open) => !open)
+              }}
+              className="hover:text-foreground flex w-full items-center gap-1.5 text-left"
+            >
+              {shelfOpen ? (
+                <ChevronDownIcon className="size-3 shrink-0" aria-hidden />
+              ) : (
+                <ChevronRightIcon className="size-3 shrink-0" aria-hidden />
+              )}
+              Unidentified RF ({shelved.length})
+            </button>
           </h2>
-          {/*
-            Says what the evidence is rather than what it might be. An OUI match
-            means a radio was built by a drone maker -- a controller, a camera,
-            or the aircraft's own access point all qualify, and so does anything
-            else using the same chipset. None of that is a sighting.
-          */}
-          <p className="text-muted-foreground px-3 pb-2 text-xs">
-            Vendor match only, never plotted. Not counted as aircraft.
-          </p>
-          <ul className={scrollList}>
-            {unidentifiedTracks.map((track) => (
-              <li key={track.track_id}>
-                <UnidentifiedTrackRow track={track} format={format} />
-              </li>
-            ))}
-          </ul>
+          {shelfOpen ? (
+            <>
+              {/*
+                Says what the evidence is rather than what it might be. An OUI
+                match means a radio was built by a drone maker -- a controller,
+                a camera, or the aircraft's own access point all qualify, and so
+                does anything else using the same chipset. None of that is a
+                sighting.
+              */}
+              <p className="text-muted-foreground px-3 pb-2 text-xs">
+                Vendor match only, never plotted. Not counted as aircraft.
+              </p>
+              <ul className={scrollList}>
+                {shelved.map((track) => (
+                  <li key={track.track_id}>
+                    <UnidentifiedTrackRow track={track} format={format} />
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
         </section>
       ) : null}
 
       {showClosed ? (
         <section aria-labelledby="contacts-closed" className={secondaryBox}>
           <h2 id="contacts-closed" className={secondaryHeading}>
-            Closed tracks ({closedTracks.length})
+            Closed flights ({closedFlights.length})
           </h2>
-          {closedTracks.length === 0 ? (
+          {closedFlights.length === 0 ? (
             <p className="text-muted-foreground px-3 pb-3 text-xs">
-              No archived tracks. Closed tracks remain available here for review.
+              No archived flights. Closed flights remain available here for review.
             </p>
           ) : (
             /*
@@ -190,9 +270,13 @@ export function ContactsPanel({
              * it, dragging the document to 9000px in a 600px viewport.
              */
             <ul className={scrollList}>
-              {closedTracks.map((track) => (
-                <li key={track.track_id}>
-                  <ClosedTrackRow track={track} format={format} />
+              {aircraft.map((group) => (
+                <li key={group.key}>
+                  <AircraftFlights
+                    group={group}
+                    label={labels.get(group.serial ?? '') ?? null}
+                    format={format}
+                  />
                 </li>
               ))}
             </ul>
@@ -388,33 +472,95 @@ function MannedRow({
   )
 }
 
-function ClosedTrackRow({ track, format }: { track: Track; format: Formatters }) {
-  const name = track.identity?.serial ?? track.identity?.macs?.[0] ?? track.track_id
+/**
+ * One airframe and its last few flights.
+ *
+ * Flightradar24's structure, in a sidebar: the aircraft is the heading and each
+ * row under it carries only what differs between its flights — when it started
+ * and how long it lasted. The panel used to render one row per closed track,
+ * which on the deployed unit meant the same serial twenty-nine times over,
+ * each row saying "closed 4 hours ago" and nothing that told them apart.
+ *
+ * The stored label replaces the serial when there is one, because "Neighbour's
+ * Mini 4 Pro" is what the operator called it and `1581F3YTBJ9H003045J0` is what
+ * the airframe calls itself.
+ */
+function AircraftFlights({
+  group,
+  label,
+  format,
+}: {
+  group: AircraftGroup
+  label: AircraftLabel | null
+  format: Formatters
+}) {
+  const named = label?.label ?? ''
+  const shown = group.flights.slice(0, FLIGHTS_PER_AIRCRAFT)
+  const more = group.flights.length - shown.length
 
   return (
-    <div className="hover:bg-accent/30 flex items-start gap-2 px-3 py-2.5 transition-colors">
-      <ArchiveIcon className="text-muted-foreground mt-0.5 size-3.5 shrink-0" aria-hidden />
-      <div className="min-w-0 flex-1">
-        <span className="block truncate font-mono text-xs font-medium">{name}</span>
-        <span className="text-muted-foreground mt-0.5 block text-2xs">
-          closed {format.relative(track.last_seen)} · {track.detection_count} detections
+    <div className="px-3 py-2.5">
+      <div className="flex items-start gap-2">
+        <ArchiveIcon className="text-muted-foreground mt-0.5 size-3.5 shrink-0" aria-hidden />
+        <div className="min-w-0 flex-1">
+          <span
+            className={cn('block truncate text-xs font-medium', named === '' && 'font-mono')}
+            // The serial is still reachable for an operator who needs to read
+            // it off against the airframe, without it taking the line back.
+            title={named === '' ? undefined : group.label}
+          >
+            {named === '' ? group.label : named}
+          </span>
+          <span className="text-muted-foreground mt-0.5 block text-2xs">
+            {[group.vendor, group.uaType].filter(Boolean).join(' · ') || 'no vendor reported'}
+          </span>
+        </div>
+        <span className="text-muted-foreground shrink-0 text-2xs whitespace-nowrap">
+          {group.flights.length} flight{group.flights.length === 1 ? '' : 's'}
         </span>
       </div>
-      <Link
-        to="/tracks/$trackId"
-        params={{ trackId: track.track_id }}
-        className="text-primary shrink-0 rounded text-2xs underline-offset-2 hover:underline"
-      >
-        Review
-      </Link>
+
+      <ul className="mt-1.5 space-y-0.5 pl-5.5">
+        {shown.map((track) => {
+          const duration = flightDurationS(track)
+          return (
+            <li key={track.track_id}>
+              <Link
+                to="/tracks/$trackId"
+                params={{ trackId: track.track_id }}
+                className="hover:bg-accent/40 flex items-baseline gap-2 rounded px-1 py-0.5 text-2xs"
+              >
+                <span className="tnum truncate">{format.timestamp(track.first_seen)}</span>
+                <span className="text-muted-foreground tnum ml-auto shrink-0 font-mono">
+                  {duration === null ? '—' : format.duration(duration)}
+                </span>
+              </Link>
+            </li>
+          )
+        })}
+      </ul>
+
+      {more > 0 ? (
+        /* The Flights page, narrowed to this airframe — not a longer list here.
+           A sidebar beside a live map is the wrong place to review a month. */
+        <Link
+          to="/tracks"
+          search={{ q: group.label }}
+          className="text-primary mt-1 ml-5.5 inline-block rounded text-2xs underline-offset-2 hover:underline"
+        >
+          {more} more flight{more === 1 ? '' : 's'} →
+        </Link>
+      ) : null}
     </div>
   )
 }
 
 /**
- * Deliberately not ClosedTrackRow: that row says "closed <time> ago", which is
- * false for a contact still being heard, and its archive icon reads as history.
- * This one names the vendor because the vendor guess IS the whole finding.
+ * Deliberately not a flight row: this is not a flight. It carries no start and
+ * no duration because a vendor match has neither — what it has is a MAC, a
+ * guess at who built the radio, and the number of times it was heard, and that
+ * guess IS the whole finding. It also avoids the word "closed", which is false
+ * for a contact still being heard.
  */
 function UnidentifiedTrackRow({ track, format }: { track: Track; format: Formatters }) {
   const name = track.identity?.macs?.[0] ?? track.track_id

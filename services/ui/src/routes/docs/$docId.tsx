@@ -1,6 +1,7 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { BookOpenIcon, FileTextIcon, TerminalIcon } from 'lucide-react'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { ArrowLeftIcon, BookOpenIcon, FileTextIcon, TerminalIcon } from 'lucide-react'
 
+import { PageHeader } from '@/components/layout/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert } from '@/components/ui/misc'
 
@@ -50,13 +51,31 @@ export function DocsDocument({ document }: { document: GuideDocument }) {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-3 sm:p-4">
       <header>
         <div className="border-border bg-card/60 rounded-lg border p-5 sm:p-6">
-          <p className="text-primary mb-2 flex items-center gap-2 font-mono text-xs">
-            <BookOpenIcon className="size-4" aria-hidden /> {document.area}
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight">{document.title}</h1>
-          <p className="text-muted-foreground mt-2 max-w-3xl text-sm leading-6">
-            {document.summary}
-          </p>
+          {/* The document's area was a hand-rolled line above a hand-rolled
+              <h1>, one of four such headers in the app. It is the eyebrow
+              slot now, so a document's title sits at the same size and in the
+              same face as every other page's — and it carries the trail back
+              out, because the tree beside it is a list of file names rather
+              than a way of saying where this document sits. */}
+          <PageHeader
+            icon={BookOpenIcon}
+            title={document.title}
+            description={document.summary}
+            eyebrow={
+              <span className="flex min-w-0 items-center gap-1.5 text-xs">
+                <Link
+                  to="/docs"
+                  className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded"
+                >
+                  <ArrowLeftIcon className="size-3.5" aria-hidden /> Docs
+                </Link>
+                <span className="text-muted-foreground/60" aria-hidden>
+                  ›
+                </span>
+                <span className="text-primary truncate font-mono">{document.area}</span>
+              </span>
+            }
+          />
           {architecture ? (
             <div className="border-border mt-5 border-t pt-4">
               <h2 className="text-sm font-semibold">Architecture</h2>

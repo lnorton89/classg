@@ -35,7 +35,15 @@ function NotificationSettings() {
       <SettingsCard
         icon={BellIcon}
         title="What appears in the drawer"
-        description="The bell in the header collects recent drone activity alongside what this console saw happen. Switching a category off hides it from the drawer and from the unread count — it never stops the receiver recording it."
+        description="Switching a category off hides it from the bell and from the unread count. It never stops the receiver recording it."
+        why={
+          <>
+            The bell collects recent drone activity alongside what this console saw happen, and
+            these switches choose which of the two you are shown. Nothing here reaches the
+            receiver: detection, fusion and storage carry on exactly as before, so a quiet
+            drawer is a choice you made and not evidence of a quiet sky.
+          </>
+        }
       >
         {droneOff ? (
           <Alert tone="warn" title="Drone detections are hidden">
@@ -58,20 +66,20 @@ function NotificationSettings() {
       <SettingsCard
         icon={FilterIcon}
         title="Severity"
-        description="Applies to system events only. Drone detections are all recorded at info, so a higher floor here would switch off the detections themselves rather than quieten them."
+        description="Applies to system events only, never to detections."
+        why={
+          <>
+            Drone detections are all recorded at info, so a higher floor here would switch off
+            the detections themselves rather than quieten them — which is what the categories
+            above are for. Debug entries arrive in rate-limited bursts and are meant for the{' '}
+            <Link to="/logs" className="text-primary underline-offset-2 hover:underline">
+              event log
+            </Link>
+            , not for notifications.
+          </>
+        }
       >
-        <SettingRow
-          label="Minimum severity for system events"
-          hint={
-            <>
-              Debug entries arrive in rate-limited bursts and are meant for the{' '}
-              <Link to="/logs" className="text-primary underline-offset-2 hover:underline">
-                event log
-              </Link>
-              , not for notifications.
-            </>
-          }
-        >
+        <SettingRow label="Minimum severity for system events">
           <Segmented
             aria-label="Minimum severity for system events"
             value={preferences.notifyMinLevel}
@@ -90,12 +98,18 @@ function NotificationSettings() {
       <SettingsCard
         icon={Volume2Icon}
         title="Sound"
-        description="The realistic way this console is used is not being stared at. A sound is what makes a continuously recording detector worth leaving on a bench."
+        description="A short two-tone chirp, on a track's first appearance only."
+        why={
+          <>
+            The realistic way this console is used is not being stared at, and a sound is what
+            makes a continuously recording detector worth leaving on a bench. It fires once per
+            track and never again while that drone loiters, because an alert that repeats is one
+            you learn to ignore. Browsers only permit sound after you have interacted with the
+            page at least once, which is what the test button below is for.
+          </>
+        }
       >
-        <SettingRow
-          label="Audible alert on new track"
-          hint="A short two-tone chirp, and only ever on a track's first appearance — re-firing while a drone loiters would train you to ignore it. Browsers only permit sound after you have interacted with the page at least once."
-        >
+        <SettingRow label="Audible alert on new track">
           <Segmented
             aria-label="Audible alert on new track"
             value={preferences.alertLevel}
@@ -114,7 +128,7 @@ function NotificationSettings() {
             speaker is not muted — was a real drone. */}
         <SettingRow
           label="Test the chirp"
-          hint="Plays the confirmed-track sound once, at the volume an alert would use."
+          hint="Plays it once, at the volume an alert would use."
         >
           <Button
             type="button"

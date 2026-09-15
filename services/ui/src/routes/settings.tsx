@@ -1,4 +1,4 @@
-import { createFileRoute, Link, Outlet } from '@tanstack/react-router'
+import { createFileRoute, Link, Outlet, useLocation } from '@tanstack/react-router'
 import { RotateCcwIcon, SettingsIcon } from 'lucide-react'
 
 import { usePreferences } from '@/app/preferences-context'
@@ -34,7 +34,7 @@ function SettingsLayout() {
       <PageHeader
         icon={SettingsIcon}
         title="Settings"
-        description="How this console behaves, and how the receiver is calibrated. Everything under “This browser” applies the moment you change it; calibration is saved deliberately and may need a restart."
+        description="How this console behaves, and how the receiver is calibrated."
         actions={<ResetButton />}
       />
 
@@ -43,11 +43,55 @@ function SettingsLayout() {
         {/* min-w-0 so a wide child — the channel plan table — scrolls inside
             its own container instead of stretching the grid column. */}
         <div className="flex min-w-0 flex-col gap-4">
+          <ScopeNote />
           <Outlet />
         </div>
       </div>
     </PageContainer>
   )
+}
+
+/**
+ * Who a change on this page affects, said once, at the top of it.
+ *
+ * It used to be said three times and in none of the places it was needed: as a
+ * `Why` in the page header (before you had chosen a category, so it had to
+ * hedge across both), as a hint under each nav group, and again in the prose
+ * under individual fields. Stating it here instead means the receiver pages can
+ * drop their standing "these settings change the receiver, not your view"
+ * banners, and the browser pages never have to explain why they have no Save.
+ */
+function ScopeNote() {
+  const pathname = useLocation({ select: (location) => location.pathname })
+  const category = SETTINGS_CATEGORIES.find(
+    (entry) => pathname === entry.to || pathname.startsWith(`${entry.to}/`),
+  )
+  if (!category) return null
+
+  return (
+    <p
+      className={cn(
+        'border-border bg-card/40 text-muted-foreground rounded-md border px-3 py-2 text-xs',
+        'leading-relaxed',
+      )}
+    >
+      <span className="text-foreground font-medium">{SCOPE_LABEL[category.scope]}</span>
+      {' — '}
+      {SCOPE_BODY[category.scope]}
+    </p>
+  )
+}
+
+/**
+ * Longer than the nav's `SCOPE_HINT`, which has one line of a 15rem column to
+ * work in. This is the full sentence, and it is the reason each of the twelve
+ * pages below can now say nothing about scope at all.
+ */
+const SCOPE_BODY: Record<SettingsScope, string> = {
+  browser:
+    'applied the moment you change it, stored in this browser, and invisible to every other client. Nothing here can alter a measurement.',
+  receiver:
+    'stored on the Pi and shared by every client, so it is saved deliberately rather than as you type. Some of it only takes effect after a restart, and the page says which.',
 }
 
 function SettingsNav() {

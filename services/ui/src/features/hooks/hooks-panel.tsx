@@ -20,6 +20,7 @@ import { useState } from 'react'
 import { usePreferences } from '@/app/preferences-context'
 import { useFormat } from '@/app/use-format'
 import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/ui/status-pill'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { SettingsGroup } from '@/features/settings/setting-fields'
@@ -218,7 +219,7 @@ function RuleCard({
         <span className="text-sm font-medium">{rule.name}</span>
         <Badge variant="outline">{rule.event}</Badge>
         <Badge variant="muted">{rule.action}</Badge>
-        {!rule.enabled ? <Badge variant="down">disabled</Badge> : null}
+        {!rule.enabled ? <StatusPill tone="down">disabled</StatusPill> : null}
 
         <div className="ml-auto flex items-center gap-2">
           <Switch
@@ -561,7 +562,7 @@ function DeliveryRow({ delivery }: { delivery: HookDelivery }) {
 
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-xs">
-      <Badge variant={tone}>{delivery.status}</Badge>
+      <StatusPill tone={tone}>{delivery.status}</StatusPill>
       <span className="font-medium">{delivery.rule_name ?? delivery.rule_id}</span>
       <span className="text-muted-foreground">{delivery.event}</span>
       {delivery.error ? (

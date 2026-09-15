@@ -25,10 +25,10 @@ import {
   BookOpenIcon,
   LogOutIcon,
   ScrollTextIcon,
-  SearchIcon,
   SettingsIcon,
   ShieldAlertIcon,
   ShieldCheckIcon,
+  TerminalIcon,
 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
@@ -139,16 +139,21 @@ export function AccountMenu({ onOpenPalette }: { onOpenPalette: () => void }) {
           >
             Settings
           </MenuLink>
-          {/* Here rather than in the header at every width: it is a keyboard
-              accelerator, and on a phone there is no keyboard to accelerate. */}
+          {/* "Commands", not "Search": the header has a real search box now
+              that resolves a serial to an aircraft, and two controls called
+              Search that do different things is worse than one control with
+              an awkward name. What is left in the palette is the half nobody
+              could reach any other way — jump to a page, flip units, flip the
+              theme. ⌘K belongs to the search box; this is how the palette is
+              opened. */}
           <MenuButton
-            icon={<SearchIcon className="size-4" aria-hidden />}
+            icon={<TerminalIcon className="size-4" aria-hidden />}
             onSelect={() => {
               close()
               onOpenPalette()
             }}
           >
-            Search…
+            Commands and quick settings…
           </MenuButton>
         </div>
 

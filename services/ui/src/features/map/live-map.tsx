@@ -31,9 +31,11 @@ import {
   createDroneMarker,
   createMannedMarker,
   createOperatorMarker,
+  createPlaybackCursor,
   updateDroneMarker,
   updateMannedMarker,
 } from './markers'
+import { rampMixExpressions, type ColouredPath } from './path-colour'
 import {
   BASEMAP_VECTOR_URL,
   isPMTilesArchive,
@@ -71,15 +73,51 @@ const BASE_URL = import.meta.env.BASE_URL
 function resolveTokenColor(token: string, fallback: string): string {
   const raw = getComputedStyle(document.documentElement).getPropertyValue(token).trim()
   if (raw === '') return fallback
+  return resolveCssColor(raw, fallback)
+}
+
+/**
+ * The same trick for a whole colour EXPRESSION rather than a bare token.
+ *
+ * The speed ramp's steps are `color-mix(in oklch, …)` over two tokens (see
+ * path-colour.ts), which MapLibre cannot parse and `getPropertyValue` cannot
+ * evaluate — but the canvas can, because it is the browser's own colour
+ * parser. Any expression that fails to parse leaves `fillStyle` at its
+ * previous value, so the black default is primed first and treated as "the
+ * browser refused this".
+ */
+function resolveCssColor(expression: string, fallback: string): string {
   const canvas = document.createElement('canvas')
   canvas.width = 1
   canvas.height = 1
   const ctx = canvas.getContext('2d')
   if (!ctx) return fallback
-  ctx.fillStyle = raw
+  // A colour no ramp will ever land on, so "unchanged" unambiguously means the
+  // browser rejected the expression rather than accepting it and agreeing.
+  const sentinel = '#010203'
+  ctx.fillStyle = sentinel
+  ctx.fillStyle = expression
+  if (ctx.fillStyle === sentinel) return fallback
   ctx.fillRect(0, 0, 1, 1)
   const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
   return `rgb(${r},${g},${b})`
+}
+
+/**
+ * The sequential speed ramp, resolved to the literals MapLibre needs.
+ *
+ * Falls back to the two endpoints when the browser will not evaluate
+ * `color-mix` — a two-stop sRGB interpolation is a slightly uneven ramp, which
+ * is a great deal better than no route on the map.
+ */
+function resolveRamp(dim: string, bright: string): string[] {
+  const style = getComputedStyle(document.documentElement)
+  const dimRaw = style.getPropertyValue('--track-dim').trim()
+  const brightRaw = style.getPropertyValue('--track').trim()
+  if (dimRaw === '' || brightRaw === '') return [dim, bright]
+  return rampMixExpressions(dimRaw, brightRaw).map((mix, index) =>
+    resolveCssColor(mix, index === 0 ? dim : bright),
+  )
 }
 
 /**
@@ -188,6 +226,17 @@ export interface LiveMapProps {
    * the prompt on a detail page would be noise.
    */
   siteAnchored?: boolean
+  /**
+   * Draw ONE track's route shaded by a sequential ramp instead of as the
+   * single-hue confidence trail.
+   *
+   * Opt-in, and taken only by the track detail page. See path-colour.ts for
+   * why the live map must never pass this. While it is set the plain `trails`
+   * source is fed nothing, so the two renderings can never double-draw.
+   */
+  colouredPath?: ColouredPath | null
+  /** Playback marker position, moved by the detail page's time scrubber. */
+  cursor?: { lat: number; lon: number; label: string } | null
 }
 
 export function LiveMap({
@@ -203,12 +252,15 @@ export function LiveMap({
   fitOnTrackChanges = false,
   fitMaxZoom = 16,
   siteAnchored = false,
+  colouredPath = null,
+  cursor = null,
 }: LiveMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<MapLibreMap | null>(null)
   const droneMarkers = useRef(new Map<string, { marker: Marker; node: HTMLElement }>())
   const operatorMarkers = useRef(new Map<string, Marker>())
   const mannedMarkers = useRef(new Map<string, { marker: Marker; node: HTMLElement }>())
+  const cursorMarker = useRef<{ marker: Marker; node: HTMLElement } | null>(null)
   const onSelectRef = useRef(onSelectTrack)
   const onSelectMannedRef = useRef(onSelectManned)
   const fittedBoundsRef = useRef<string | null>(null)
@@ -456,17 +508,34 @@ export function LiveMap({
           },
         })
       }
+      const trackColor = resolveTokenColor('--track', theme === 'dark' ? '#5fd3f0' : '#1e7fa8')
+      if (!map.getLayer('trail-gaps')) {
+        // Where the aircraft was not heard. Same hue as the trail so it reads
+        // as the same flight, dashed and thin so it never reads as a leg that
+        // was recorded. See TRAIL_GAP_MS in geo.ts.
+        map.addLayer({
+          id: 'trail-gaps',
+          type: 'line',
+          source: 'trails',
+          filter: ['==', ['get', 'gap'], true],
+          layout: { 'line-cap': 'round' },
+          paint: {
+            'line-color': trackColor,
+            'line-width': 1.2,
+            'line-opacity': 0.55,
+            'line-dasharray': [2, 3],
+          },
+        })
+      }
       if (!map.getLayer('trails')) {
         map.addLayer({
           id: 'trails',
           type: 'line',
           source: 'trails',
+          filter: ['!=', ['get', 'gap'], true],
           layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': resolveTokenColor(
-              '--track',
-              theme === 'dark' ? '#5fd3f0' : '#1e7fa8',
-            ),
+            'line-color': trackColor,
             // Trail width follows confidence — thicker means more corroborated,
             // within one hue. Never a hue ramp.
             'line-width': ['interpolate', ['linear'], ['get', 'confidence'], 0, 1, 1, 2.6],
@@ -474,6 +543,113 @@ export function LiveMap({
           },
         })
       }
+
+      // --- the detail page's shaded route -----------------------------------
+      // Added unconditionally so a mode switch is a setData rather than a
+      // restyle; the sources hold nothing on a map that was never handed a
+      // colouredPath, and empty layers cost nothing to draw.
+      if (!map.getSource('path-segments')) {
+        map.addSource('path-segments', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        })
+      }
+      if (!map.getSource('path-dwells')) {
+        map.addSource('path-dwells', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        })
+      }
+      if (!map.getLayer('path-gaps')) {
+        // Identical treatment to `trail-gaps`: a gap is a gap whichever
+        // rendering of the route is on screen, and it is never shaded, because
+        // the ramp would be claiming a measurement across the one interval
+        // nothing measured.
+        map.addLayer({
+          id: 'path-gaps',
+          type: 'line',
+          source: 'path-segments',
+          filter: ['==', ['get', 'gap'], true],
+          layout: { 'line-cap': 'round' },
+          paint: {
+            'line-color': trackColor,
+            'line-width': 1.2,
+            'line-opacity': 0.55,
+            'line-dasharray': [2, 3],
+          },
+        })
+      }
+      if (!map.getLayer('path-segments')) {
+        const ramp = resolveRamp(
+          resolveTokenColor('--track-dim', theme === 'dark' ? '#3f7f93' : '#9fc4d6'),
+          trackColor,
+        )
+        // Written out rather than spread from the array: MapLibre's expression
+        // types are literal tuples, and a spread of a `string[]` widens the
+        // whole paint value to something the checker will not accept.
+        const s0 = ramp[0] ?? trackColor
+        const s1 = ramp[1] ?? s0
+        const s2 = ramp[2] ?? s1
+        const s3 = ramp[3] ?? s2
+        const s4 = ramp[4] ?? s3
+        const unknownColor = resolveTokenColor(
+          '--muted-foreground',
+          theme === 'dark' ? '#8a9199' : '#6b7280',
+        )
+        map.addLayer({
+          id: 'path-segments',
+          type: 'line',
+          source: 'path-segments',
+          filter: ['!=', ['get', 'gap'], true],
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            // A segment whose value was never measured is drawn in the neutral
+            // ink, NOT at the bottom of the ramp: "no speed reported" and
+            // "crawling" must not be the same colour.
+            'line-color': [
+              'case',
+              ['get', 'known'],
+              [
+                'interpolate',
+                ['linear'],
+                ['get', 'value'],
+                0,
+                s0,
+                0.25,
+                s1,
+                0.5,
+                s2,
+                0.75,
+                s3,
+                1,
+                s4,
+              ],
+              unknownColor,
+            ],
+            'line-width': 2.4,
+            'line-opacity': 0.9,
+          },
+        })
+      }
+      if (!map.getLayer('path-dwells')) {
+        // Sized by how long the aircraft held station, so the eye finds the
+        // long hover before the brief pause. Hollow rather than filled: a
+        // solid dot the size of the marker cluster reads as another aircraft.
+        map.addLayer({
+          id: 'path-dwells',
+          type: 'circle',
+          source: 'path-dwells',
+          paint: {
+            'circle-radius': ['interpolate', ['linear'], ['get', 'seconds'], 10, 3.5, 300, 10],
+            'circle-color': trackColor,
+            'circle-opacity': 0.18,
+            'circle-stroke-color': trackColor,
+            'circle-stroke-width': 1.4,
+            'circle-stroke-opacity': 0.9,
+          },
+        })
+      }
+
       drawRings()
       setReady(true)
     }
@@ -545,6 +721,8 @@ export function LiveMap({
       for (const { marker } of drones.values()) marker.remove()
       for (const marker of operators.values()) marker.remove()
       for (const { marker } of manned.values()) marker.remove()
+      cursorMarker.current?.marker.remove()
+      cursorMarker.current = null
       drones.clear()
       operators.clear()
       manned.clear()
@@ -559,10 +737,51 @@ export function LiveMap({
     const map = mapRef.current
     if (!map || !ready) return
     const trails = map.getSource('trails')
-    if (trails instanceof GeoJSONSource) void trails.setData(trailsGeoJson(tracks))
+    if (trails instanceof GeoJSONSource) {
+      // The shaded route replaces the confidence trail rather than sitting
+      // under it: two renderings of one flight at slightly different widths
+      // reads as two flights.
+      void trails.setData(
+        colouredPath ? { type: 'FeatureCollection', features: [] } : trailsGeoJson(tracks),
+      )
+    }
     const links = map.getSource('operator-links')
     if (links instanceof GeoJSONSource) void links.setData(operatorLinksGeoJson(tracks))
-  }, [tracks, ready])
+  }, [tracks, ready, colouredPath])
+
+  // --- the shaded route ----------------------------------------------------
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    const empty: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
+    const segments = map.getSource('path-segments')
+    if (segments instanceof GeoJSONSource) {
+      void segments.setData(colouredPath?.segments ?? empty)
+    }
+    const dwells = map.getSource('path-dwells')
+    if (dwells instanceof GeoJSONSource) void dwells.setData(colouredPath?.dwells ?? empty)
+  }, [colouredPath, ready])
+
+  // --- playback cursor -----------------------------------------------------
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !ready) return
+    if (!cursor) {
+      cursorMarker.current?.marker.remove()
+      cursorMarker.current = null
+      return
+    }
+    const existing = cursorMarker.current
+    if (existing) {
+      existing.marker.setLngLat([cursor.lon, cursor.lat])
+      existing.node.setAttribute('aria-label', cursor.label)
+      existing.node.title = cursor.label
+      return
+    }
+    const node = createPlaybackCursor(cursor.label)
+    const marker = new Marker({ element: node }).setLngLat([cursor.lon, cursor.lat]).addTo(map)
+    cursorMarker.current = { marker, node }
+  }, [cursor, ready])
 
   // --- initial centre -------------------------------------------------------
   // The map is created at [0, 0] because neither source below is available

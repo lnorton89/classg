@@ -47,6 +47,7 @@ const TRACK_WITH_DETECTIONS_QUERY = `
       confidence rssi_dbm adsb_correlated
       identity { serial macs vendor manufacturer_code model_hint operator_id ua_type }
       evidence { class sensor_kind weight count last_seen }
+      receivers { sensor_id sensor_kind detection_count rssi_dbm last_seen }
       current { lat lon alt_geodetic_m height_agl_m speed_mps track_deg at }
       history { lat lon alt_geodetic_m height_agl_m speed_mps track_deg at }
       operator { lat lon alt_m at }
@@ -91,6 +92,14 @@ interface GqlOperatorPosition {
   alt_m: number | null
   at: string | null
 }
+/** `last_seen` is a nullable DateTime here; REST simply omits it. */
+interface GqlReceiver {
+  sensor_id: string
+  sensor_kind: NonNullable<Track['receivers']>[number]['sensor_kind']
+  detection_count: number
+  rssi_dbm: number | null
+  last_seen: string | null
+}
 interface GqlTrack {
   schema_version: string | null
   track_id: string
@@ -103,6 +112,7 @@ interface GqlTrack {
   adsb_correlated: boolean
   identity: NonNullable<Track['identity']> | null
   evidence: NonNullable<Track['evidence']> | null
+  receivers: GqlReceiver[] | null
   current: GqlPosition | null
   history: GqlPosition[] | null
   operator: GqlOperatorPosition | null
@@ -217,6 +227,16 @@ function mapTrack(t: GqlTrack): Track {
     identity: t.identity ?? undefined,
     confidence: t.confidence,
     evidence: t.evidence ?? [],
+    // The signal card's per-receiver breakdown renders only when this is
+    // present. It was omitted from the query and from here, so the breakdown
+    // never drew on a two-radio unit -- the exact case it exists for.
+    receivers: (t.receivers ?? []).map((r) => ({
+      sensor_id: r.sensor_id,
+      sensor_kind: r.sensor_kind,
+      detection_count: r.detection_count,
+      rssi_dbm: r.rssi_dbm,
+      last_seen: r.last_seen ?? undefined,
+    })),
     current: t.current ? mapPosition(t.current) : undefined,
     history: (t.history ?? []).map(mapPosition),
     operator: mapOperator(t.operator),

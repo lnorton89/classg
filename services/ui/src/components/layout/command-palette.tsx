@@ -1,18 +1,23 @@
 /**
- * Command palette — ⌘K / Ctrl-K.
+ * Command palette — opened from the account menu.
  *
- * The thing it actually solves is track lookup. Once a session has fifty
- * tracks, finding the one whose serial someone just read out over the radio
- * means: open Tracks, find the filter box, type, click. This is one keystroke
- * and the same typing, from anywhere in the app including the full-screen map.
+ * It used to own ⌘K, on the reasoning that track lookup was the thing it
+ * solved: finding the flight whose serial someone read out over the radio, in
+ * one keystroke, from anywhere including the full-screen map. That reading was
+ * right and the shortcut has gone to the header's search box, which does the
+ * same lookup and actually resolves a serial, a MAC, a label or a ULID to a
+ * destination rather than filtering a list of command names by substring.
  *
- * Navigation and quick settings ride along because the list is already there
- * and a palette that only does one thing does not get learned.
+ * What is left is what nothing else offers: jump to any page, flip units, the
+ * clock or the theme without going to Settings for one switch. The track list
+ * stays because it costs nothing and the muscle memory is real.
  */
 import { Dialog } from '@base-ui/react/dialog'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import {
+  ArchiveIcon,
+  AudioWaveformIcon,
   BellIcon,
   BookOpenIcon,
   ClockIcon,
@@ -152,24 +157,40 @@ function PaletteBody({
       { id: 'nav-live', label: 'Live map', icon: MapIcon, group: 'Go to', run: go('/') },
       {
         id: 'nav-tracks',
-        label: 'Tracks',
+        label: 'Flights',
         icon: RadarIcon,
         group: 'Go to',
         run: go('/tracks'),
       },
       {
+        // Still reachable by the word an operator would type. The destination
+        // is the Flights page's lanes view; /timeline is only a redirect now.
         id: 'nav-timeline',
         label: 'Timeline — what happened while you were away',
         icon: HistoryIcon,
         group: 'Go to',
-        run: go('/timeline'),
+        run: () => void navigate({ to: '/tracks', search: { view: 'lanes' } }),
       },
       {
         id: 'nav-sensors',
-        label: 'Sensors, spectrum and captures',
+        label: 'Sensors',
         icon: SlidersHorizontalIcon,
         group: 'Go to',
         run: go('/sensors'),
+      },
+      {
+        id: 'nav-spectrum',
+        label: 'Spectrum — sweep a band',
+        icon: AudioWaveformIcon,
+        group: 'Go to',
+        run: go('/spectrum'),
+      },
+      {
+        id: 'nav-captures',
+        label: 'Captures — PCAP and IQ recordings',
+        icon: ArchiveIcon,
+        group: 'Go to',
+        run: go('/captures'),
       },
       {
         id: 'nav-logs',
@@ -322,7 +343,7 @@ function PaletteBody({
             // step with the list without a second render pass.
             setActive(0)
           }}
-          placeholder="Search tracks, pages and settings…"
+          placeholder="Pages, quick settings, tracks…"
           aria-label="Search commands and tracks"
           // A combobox needs its list wired up to be announced correctly.
           role="combobox"

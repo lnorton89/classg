@@ -24,24 +24,28 @@ import { useState } from 'react'
 import { useFormat, useTicker } from '@/app/use-format'
 import { useLive } from '@/app/live-context'
 import { Popover } from '@/components/ui/popover'
+import {
+  statusPill,
+  STATUS_DOT,
+  type StatusPillTone,
+} from '@/components/ui/status-pill-variants'
 import { RecordingIndicator } from '@/features/monitoring/recording-indicator'
 import { healthQuery, monitoringQuery } from '@/lib/api/queries'
 import { cn } from '@/lib/cn'
 
 import { summariseStatus, type StatusTone } from './status-summary'
 
-const TONE_CLASS: Record<StatusTone, string> = {
-  ok: 'border-ok/35 bg-ok/10 text-ok hover:bg-ok/20',
-  warn: 'border-warn/40 bg-warn/10 text-warn hover:bg-warn/20',
-  down: 'border-down/45 bg-down/10 text-down hover:bg-down/20',
-  unknown: 'border-border bg-muted/40 text-muted-foreground hover:bg-muted',
-}
-
-const TONE_DOT: Record<StatusTone, string> = {
-  ok: 'bg-ok',
-  warn: 'bg-warn',
-  down: 'bg-down',
-  unknown: 'bg-muted-foreground',
+/**
+ * The header had its own copy of the tone palette, and it had drifted: 10%
+ * fills here against the 15% every other pill used, and a `border-border`
+ * neutral that matched nothing. `unknown` is the summary's word for "the API
+ * has not answered yet", which is the pill vocabulary's `muted`.
+ */
+const PILL_TONE: Record<StatusTone, StatusPillTone> = {
+  ok: 'ok',
+  warn: 'warn',
+  down: 'down',
+  unknown: 'muted',
 }
 
 export function StatusButton() {
@@ -68,16 +72,14 @@ export function StatusButton() {
           type="button"
           aria-label={`System status: ${status.detail} Open the status panel.`}
           className={cn(
-            'flex h-8 shrink-0 items-center gap-1.5 rounded-full border pr-2.5 pl-2',
-            'text-xs font-medium transition-colors',
+            statusPill({ tone: PILL_TONE[status.tone], size: 'lg', interactive: true }),
             'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
-            TONE_CLASS[status.tone],
           )}
         >
           <span
             className={cn(
               'size-2 shrink-0 rounded-full',
-              TONE_DOT[status.tone],
+              STATUS_DOT[PILL_TONE[status.tone]],
               // Only when something is wrong. A pulsing dot on a healthy unit
               // is an alarm that is always on, which is an alarm nobody reads.
               status.tone !== 'ok' && status.tone !== 'unknown' && 'animate-pulse',
@@ -213,5 +215,10 @@ function Row({
 }
 
 function Dot({ tone }: { tone: StatusTone }) {
-  return <span className={cn('inline-block size-2 rounded-full', TONE_DOT[tone])} aria-hidden />
+  return (
+    <span
+      className={cn('inline-block size-2 rounded-full', STATUS_DOT[PILL_TONE[tone]])}
+      aria-hidden
+    />
+  )
 }

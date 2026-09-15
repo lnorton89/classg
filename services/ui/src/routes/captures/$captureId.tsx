@@ -1,9 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { ArrowLeftIcon, DownloadIcon, PlayIcon } from 'lucide-react'
+import { ArrowLeftIcon, DownloadIcon, FileAudioIcon, PlayIcon } from 'lucide-react'
 
 import { BarMeter } from '@/components/ui/bar-meter'
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/ui/status-pill'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -15,6 +15,7 @@ import type { CaptureReport } from '@/lib/api/types'
 import { useFormat } from '@/app/use-format'
 import { EMPTY } from '@/lib/format'
 import { PageContainer } from '@/components/layout/page-container'
+import { PageHeader } from '@/components/layout/page-header'
 
 export const Route = createFileRoute('/captures/$captureId')({
   component: CaptureDetail,
@@ -41,37 +42,44 @@ function CaptureDetail() {
 
   return (
     <PageContainer>
-      <div>
-        <Link
-          to="/sensors"
-          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded text-xs"
-        >
-          <ArrowLeftIcon className="size-3.5" aria-hidden /> Sensors and captures
-        </Link>
-        <div className="mt-1 flex flex-wrap items-center gap-2">
-          <h1 className="font-mono text-lg font-semibold tracking-tight">
-            {capture?.filename ?? captureId}
-          </h1>
-          {capture ? <Badge variant="muted">{capture.state}</Badge> : null}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => analyze.mutate()} disabled={analyze.isPending}>
-          <PlayIcon aria-hidden />
-          {analyze.isPending ? 'Analyzing…' : report ? 'Re-run analysis' : 'Run analysis'}
-        </Button>
-        {capture?.state === 'completed' ? (
-          <a
-            href={api.captureDownloadUrl(captureId)}
-            download={capture.filename}
-            className={buttonVariants({ variant: 'outline' })}
+      <PageHeader
+        icon={FileAudioIcon}
+        // The filename IS the identifier here, so it keeps the mono face the
+        // rest of the app gives identifiers.
+        title={capture?.filename ?? captureId}
+        className="[&_h1]:font-mono [&_h1]:break-all"
+        eyebrow={
+          <Link
+            // Back to the recordings list, not to whichever sensor the Sensors
+            // page happens to default to: this capture was opened from that
+            // list, and landing on wifi-0's health card is the reader losing
+            // their place.
+            to="/captures"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 rounded text-xs"
           >
-            <DownloadIcon className="size-4" aria-hidden />
-            Download .pcap
-          </a>
-        ) : null}
-      </div>
+            <ArrowLeftIcon className="size-3.5" aria-hidden /> Captures
+          </Link>
+        }
+        actions={
+          <>
+            {capture ? <StatusPill tone="muted">{capture.state}</StatusPill> : null}
+            <Button onClick={() => analyze.mutate()} disabled={analyze.isPending}>
+              <PlayIcon aria-hidden />
+              {analyze.isPending ? 'Analyzing…' : report ? 'Re-run analysis' : 'Run analysis'}
+            </Button>
+            {capture?.state === 'completed' ? (
+              <a
+                href={api.captureDownloadUrl(captureId)}
+                download={capture.filename}
+                className={buttonVariants({ variant: 'outline' })}
+              >
+                <DownloadIcon className="size-4" aria-hidden />
+                Download .pcap
+              </a>
+            ) : null}
+          </>
+        }
+      />
 
       {analyze.isError ? (
         <Alert tone="error" title="Analysis failed">
@@ -80,7 +88,9 @@ function CaptureDetail() {
       ) : null}
 
       {capture ? (
-        <Card>
+        // The one primary card: everything else on this page is derived from
+        // the recording this one describes.
+        <Card weight="primary">
           <CardHeader>
             <CardTitle>Capture</CardTitle>
           </CardHeader>

@@ -281,3 +281,25 @@ export function createOperatorMarker(options: OperatorMarkerOptions): HTMLElemen
   wrapper.title = description
   return wrapper
 }
+
+/**
+ * The time scrubber's aircraft, on a map of a flight that has already ended.
+ *
+ * Deliberately not `createDroneMarker`. That marker means "this aircraft is
+ * here"; on a replay the aircraft is nowhere, and a marker that looks like a
+ * live contact on a page full of past-tense readings is the one confusion this
+ * feature could plausibly cause. A ring with a dot reads as a playhead.
+ */
+export function createPlaybackCursor(label: string): HTMLElement {
+  const wrapper = el(
+    'div',
+    'classg-marker classg-marker--cursor flex size-5 items-center justify-center ' +
+      'rounded-full bg-background/70 text-track ring-2 ring-track',
+  )
+  const dot = el('span', 'block size-1.5 rounded-full bg-track')
+  wrapper.append(dot)
+  wrapper.setAttribute('role', 'img')
+  wrapper.setAttribute('aria-label', label)
+  wrapper.title = label
+  return wrapper
+}

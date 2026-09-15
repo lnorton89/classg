@@ -5,13 +5,13 @@ import {
   TriangleAlertIcon,
   XIcon,
 } from 'lucide-react'
-import { Fragment, useEffect } from 'react'
+import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 
-import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { DataRow } from '@/components/ui/misc'
-import { Tooltip } from '@/components/ui/tooltip'
+import { Card, CardContent, CardHeader, CardTitle, type CardWeight } from '@/components/ui/card'
+import { KeyValueGroup } from '@/components/ui/key-value-group'
+import { MetricStrip } from '@/components/ui/metric-strip'
+import { StatusPill } from '@/components/ui/status-pill'
 import { useSwipeDismiss } from '@/components/ui/use-swipe-dismiss'
 import { useFormat, useTicker } from '@/app/use-format'
 import { createDismissalStore } from '@/features/notifications/dismissal-store'
@@ -20,8 +20,10 @@ import type { SensorHealth } from '@/lib/api/types'
 import { cn } from '@/lib/cn'
 
 import { formatDetailValue } from './detail-format'
+import { BREAKDOWN_KEYS, sensorBreakdowns } from './sensor-breakdowns'
 import { groupSensorDetail, type DetailRow } from './sensor-detail-groups'
 import { SENSOR_ICONS } from './sensor-icons'
+import { summariseSensor, type SummaryMetric } from './sensor-summary'
 import type { SkyState } from './sky-state'
 
 /**
@@ -211,9 +213,12 @@ function SkyStateBannerBody({
 export function SensorHealthCard({
   sensor,
   action,
+  weight,
 }: {
   sensor: SensorHealth
   action?: ReactNode
+  /** The page decides; this card is the primary one wherever it appears alone. */
+  weight?: CardWeight
 }) {
   const format = useFormat()
   // Heartbeat age has to advance on its own — a card frozen at "3s ago" is
@@ -221,8 +226,23 @@ export function SensorHealthCard({
   // the 30 s staleness threshold it is being read against.
   useTicker(5000)
   const Icon = SENSOR_ICONS[sensor.sensor_kind]
+
+  const detail = sensor.detail ?? {}
+  const summary = summariseSensor(sensor)
+  const breakdowns = sensorBreakdowns(detail)
+  // `survey_reason` is omitted because the occupancy panel beside this card
+  // prints the driver's sentence in full; it used to appear in both places,
+  // worded identically, which reads as the page having lost track of itself.
+  const groups = groupSensorDetail(detail, [
+    ...summary.consumed,
+    ...BREAKDOWN_KEYS,
+    'survey_reason',
+  ])
+  const counterCount = groups.reduce((total, group) => total + group.rows.length, 0)
+
   return (
     <Card
+      weight={weight}
       className={cn('overflow-hidden', !sensor.healthy && 'border-down/50 bg-down/[0.06]')}
       data-sensor-id={sensor.sensor_id}
       data-healthy={sensor.healthy}
@@ -232,66 +252,98 @@ export function SensorHealthCard({
           <Icon className="text-muted-foreground size-4" aria-hidden />
           {sensor.sensor_id}
         </CardTitle>
-        <Badge variant={sensor.healthy ? 'ok' : 'down'}>
+        <StatusPill tone={sensor.healthy ? 'ok' : 'down'} dot>
           {sensor.healthy ? 'healthy' : 'unhealthy'}
-        </Badge>
+        </StatusPill>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent className="space-y-4">
         {!sensor.healthy && sensor.reason ? (
           <p className="border-down/40 bg-down/10 text-foreground rounded-md border px-2 py-1.5 text-xs">
             {sensor.reason}
           </p>
         ) : null}
 
-        <dl>
-          <DataRow
-            label="Last heartbeat"
-            value={
-              <span className={cn(!sensor.healthy && 'text-down font-medium')}>
-                {format.relative(sensor.last_heartbeat)} (
-                {format.duration(sensor.seconds_since_heartbeat)})
+        {/* First, and big. These six are what the operator came for; the
+            forty rows underneath them are the working. */}
+        <MetricStrip
+          columns={3}
+          label={`${sensor.sensor_id} summary`}
+          metrics={summary.metrics.map((metric) => ({
+            id: metric.id,
+            label: metric.label,
+            value: formatSummaryValue(metric, format),
+            hint: metric.hint,
+            tone: metric.tone,
+          }))}
+        />
+
+        {/* Then the distributions, as bars. A ranking is the question these
+            answer, and a comma list is not a ranking. */}
+        {breakdowns.length > 0 ? (
+          <div className="space-y-3">
+            {breakdowns.map((breakdown) => (
+              <KeyValueGroup
+                key={breakdown.key}
+                title={breakdown.title}
+                description={breakdown.description}
+                entries={breakdown.entries}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {/* Everything else, folded away. Nothing is dropped -- a counter a
+            future sensor invents still lands in "Other" exactly as before --
+            but a reading already promoted above is not printed twice. */}
+        {groups.length > 0 ? (
+          <details className="group">
+            <summary
+              className={cn(
+                'text-muted-foreground hover:text-foreground cursor-pointer list-none',
+                'rounded text-xs underline decoration-dotted underline-offset-2',
+                'focus-visible:ring-ring focus-visible:ring-2 focus-visible:outline-none',
+              )}
+            >
+              All counters ({counterCount})
+              <span
+                aria-hidden
+                className="ml-1 inline-block transition-transform group-open:rotate-90 motion-reduce:transition-none"
+              >
+                ›
               </span>
-            }
-          />
-          <DataRow
-            label="Detections (5 min)"
-            value={
-              sensor.detections_5m === undefined ? (
-                '—'
-              ) : sensor.detections_5m === 0 && sensor.healthy ? (
-                <Tooltip content="Zero detections from a healthy sensor is a quiet sky, not a fault.">
-                  <span className="text-muted-foreground underline decoration-dotted">
-                    0 — quiet
-                  </span>
-                </Tooltip>
-              ) : (
-                String(sensor.detections_5m)
-              )
-            }
-          />
-          {/* Grouped and named rather than dumped: see sensor-detail-groups.ts.
-              The section heading is a <div> because <dl> permits div children
-              but not headings directly. */}
-          {groupSensorDetail(sensor.detail ?? {}).map((group) => (
-            <Fragment key={group.section}>
-              <div className="text-muted-foreground border-border mt-3 border-b pb-1 text-2xs font-medium tracking-wide uppercase first:mt-0">
-                {group.section}
-              </div>
-              {group.rows.map((row) => (
-                <DataRow
-                  key={row.key}
-                  label={row.label}
-                  value={formatDetailRow(row, format)}
-                  // Prose values (a driver's sentence) read as text, not as a
-                  // measurement; everything else keeps the tabular face.
-                  mono={row.kind !== 'prose'}
+            </summary>
+            <div className="mt-2 space-y-3">
+              {groups.map((group) => (
+                <KeyValueGroup
+                  key={group.section}
+                  title={group.section}
+                  entries={group.rows.map((row) => ({
+                    id: row.key,
+                    label: row.label,
+                    value: formatDetailRow(row, format),
+                    // Prose values (a driver's sentence) read as text, not as
+                    // a measurement; everything else keeps the tabular face.
+                    mono: row.kind !== 'prose',
+                  }))}
                 />
               ))}
-            </Fragment>
-          ))}
-        </dl>
+            </div>
+          </details>
+        ) : null}
+
         {action}
       </CardContent>
     </Card>
   )
+}
+
+/** One summary tile's value, with its unit made human. See `useFormat()`. */
+function formatSummaryValue(
+  metric: SummaryMetric,
+  format: ReturnType<typeof useFormat>,
+): string {
+  if (metric.kind === 'seconds') return format.duration(metric.value)
+  if (metric.kind === 'millis') return format.duration(metric.value / 1000)
+  if (metric.kind === 'fraction') return `${(metric.value * 100).toFixed(0)}%`
+  return metric.value.toLocaleString()
 }

@@ -1,8 +1,30 @@
 import { act, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { log, logStore } from './log-store'
+import { log, logStore, LOG_SOURCES, type LogLevel, type LogSource } from './log-store'
 import { LogsView } from './logs-view'
+
+/**
+ * The narrowing controls live in the URL now, so the route owns them. This
+ * stands in for the route: the same state, held locally, so these tests keep
+ * exercising the view rather than a router.
+ */
+function LogsHarness() {
+  const [minLevel, setMinLevel] = useState<LogLevel>('info')
+  const [sources, setSources] = useState<Set<LogSource>>(() => new Set(LOG_SOURCES))
+  const [search, setSearch] = useState('')
+  return (
+    <LogsView
+      minLevel={minLevel}
+      onMinLevelChange={setMinLevel}
+      sources={sources}
+      onSourcesChange={setSources}
+      search={search}
+      onSearchChange={setSearch}
+    />
+  )
+}
 
 /** Appends are batched on a timer, so every assertion has to advance it first. */
 function flush(): void {
@@ -30,7 +52,7 @@ describe('LogsView tail following', () => {
     // The regression this pins down: the follow effect was keyed on
     // visible.length, which pins at RENDER_CAP (400) once the log is that
     // long — so "Following" silently stopped exactly when the log got busy.
-    render(<LogsView />)
+    render(<LogsHarness />)
     addEntries(450)
     flush()
 

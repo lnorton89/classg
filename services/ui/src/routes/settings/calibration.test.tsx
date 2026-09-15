@@ -1,15 +1,24 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
-import type { SettingsResponse } from '@/lib/api/types'
+import type { SensorHealth, SettingsResponse } from '@/lib/api/types'
 
-import { ChannelPlanEditor, ExpectedSensorsCard, ReceiverPositionEditor } from './calibration'
+import { ChannelPlanView, ExpectedSensorsCard, ReceiverPositionEditor } from './calibration'
 
 const API = '*/api/v1'
+
+/** What the Wi-Fi receivers report having loaded, per test. */
+let sensors: SensorHealth[] = []
 
 const settings: SettingsResponse = {
   settings: {
@@ -41,10 +50,16 @@ const server = setupServer(
   http.get(`${API}/config/settings`, () => HttpResponse.json(settings)),
   http.get(`${API}/config/channels`, () =>
     HttpResponse.json({
-      value: { channels: [{ channel: 6, freq_mhz: 2437, weight: 40 }] },
+      value: {
+        channels: [
+          { channel: 6, freq_mhz: 2437, weight: 40 },
+          { channel: 1, freq_mhz: 2412, weight: 10 },
+        ],
+      },
       restart_required: false,
     }),
   ),
+  http.get(`${API}/sensors`, () => HttpResponse.json(sensors)),
   http.put(`${API}/config/settings`, async ({ request }) => {
     puts.push((await request.json()) as Record<string, string>)
     return HttpResponse.json({ restart_required: false })
@@ -55,6 +70,7 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }))
 afterEach(() => {
   server.resetHandlers()
   puts = []
+  sensors = []
 })
 afterAll(() => server.close())
 
@@ -151,20 +167,92 @@ describe('ExpectedSensorsCard', () => {
   })
 })
 
-describe('ChannelPlanEditor', () => {
+/**
+ * The editor here was the clearest case of the console promising something it
+ * could not do: a weight-per-channel table with a Save, under a banner saying
+ * the Save reached no running receiver. It did not, and could not — the hopper
+ * reads its channel file from disk at startup and sensors subscribe to nothing
+ * (ADR-0002). What replaced it is a read-only comparison: the plan each radio
+ * says it loaded, the plan recorded here, and a copy button for the file that
+ * actually decides.
+ */
+describe('ChannelPlanView', () => {
+  function wifi(id: string, detail: Record<string, unknown>): SensorHealth {
+    return {
+      sensor_id: id,
+      sensor_kind: 'wifi',
+      healthy: true,
+      last_heartbeat: '2026-09-15T00:00:00Z',
+      seconds_since_heartbeat: 2,
+      detail,
+    }
+  }
+
+  // A router, because the "no receiver is heartbeating" line links to the
+  // Sensors page — where a missing radio is the thing to look at next.
   function renderPlan() {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const rootRoute = createRootRoute({ component: ChannelPlanView })
+    const router = createRouter({
+      routeTree: rootRoute,
+      history: createMemoryHistory({ initialEntries: ['/'] }),
+    })
     return render(
       <QueryClientProvider client={client}>
-        <ChannelPlanEditor />
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment -- a bare root standing in for the app's registered tree, as sensors.test.tsx does. */}
+        <RouterProvider router={router as any} />
       </QueryClientProvider>,
     )
   }
 
+  it('offers no way to edit or record a plan', async () => {
+    renderPlan()
+
+    // The recorded plan is still shown -- as figures, not as inputs.
+    expect(await screen.findByText('2437 MHz')).toBeVisible()
+    expect(screen.queryByLabelText(/Weight for channel/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Record/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Save/ })).not.toBeInTheDocument()
+    expect(puts).toHaveLength(0)
+  })
+
+  // The half an operator can act on: which file each radio loaded. Reported on
+  // the sensor's own heartbeat, so it is a measurement rather than a guess at
+  // what the deployment is supposed to be running.
+  it('shows the plan each receiver reports having loaded', async () => {
+    sensors = [
+      wifi('wifi-0', { plan: 'channels-primary.yaml' }),
+      wifi('wifi-1', { plan: 'channels.yaml', plan_fallback: true }),
+    ]
+    renderPlan()
+
+    expect(await screen.findByText('channels-primary.yaml')).toBeVisible()
+    expect(screen.getByText('channels.yaml')).toBeVisible()
+    // A receiver that widened to the full plan says so: its coverage is not
+    // the plan anyone wrote down.
+    expect(screen.getByText(/Widened to the full plan/)).toBeVisible()
+  })
+
+  it('says nothing is loaded rather than implying a plan when no radio is heartbeating', async () => {
+    sensors = []
+    renderPlan()
+
+    expect(await screen.findByText(/No Wi-Fi receiver is heartbeating/)).toBeVisible()
+  })
+
+  // The one action left, and the only one that moves the recorded plan closer
+  // to being the real one.
+  it('marks the recorded plan as intended and offers it as YAML', async () => {
+    renderPlan()
+
+    expect(await screen.findByText(/intended, not applied/)).toBeVisible()
+    expect(await screen.findByRole('button', { name: /Copy as YAML/ })).toBeVisible()
+  })
+
   it('does not claim a restart will apply the plan', async () => {
     renderPlan()
 
-    expect(await screen.findByText(/Recorded here, applied by file/)).toBeVisible()
+    await screen.findByText('2437 MHz')
     expect(
       screen.queryByText(/must be restarted for this to take effect/),
     ).not.toBeInTheDocument()
@@ -173,10 +261,16 @@ describe('ChannelPlanEditor', () => {
   // Two receivers, two different files, neither of them this. An operator
   // comparing the table here against what the unit is scanning needs to know
   // where the real plans live before concluding the receiver is broken.
+  //
+  // Behind the "Why can this page not apply a plan?" disclosure, so the
+  // assertion opens it: this is background read once, not a standing banner.
   it('names the files each receiver actually reads', async () => {
+    const user = userEvent.setup()
     renderPlan()
 
-    expect(await screen.findByText('config/channels-primary.yaml')).toBeVisible()
+    await user.click(await screen.findByText(/Why can this page not apply a plan/))
+
+    expect(screen.getByText('config/channels-primary.yaml')).toBeVisible()
     expect(screen.getByText('config/channels-sweep.yaml')).toBeVisible()
   })
 })

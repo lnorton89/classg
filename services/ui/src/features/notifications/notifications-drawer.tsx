@@ -18,7 +18,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 
 import { usePreferences } from '@/app/preferences-context'
 import { useFormat, useTicker } from '@/app/use-format'
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/ui/status-pill'
 import { Button } from '@/components/ui/button'
 import { buttonVariants } from '@/components/ui/button-variants'
 import { Tooltip } from '@/components/ui/tooltip'
@@ -28,6 +28,7 @@ import { tracksQuery } from '@/lib/api/queries'
 import { cn } from '@/lib/cn'
 
 import { clearedNotifications } from './cleared-store'
+import { readLastSeen, writeLastSeen } from './last-seen'
 import {
   buildFeed,
   countUnread,
@@ -411,9 +412,12 @@ function NotificationRow({ item, onNavigate }: { item: Notification; onNavigate:
         )}
       </div>
       {item.level === 'warn' || item.level === 'error' ? (
-        <Badge variant={item.level === 'error' ? 'down' : 'warn'} className="mt-1.5 uppercase">
+        <StatusPill
+          tone={item.level === 'error' ? 'down' : 'warn'}
+          className="mt-1.5 uppercase"
+        >
           {item.level}
-        </Badge>
+        </StatusPill>
       ) : null}
     </>
   )
@@ -467,25 +471,4 @@ function NotificationRow({ item, onNavigate }: { item: Notification; onNavigate:
       </Tooltip>
     </div>
   )
-}
-
-const STORAGE_KEY = 'classg.notifications.lastSeenAt'
-
-function readLastSeen(): number {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    return raw ? Number(raw) || 0 : 0
-  } catch {
-    // Private browsing and similar. An always-unread badge is a far smaller
-    // problem than a drawer that will not open.
-    return 0
-  }
-}
-
-function writeLastSeen(value: number): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, String(value))
-  } catch {
-    /* ignore */
-  }
 }

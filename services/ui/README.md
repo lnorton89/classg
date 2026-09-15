@@ -44,18 +44,29 @@ domain. To go back, or to move to a keyed source such as Mapbox or MapTiler, see
 arrows from kinematics. Trails from track history. Manned ADS-B traffic rendered distinctly so
 it is never mistaken for a drone.
 
-**Track detail** — identity, evidence breakdown by class, position history, RSSI over time.
-Show _why_ something is a detection: "Class A (Remote ID) × 402, Class B (DJI) × 398" is
-honest in a way that a bare "94% confident" is not.
+**Track detail** — one flight, in a fixed order: header, six summary stats, the full-width map
+with a replay scrubber, height/speed/RSSI profiles on a shared time axis, identity and
+receivers, then the aircraft's other flights. The map's route is shaded by speed on a
+sequential ramp within the track hue, with hovers as dots and reception gaps left dashed and
+unshaded — the live map keeps its single flat hue, because there colour has to mean identity.
+Evidence is one line ("Class A Remote ID via wifi · 2302 frames · confidence 60 %") with the
+noisy-OR arithmetic behind a disclosure: showing _why_ something is a detection is still the
+point, but on a class-A-only track that working is the same constant on every flight.
 
-**Timeline** — the review screen, the way a video recorder gives you one. Each track is an
-event with a start and an end, so a window of them packs into lanes as a band of time: pick
-1 hour to 7 days, read across it, click a bar to open the track. It answers "what happened
-while I was not looking", which is the question a live map cannot answer at all.
+**Flights, lanes view** — the review screen, the way a video recorder gives you one. Each
+flight is an event with a start and an end, so a window of them packs into lanes as a band of
+time: read across it, click a bar to open that flight's row in the list below. It answers
+"what happened while I was not looking", which is the question a live map cannot answer at
+all.
+
+It was a page of its own (`/timeline`, now a redirect) and should not have been: it asked the
+Flights list's question over a second copy of the list's state, so picking a day on the list
+and switching to it silently lost the day. It is `?view=lanes` on the same page now, over the
+same window chips and the same filter chips, and the two cannot disagree.
 
 An empty band is the hard case, because three completely different things look identical:
 nothing flew, nothing was watching, or the retention job has already deleted it. Only the
-first is evidence of a quiet sky, so the page refuses to draw an empty band without saying
+first is evidence of a quiet sky, so the view refuses to draw an empty band without saying
 which one it is looking at — the same rule `/health` follows, applied to history. A bar spans
 first seen to last seen and stops there; an open track whose sensor went quiet is not widened
 to the present, because that would draw an aircraft still overhead when what we know is that
@@ -72,8 +83,14 @@ system's log — the sensors and API keep their own on the Pi and those are the 
 
 **Settings** — display preferences, stored in this browser: unit system (metric / aviation /
 imperial), coordinate format, time zone and clock, text size, density, audible new-track
-alert, screen wake lock. Distinct from **Config**, which changes the instrument itself
-(channel dwell, fusion weights) on the server for every client. Settings → **Storage** puts
+alert, screen wake lock. The left nav splits those from **This receiver** — stored on the Pi,
+shared by every client, saved deliberately — and each page states which of the two it is once,
+at the top, rather than under every field; fields carry a one-line hint, the group carries the
+one shared explanation, and Save sits at the foot of the group it writes. Settings →
+**Calibration** is the receiver half, and its channel plan is read-only: no running receiver
+reads it, because each hopper loads its own YAML file from disk at startup, so the page shows
+what the radios reported loading beside the recorded plan and offers that plan as YAML to paste
+into those files. Settings → **Storage** puts
 the disk, its fill rate and the retention horizons on one screen, because they are one
 question; the time-to-full projection returns "cannot say" as a real outcome rather than
 fitting a confident date to a flat series. Settings → **About** renders

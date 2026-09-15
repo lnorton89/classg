@@ -1,62 +1,25 @@
 import { Link } from '@tanstack/react-router'
-import {
-  HistoryIcon,
-  MapIcon,
-  RadarIcon,
-  SearchIcon,
-  SlidersHorizontalIcon,
-} from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 
 import { ClassGLogo } from '@/components/brand/classg-logo'
-import { Button } from '@/components/ui/button'
-import { Kbd } from '@/components/ui/kbd'
-import { isApplePlatform } from '@/lib/platform'
 import { Toaster } from '@/components/ui/toast'
-import { Tooltip } from '@/components/ui/tooltip'
 import { StatusButton } from '@/features/health/status-button'
 import { TrackAlerts } from '@/features/monitoring/track-alerts'
 import { NotificationsDrawer } from '@/features/notifications/notifications-drawer'
 import { AccountMenu } from '@/features/auth/account-menu'
 import { AuthGate } from '@/features/auth/auth-gate'
+import { useHasRole } from '@/features/auth/use-auth'
 import { AppUpdateBanner, OfflineBanner } from '@/features/offline/offline-banner'
 import { cn } from '@/lib/cn'
+import { LG_QUERY, useMediaQuery } from '@/lib/use-media-query'
 
 import { useUnitEvents } from '@/features/deploy/use-unit-events'
 
+import { BottomTabs } from './bottom-tabs'
 import { CommandPalette } from './command-palette'
+import { GLOBAL_SEARCH_INPUT_ID, GlobalSearch } from './global-search'
 import { MockScenarioSwitcher } from './mock-scenario-switcher'
-
-interface NavItem {
-  to: string
-  label: string
-  icon: LucideIcon
-  exact: boolean
-}
-
-/**
- * What you watch while the system is running. Settings is deliberately not
- * here: it is somewhere you go once to set the console up, so it sits in the
- * status cluster as a gear rather than spending width next to the live view.
- *
- * Logs and Docs used to live here too, which made this bar seven items — on a
- * phone that meant a bottom bar with two destinations ("what happened" and
- * "how does this work") competing for thumb space against the live tracking
- * screens the bar exists to keep one tap away. Neither is something an
- * operator reaches for mid-incident the way they reach for Live or Tracks, so
- * both moved into the account menu, which is already on screen at every
- * width. Spectrum is gone as a fifth destination for a different reason: it
- * was never its own subject, it was per-sensor detail (the SDR sweep, Wi-Fi
- * occupancy) that had been pulled out onto a page of its own. It lives inside
- * Sensors now, next to the sensor it measures.
- */
-const PRIMARY_NAV: NavItem[] = [
-  { to: '/', label: 'Live', icon: MapIcon, exact: true },
-  { to: '/tracks', label: 'Tracks', icon: RadarIcon, exact: false },
-  { to: '/timeline', label: 'Timeline', icon: HistoryIcon, exact: false },
-  { to: '/sensors', label: 'Sensors', icon: SlidersHorizontalIcon, exact: false },
-]
+import { SideRail } from './side-rail'
 
 /**
  * The shell, gated.
@@ -80,19 +43,44 @@ export function AppShell({ children }: { children: ReactNode }) {
   )
 }
 
+/**
+ * Chrome in two pieces: a rail down the left for where you can go, and a slim
+ * bar across the top for what the system is doing and who you are.
+ *
+ * The bar used to carry both, and four destinations was all it could hold
+ * beside the status cluster -- so Spectrum, Captures, the Event log, Settings
+ * and Administration lived behind a gear, which is where features go to be
+ * forgotten. Splitting the two questions apart gives each the shape it wants:
+ * navigation is a list and belongs in a column, status is a handful of
+ * indicators and belongs in a row. Below `lg` there is no room for a column,
+ * so the bottom tabs stay and everything the four tabs cannot hold opens in a
+ * sheet.
+ */
 function SignedInShell({ children }: { children: ReactNode }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const isAdmin = useHasRole('admin')
+  const wide = useMediaQuery(LG_QUERY)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault()
-        setPaletteOpen((open) => !open)
-      }
+      if (event.key.toLowerCase() !== 'k' || !(event.metaKey || event.ctrlKey)) return
+      event.preventDefault()
+      // ⌘K belongs to the search box now, not to the command palette: looking
+      // an aircraft up is what the shortcut is reached for, and the palette
+      // answered that with a substring match over a list of page names. The
+      // palette keeps its place in the account menu, where its other half --
+      // quick settings -- is what people open it for.
+      //
+      // Narrow screens have no visible box to focus, so the same keystroke
+      // opens the sheet that contains one. A phone has no ⌘K, but a small
+      // laptop window below 1024px does.
+      if (wide) document.getElementById(GLOBAL_SEARCH_INPUT_ID)?.focus()
+      else setMoreOpen(true)
     }
     globalThis.addEventListener('keydown', onKeyDown)
     return () => globalThis.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [wide])
 
   // h-dvh, not min-h-dvh. A minimum lets this column grow to whatever its
   // content wants, and then `min-h-0 flex-1` on <main> has no upper bound to
@@ -119,15 +107,8 @@ function SignedInShell({ children }: { children: ReactNode }) {
           'safe-top safe-x',
         )}
       >
-        {/*
-          One row from xl up, where brand + nav + status all fit. Below that it
-          wraps rather than overflowing: none of the status cluster is
-          droppable, because "am I recording" and "is the sensor alive" are the
-          two questions the header exists to answer, and a header that scrolls
-          sideways hides exactly those.
-        */}
         {/* ONE row, at every width, and it never wraps.
-            
+
             It used to wrap below xl, because nine controls do not fit a phone:
             brand, a scenario switcher, a recording pill, a bell, a stream
             badge, a health badge, a search box, an identity icon, a sign-out
@@ -139,7 +120,8 @@ function SignedInShell({ children }: { children: ReactNode }) {
             header answers two questions -- is the system working, and who am I
             -- and that everything else is one tap inside one of those two
             answers. Four status controls became StatusButton; three identity
-            and navigation controls became AccountMenu. */}
+            and navigation controls became AccountMenu. Now that the rail owns
+            the destinations, the search box gets the width they used to take. */}
         <div className="flex h-14 items-center gap-2 px-3 sm:px-4 xl:h-16">
           <Link
             to="/"
@@ -156,24 +138,18 @@ function SignedInShell({ children }: { children: ReactNode }) {
             <ClassGLogo size="lg" showTagline className="hidden xl:inline-flex" />
           </Link>
 
-          {/* lg, not md: a tablet is a touch device and keeps the bottom bar,
-              which shows every destination without eliding any. overflow-x-auto
-              stays as the safety valve for whenever the list grows past what a
-              phone's width divides evenly. */}
-          <nav
-            aria-label="Primary"
-            className="ml-2 hidden min-w-0 justify-start gap-0.5 overflow-x-auto lg:flex"
-          >
-            {PRIMARY_NAV.map((item) => (
-              <NavLink key={item.to} item={item} />
-            ))}
-          </nav>
+          {/* lg, matching the rail: below it the search lives in the "More"
+              sheet, because a 360px row cannot hold a text field and the two
+              status controls that answer "is this thing working". */}
+          <GlobalSearch
+            inputId={GLOBAL_SEARCH_INPUT_ID}
+            className="ml-2 hidden max-w-sm flex-1 lg:block"
+          />
 
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
             <MockScenarioSwitcher />
             <StatusButton />
             <NotificationsDrawer />
-            <PaletteButton onOpen={() => setPaletteOpen(true)} />
             <AccountMenu onOpenPalette={() => setPaletteOpen(true)} />
           </div>
         </div>
@@ -185,109 +161,29 @@ function SignedInShell({ children }: { children: ReactNode }) {
         <AppUpdateBanner />
       </header>
 
-      {/*
-        Outside the header on purpose. The header carries `backdrop-blur`, and a
-        backdrop-filter establishes a containing block for fixed descendants --
-        so while this lived inside it, `bottom-0` resolved to the bottom of the
-        header rather than of the viewport, and the bar rendered under the logo
-        with the reserved 64px sitting empty at the foot of every page.
-      */}
-      <nav
-        aria-label="Primary"
-        className={cn(
-          'border-border bg-card/95 fixed inset-x-0 bottom-0 z-40',
-          'border-t backdrop-blur lg:hidden',
-          // The insets go on the bar, the padding on the row inside it, so the
-          // bar's background still reaches the bottom of the screen behind the
-          // home indicator instead of leaving a strip of map showing.
-          'safe-bottom safe-x',
-        )}
-      >
-        <div className="flex items-stretch gap-0.5 px-1 py-1">
-          {PRIMARY_NAV.map((item) => (
-            <NavLink key={item.to} item={item} />
-          ))}
-        </div>
-      </nav>
+      {/* The rail and the page are siblings in a row, and the row -- not the
+          page -- is what `min-h-0 flex-1` applies to, so the rail scrolls
+          independently and <main> keeps the definite height the map needs. */}
+      <div className="flex min-h-0 flex-1">
+        <SideRail isAdmin={isAdmin} />
 
-      {/* safe-pb-nav clears the fixed bottom nav and the home indicator under
-          it; it collapses to 0 at lg, where the nav moves into the header. */}
-      <main id="main" className="safe-pb-nav flex min-h-0 flex-1 flex-col overflow-y-auto">
-        {children}
-      </main>
+        {/* safe-pb-nav clears the fixed bottom nav and the home indicator under
+            it; it collapses to 0 at lg, where the tabs are replaced by the rail. */}
+        <main
+          id="main"
+          className="safe-pb-nav flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto"
+        >
+          {children}
+        </main>
+      </div>
+
+      <BottomTabs isAdmin={isAdmin} moreOpen={moreOpen} onMoreOpenChange={setMoreOpen} />
 
       <UnitEvents />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <TrackAlerts />
       <Toaster />
     </div>
-  )
-}
-
-function NavLink({ item }: { item: NavItem }) {
-  return (
-    <Link
-      to={item.to}
-      activeOptions={{ exact: item.exact }}
-      activeProps={{
-        className: 'text-foreground bg-accent',
-        'aria-current': 'page',
-      }}
-      inactiveProps={{
-        className: 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
-      }}
-      className={cn(
-        // `min-w-16` here plus `justify-around` on the bar used to mean the
-        // nav needed more width than a phone has, back when it carried seven
-        // destinations: Docs was pushed off the right edge with no way to
-        // reach it. Equal flexible columns instead, so the bar divides
-        // whatever width there is and every destination stays reachable down
-        // to 320px, whatever the item count.
-        'flex min-w-0 flex-1 flex-col items-center gap-0.5 rounded-md px-0.5 py-1.5',
-        // text-2xs, not a px literal: 12px is the documented floor, and rem
-        // sizes are what let the --ui-scale text-size preference reach it.
-        'text-2xs leading-tight font-medium tracking-tight transition-colors',
-        // Stacked in the bottom bar, inline in the header. lg because that is
-        // where the one becomes the other -- and there it sizes to its label
-        // rather than sharing the row equally.
-        'lg:flex-none lg:flex-row lg:gap-2 lg:px-2.5 lg:py-1.5 lg:text-sm lg:tracking-normal',
-      )}
-    >
-      <item.icon className="size-4.5 shrink-0 lg:size-4" aria-hidden />
-      <span className="max-w-full truncate">{item.label}</span>
-    </Link>
-  )
-}
-
-function PaletteButton({ onOpen }: { onOpen: () => void }) {
-  return (
-    <Tooltip
-      content={
-        <span className="flex items-center gap-1.5">
-          Search tracks, pages and settings
-          <Kbd>{isApplePlatform() ? '⌘' : 'Ctrl'}</Kbd>
-          <Kbd>K</Kbd>
-        </span>
-      }
-    >
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={onOpen}
-        aria-label="Open the command palette"
-        aria-keyshortcuts="Control+K Meta+K"
-        // Present at every width. It used to hide below md as "a keyboard
-        // accelerator with no keyboard" -- but the palette is also the only
-        // way to look a track up by serial or MAC, and hiding it left touch
-        // devices with no search at all. The width argument dated from the
-        // nine-control header; with three controls an icon costs nothing.
-        className="inline-flex gap-2"
-      >
-        <SearchIcon aria-hidden />
-        <span className="text-muted-foreground hidden text-xs 2xl:inline">Search</span>
-        <Kbd className="hidden 2xl:inline-flex">{isApplePlatform() ? '⌘K' : 'Ctrl K'}</Kbd>
-      </Button>
-    </Tooltip>
   )
 }
 

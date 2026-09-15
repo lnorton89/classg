@@ -1,4 +1,5 @@
-import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/ui/status-pill'
+import type { StatusPillTone } from '@/components/ui/status-pill-variants'
 import type { DeploymentArtefact } from '@/lib/api/types'
 
 /**
@@ -22,7 +23,7 @@ import type { DeploymentArtefact } from '@/lib/api/types'
  * reached it. Drawn the same grey as current, it would answer the question
  * nobody was asking.
  */
-function artefactTone(state: DeploymentArtefact['state']): 'ok' | 'warn' | 'down' | 'muted' {
+function artefactTone(state: DeploymentArtefact['state']): StatusPillTone {
   if (state === 'failed') return 'down'
   if (state === 'behind') return 'warn'
   if (state === 'rebuilt') return 'ok'
@@ -47,7 +48,7 @@ export function ArtefactList({
         {artefacts.map((artefact) => (
           <li key={artefact.name} className="flex items-center gap-1.5">
             <code className="font-mono text-2xs">{artefact.name}</code>
-            <Badge variant={artefactTone(artefact.state)}>{artefact.state}</Badge>
+            <StatusPill tone={artefactTone(artefact.state)}>{artefact.state}</StatusPill>
           </li>
         ))}
       </ul>

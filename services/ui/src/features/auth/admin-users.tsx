@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { usePreferences } from '@/app/preferences-context'
 import { useFormat } from '@/app/use-format'
 import { Badge } from '@/components/ui/badge'
+import { StatusPill } from '@/components/ui/status-pill'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { FormField, Input } from '@/components/ui/field'
@@ -249,7 +250,7 @@ function UserRow({ user, isSelf }: { user: AuthUser; isSelf: boolean }) {
         ) : null}
         {isSelf ? <Badge variant="outline">you</Badge> : null}
         {isSSO ? <Badge variant="muted">SSO</Badge> : null}
-        {user.disabled ? <Badge variant="down">disabled</Badge> : null}
+        {user.disabled ? <StatusPill tone="down">disabled</StatusPill> : null}
 
         {/* Its own full-width row on a phone, beside the name from sm up.
             It was `ml-auto flex` with no wrap around a fixed-width select and
@@ -384,7 +385,7 @@ function SessionRow({ session }: { session: AuthSession }) {
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-xs">
       <span className="font-medium">{session.username}</span>
-      {session.current ? <Badge variant="ok">this browser</Badge> : null}
+      {session.current ? <StatusPill tone="ok">this browser</StatusPill> : null}
       <span className="text-muted-foreground truncate">
         {session.user_agent && session.user_agent.length > 0
           ? session.user_agent
