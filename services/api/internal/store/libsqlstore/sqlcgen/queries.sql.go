@@ -84,26 +84,46 @@ func (q *Queries) CountTrackDetections(ctx context.Context, arg CountTrackDetect
 }
 
 const countTracks = `-- name: CountTracks :one
+
 SELECT COUNT(*) FROM tracks
 WHERE (CAST(?1 AS TEXT)          IS NULL OR last_seen  >= ?1)
-  AND (CAST(?2 AS TEXT) IS NULL OR last_seen < ?2)
-  AND (CAST(?3 AS REAL) IS NULL OR confidence >= ?3)
-  AND (CAST(?4 AS TEXT)         IS NULL
-       OR state IN (SELECT value FROM json_each(?4)))
+  AND (CAST(?2 AS TEXT)          IS NULL OR last_seen  <= ?2)
+  AND (CAST(?3 AS TEXT) IS NULL OR last_seen < ?3)
+  AND (CAST(?4 AS REAL) IS NULL OR confidence >= ?4)
+  AND (CAST(?5 AS TEXT)         IS NULL OR serial      = ?5)
+  AND (CAST(?6 AS TEXT)         IS NULL
+       OR lower(json_extract(doc, '$.identity.vendor')) = lower(?6))
+  AND (CAST(?7 AS TEXT)         IS NULL
+       OR state IN (SELECT value FROM json_each(?7)))
 `
 
 type CountTracksParams struct {
 	Since          sql.NullString
+	Until          sql.NullString
 	LastSeenBefore sql.NullString
 	MinConfidence  sql.NullFloat64
+	Serial         sql.NullString
+	Vendor         sql.NullString
 	States         sql.NullString
 }
 
+// The vendor filter reads the JSON doc rather than a column, and deliberately
+// so: vendor is a broadcast string with a handful of distinct values across a
+// unit's whole history, so an index on it would partition the table into two
+// or three buckets and save nothing, while lifting it into a column would mean
+// a migration and a backfill for every already-stored track. lower() on both
+// sides because the value is whatever the airframe broadcast -- "dji", "DJI"
+// -- and an operator typing what they saw on the detail page must still match.
+// SQLite's lower() is ASCII-only, which covers every vendor string the
+// protocol carries.
 func (q *Queries) CountTracks(ctx context.Context, arg CountTracksParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countTracks,
 		arg.Since,
+		arg.Until,
 		arg.LastSeenBefore,
 		arg.MinConfidence,
+		arg.Serial,
+		arg.Vendor,
 		arg.States,
 	)
 	var count int64
@@ -120,6 +140,18 @@ func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const deleteAircraftLabel = `-- name: DeleteAircraftLabel :execrows
+DELETE FROM aircraft_labels WHERE serial = ?
+`
+
+func (q *Queries) DeleteAircraftLabel(ctx context.Context, serial string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteAircraftLabel, serial)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const deleteHookRule = `-- name: DeleteHookRule :execrows
@@ -204,6 +236,26 @@ func (q *Queries) DetectionCountsSince(ctx context.Context, ts string) ([]Detect
 		return nil, err
 	}
 	return items, nil
+}
+
+const getAircraftLabel = `-- name: GetAircraftLabel :one
+
+SELECT serial, label, flag, updated_at FROM aircraft_labels WHERE serial = ?
+`
+
+// Per-aircraft labels. Ordered by serial rather than by updated_at: the list
+// is looked up by serial while rendering rows, not read as a timeline, and a
+// stable order makes the response diffable.
+func (q *Queries) GetAircraftLabel(ctx context.Context, serial string) (AircraftLabel, error) {
+	row := q.db.QueryRowContext(ctx, getAircraftLabel, serial)
+	var i AircraftLabel
+	err := row.Scan(
+		&i.Serial,
+		&i.Label,
+		&i.Flag,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const getCapture = `-- name: GetCapture :one
@@ -447,6 +499,38 @@ func (q *Queries) InsertTelemetry(ctx context.Context, arg InsertTelemetryParams
 		arg.Doc,
 	)
 	return err
+}
+
+const listAircraftLabels = `-- name: ListAircraftLabels :many
+SELECT serial, label, flag, updated_at FROM aircraft_labels ORDER BY serial
+`
+
+func (q *Queries) ListAircraftLabels(ctx context.Context) ([]AircraftLabel, error) {
+	rows, err := q.db.QueryContext(ctx, listAircraftLabels)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AircraftLabel{}
+	for rows.Next() {
+		var i AircraftLabel
+		if err := rows.Scan(
+			&i.Serial,
+			&i.Label,
+			&i.Flag,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listCaptures = `-- name: ListCaptures :many
@@ -818,23 +902,30 @@ func (q *Queries) ListTrackDetections(ctx context.Context, arg ListTrackDetectio
 const listTracks = `-- name: ListTracks :many
 SELECT doc, last_seen, track_id FROM tracks
 WHERE (CAST(?1 AS TEXT)          IS NULL OR last_seen  >= ?1)
-  AND (CAST(?2 AS TEXT) IS NULL OR last_seen < ?2)
-  AND (CAST(?3 AS REAL) IS NULL OR confidence >= ?3)
-  AND (CAST(?4 AS TEXT)         IS NULL
-       OR state IN (SELECT value FROM json_each(?4)))
+  AND (CAST(?2 AS TEXT)          IS NULL OR last_seen  <= ?2)
+  AND (CAST(?3 AS TEXT) IS NULL OR last_seen < ?3)
+  AND (CAST(?4 AS REAL) IS NULL OR confidence >= ?4)
+  AND (CAST(?5 AS TEXT)         IS NULL OR serial      = ?5)
+  AND (CAST(?6 AS TEXT)         IS NULL
+       OR lower(json_extract(doc, '$.identity.vendor')) = lower(?6))
+  AND (CAST(?7 AS TEXT)         IS NULL
+       OR state IN (SELECT value FROM json_each(?7)))
   AND (
-        CAST(?5 AS TEXT) IS NULL
-        OR last_seen < ?5
-        OR (last_seen = ?5 AND track_id < ?6)
+        CAST(?8 AS TEXT) IS NULL
+        OR last_seen < ?8
+        OR (last_seen = ?8 AND track_id < ?9)
       )
 ORDER BY last_seen DESC, track_id DESC
-LIMIT ?7
+LIMIT ?10
 `
 
 type ListTracksParams struct {
 	Since          sql.NullString
+	Until          sql.NullString
 	LastSeenBefore sql.NullString
 	MinConfidence  sql.NullFloat64
+	Serial         sql.NullString
+	Vendor         sql.NullString
 	States         sql.NullString
 	CursorTs       sql.NullString
 	CursorID       sql.NullString
@@ -855,8 +946,11 @@ type ListTracksRow struct {
 func (q *Queries) ListTracks(ctx context.Context, arg ListTracksParams) ([]ListTracksRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTracks,
 		arg.Since,
+		arg.Until,
 		arg.LastSeenBefore,
 		arg.MinConfidence,
+		arg.Serial,
+		arg.Vendor,
 		arg.States,
 		arg.CursorTs,
 		arg.CursorID,
@@ -1118,6 +1212,31 @@ func (q *Queries) PurgeTracks(ctx context.Context, lastSeen string) (int64, erro
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const putAircraftLabel = `-- name: PutAircraftLabel :exec
+INSERT INTO aircraft_labels (serial, label, flag, updated_at) VALUES (?, ?, ?, ?)
+ON CONFLICT(serial) DO UPDATE SET
+    label      = excluded.label,
+    flag       = excluded.flag,
+    updated_at = excluded.updated_at
+`
+
+type PutAircraftLabelParams struct {
+	Serial    string
+	Label     string
+	Flag      string
+	UpdatedAt string
+}
+
+func (q *Queries) PutAircraftLabel(ctx context.Context, arg PutAircraftLabelParams) error {
+	_, err := q.db.ExecContext(ctx, putAircraftLabel,
+		arg.Serial,
+		arg.Label,
+		arg.Flag,
+		arg.UpdatedAt,
+	)
+	return err
 }
 
 const putCapture = `-- name: PutCapture :exec

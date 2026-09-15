@@ -79,6 +79,198 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("CaptureOrdering", func(t *testing.T) { testCaptureOrdering(t, newStore) })
 	t.Run("SweepLimit", func(t *testing.T) { testSweepLimit(t, newStore) })
 	t.Run("PeakRSSIBackfill", func(t *testing.T) { testPeakRSSIBackfill(t, newStore) })
+	t.Run("TrackWindow", func(t *testing.T) { testTrackWindow(t, newStore) })
+	t.Run("TrackIdentityFilters", func(t *testing.T) { testTrackIdentityFilters(t, newStore) })
+	t.Run("AircraftLabels", func(t *testing.T) { testAircraftLabels(t, newStore) })
+}
+
+// Since and Until are both INCLUSIVE, and the boundary is where the two stores
+// can disagree without anyone noticing: memstore compares time.Time, libSQL
+// compares formatted strings in SQL. A day picked off the Tracks histogram is
+// a closed interval, so a flight that ended exactly on the hour has to be in
+// exactly one of the neighbouring windows -- not zero, and not both.
+func testTrackWindow(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	from := base.Add(-time.Hour)
+	for _, tr := range []model.Track{
+		track("BEFORE", from.Add(-time.Second), "CONFIRMED", 0.9),
+		track("AT_FROM", from, "CONFIRMED", 0.9),
+		track("MIDDLE", from.Add(30*time.Minute), "CONFIRMED", 0.9),
+		track("AT_TO", base, "CONFIRMED", 0.9),
+		track("AFTER", base.Add(time.Second), "CONFIRMED", 0.9),
+	} {
+		if err := s.UpsertTrack(ctx, tr); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name  string
+		query store.TrackQuery
+		want  []string
+	}{
+		{"until alone", store.TrackQuery{Until: from}, []string{"AT_FROM", "BEFORE"}},
+		{"since and until", store.TrackQuery{Since: from, Until: base},
+			[]string{"AT_TO", "MIDDLE", "AT_FROM"}},
+		{"empty window", store.TrackQuery{Since: base.Add(time.Hour), Until: base.Add(2 * time.Hour)}, nil},
+		// Zero means unfiltered, never "up to the zero time" -- the same rule
+		// every other absent filter follows.
+		{"absent until is unfiltered", store.TrackQuery{Since: base},
+			[]string{"AFTER", "AT_TO"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			page, err := s.ListTracks(ctx, tc.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ids []string
+			for _, tr := range page.Tracks {
+				ids = append(ids, tr.TrackID)
+			}
+			if !equalStrings(ids, tc.want) {
+				t.Fatalf("got %v want %v", ids, tc.want)
+			}
+			if page.Total != len(tc.want) {
+				t.Fatalf("total: got %d want %d", page.Total, len(tc.want))
+			}
+		})
+	}
+}
+
+// Serial is exact; vendor ignores case. Vendor is the one to watch: the SQL
+// store reads it out of the JSON doc with json_extract while memstore reads a
+// struct field, so a vendor that matched in one and not the other would only
+// show up on a Pi.
+func testTrackIdentityFilters(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	withIdentity := func(id string, lastSeen time.Time, serial, vendor string) model.Track {
+		tr := track(id, lastSeen, "CONFIRMED", 0.9)
+		tr.Identity.Serial = serial
+		tr.Identity.Vendor = vendor
+		return tr
+	}
+	for _, tr := range []model.Track{
+		withIdentity("T1", base, "SER-A", "dji"),
+		withIdentity("T2", base.Add(-time.Hour), "SER-A", "DJI"),
+		withIdentity("T3", base.Add(-2*time.Hour), "SER-B", "autel"),
+		// No serial and no vendor at all: the pre-Basic-ID state, and the one
+		// an over-eager NULL filter would sweep up.
+		withIdentity("T4", base.Add(-3*time.Hour), "", ""),
+	} {
+		if err := s.UpsertTrack(ctx, tr); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	tests := []struct {
+		name  string
+		query store.TrackQuery
+		want  []string
+	}{
+		{"serial", store.TrackQuery{Serial: "SER-A"}, []string{"T1", "T2"}},
+		{"serial is exact, not a prefix", store.TrackQuery{Serial: "SER-"}, nil},
+		{"vendor", store.TrackQuery{Vendor: "dji"}, []string{"T1", "T2"}},
+		{"vendor ignores case", store.TrackQuery{Vendor: "DjI"}, []string{"T1", "T2"}},
+		{"vendor with no match", store.TrackQuery{Vendor: "parrot"}, nil},
+		{"serial and vendor together", store.TrackQuery{Serial: "SER-A", Vendor: "DJI"}, []string{"T1", "T2"}},
+		{"unfiltered keeps the unidentified track", store.TrackQuery{},
+			[]string{"T1", "T2", "T3", "T4"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			page, err := s.ListTracks(ctx, tc.query)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ids []string
+			for _, tr := range page.Tracks {
+				ids = append(ids, tr.TrackID)
+			}
+			if !equalStrings(ids, tc.want) {
+				t.Fatalf("got %v want %v", ids, tc.want)
+			}
+			if page.Total != len(tc.want) {
+				t.Fatalf("total: got %d want %d", page.Total, len(tc.want))
+			}
+		})
+	}
+}
+
+func testAircraftLabels(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	if _, err := s.GetAircraftLabel(ctx, "SER-A"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unlabelled serial: want ErrNotFound, got %v", err)
+	}
+	if labels, err := s.ListAircraftLabels(ctx); err != nil || len(labels) != 0 {
+		t.Fatalf("empty store: got %v, %v", labels, err)
+	}
+
+	at := base.UTC()
+	put := store.AircraftLabel{Serial: "SER-B", Label: "Neighbour's Mini 4 Pro", Flag: "known", UpdatedAt: at}
+	if err := s.PutAircraftLabel(ctx, put); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetAircraftLabel(ctx, "SER-B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Label != put.Label || got.Flag != put.Flag || got.Serial != put.Serial {
+		t.Fatalf("round trip lost data: %+v", got)
+	}
+	if !got.UpdatedAt.Equal(at) {
+		t.Fatalf("updated_at: got %v want %v", got.UpdatedAt, at)
+	}
+
+	// Upsert replaces rather than duplicating, and a flag can be cleared
+	// without losing the name.
+	put.Flag = ""
+	put.Label = "Renamed"
+	if err := s.PutAircraftLabel(ctx, put); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.PutAircraftLabel(ctx, store.AircraftLabel{Serial: "SER-A", Flag: "watch", UpdatedAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	labels, err := s.ListAircraftLabels(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Sorted by serial: the list is looked up while rendering rows, and map
+	// iteration order would make the response shuffle between calls.
+	if len(labels) != 2 || labels[0].Serial != "SER-A" || labels[1].Serial != "SER-B" {
+		t.Fatalf("list: got %+v", labels)
+	}
+	if labels[1].Label != "Renamed" || labels[1].Flag != "" {
+		t.Fatalf("upsert did not replace: %+v", labels[1])
+	}
+
+	if err := s.DeleteAircraftLabel(ctx, "SER-B"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetAircraftLabel(ctx, "SER-B"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("after delete: want ErrNotFound, got %v", err)
+	}
+	// Idempotent: the PUT handler routes a cleared label here, and clearing
+	// twice must not become an error the operator has to think about.
+	if err := s.DeleteAircraftLabel(ctx, "SER-B"); err != nil {
+		t.Fatalf("deleting an absent label: %v", err)
+	}
+
+	// A label for a serial no track has ever carried is legitimate -- an
+	// operator can name the neighbour's drone before it first flies.
+	if err := s.PutAircraftLabel(ctx, store.AircraftLabel{
+		Serial: "SER-NEVER-SEEN", Label: "not yet flown", UpdatedAt: at,
+	}); err != nil {
+		t.Fatalf("labelling an unseen serial: %v", err)
+	}
 }
 
 // The last of the three limit disagreements: ListSweeps capped at 500 in one

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/classg/api/internal/apierr"
 	"github.com/classg/api/internal/model"
@@ -26,6 +27,17 @@ func (s *Server) handleListTracks(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	until, err := timeParam(r, "until")
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	// An inverted window returns nothing, which reads on screen exactly like a
+	// quiet sky. Saying so is the same rule csvParam follows for ?state=CONFIRMD.
+	if !since.IsZero() && !until.IsZero() && until.Before(since) {
+		fail(w, apierr.InvalidParameter("until", "until must not be earlier than since"))
+		return
+	}
 	minConfidence, err := floatParam(r, "min_confidence", 0, 1)
 	if err != nil {
 		fail(w, err)
@@ -42,10 +54,20 @@ func (s *Server) handleListTracks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Both are exact matches rather than substrings. The Tracks page's search
+	// box already does loose matching client-side; these two are the facet
+	// chips, and a facet that quietly matched more than the value it names
+	// would make its own count wrong.
+	serial := strings.TrimSpace(r.URL.Query().Get("serial"))
+	vendor := strings.TrimSpace(r.URL.Query().Get("vendor"))
+
 	page, err := s.store.ListTracks(r.Context(), store.TrackQuery{
 		States:        states,
 		Since:         since,
+		Until:         until,
 		MinConfidence: minConfidence,
+		Serial:        serial,
+		Vendor:        vendor,
 		Limit:         limit,
 		Cursor:        cursor,
 	})

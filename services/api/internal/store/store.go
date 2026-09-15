@@ -80,9 +80,27 @@ func (c Cursor) Before(ts time.Time, id string) bool {
 }
 
 type TrackQuery struct {
-	States        []string
-	Since         time.Time
+	States []string
+	Since  time.Time
+	// Until closes the window Since opens: last_seen <= Until, inclusive on
+	// both ends so a day picked off the Tracks page histogram is the whole
+	// day. Zero means no upper bound.
+	//
+	// Deliberately not the same field as LastSeenBefore below. That one is
+	// exclusive and belongs to the stale sweep, where "older than the cutoff"
+	// must not include a track whose last_seen is exactly the cutoff; this one
+	// is a human time range, where an operator asking for 23:59:59 means to
+	// include it. Folding the two together would make one of those wrong.
+	Until         time.Time
 	MinConfidence float64
+	// Serial keeps only tracks whose identity.serial matches exactly. Empty
+	// means no filter -- never "tracks with no serial", which early in a
+	// flight is most of them.
+	Serial string
+	// Vendor keeps only tracks whose identity.vendor matches, ignoring case.
+	// The values are broadcast strings ("dji", "Autel"), so an operator who
+	// typed the capitalisation they saw on the detail page must still match.
+	Vendor string
 	// LastSeenBefore keeps only tracks whose last_seen is strictly older.
 	// Exists for the stale-track sweep, so staleness is decided in SQL on the
 	// indexed column rather than by fetching and JSON-decoding every open
@@ -158,6 +176,36 @@ func NeedsPeakRSSI(t model.Track) bool {
 	return t.RSSIdBm == nil && (t.Identity.Serial != "" || len(t.Identity.MACs) > 0)
 }
 
+// AircraftLabel is an operator's note about one airframe, keyed by its
+// broadcast serial.
+//
+// "Neighbour's Mini 4 Pro" is how a person thinks about
+// 1581F3YTBJ9H003045J0, and a list of 26 flights that all say the serial is
+// unreadable. The label is shown in place of the serial; the flag sorts the
+// aircraft an operator has already decided about away from the ones they
+// have not.
+//
+// It is a note and nothing else. Nothing reads the flag to change what the
+// sensors do, and `ignore` does not stop a track being recorded -- ClassG is
+// receive-only and this is annotation, not control
+// (docs/research/06-legal-and-ethics.md).
+type AircraftLabel struct {
+	Serial    string    `json:"serial"`
+	Label     string    `json:"label"`
+	Flag      string    `json:"flag"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// AircraftFlags is the closed set of flags, mirroring the CHECK constraint on
+// the column. Empty is a member: it is "labelled but not triaged", which is
+// what you get when someone names an aircraft without deciding about it.
+var AircraftFlags = map[string]bool{
+	"":       true,
+	"known":  true,
+	"watch":  true,
+	"ignore": true,
+}
+
 type SensorRecord struct {
 	SensorID      string
 	SensorKind    string
@@ -228,6 +276,15 @@ type Store interface {
 	// whose detections carry no RSSI at all is left absent rather than given a
 	// confident 0 dBm. One query for the whole slice.
 	BackfillPeakRSSI(ctx context.Context, tracks []model.Track) error
+
+	// Per-aircraft labels, keyed by serial. A label may exist for a serial
+	// no track has yet: an operator who knows the neighbour's drone is
+	// coming can name it before it first flies, and refusing that would make
+	// the feature useless on a fresh unit.
+	GetAircraftLabel(ctx context.Context, serial string) (AircraftLabel, error)
+	ListAircraftLabels(ctx context.Context) ([]AircraftLabel, error)
+	PutAircraftLabel(ctx context.Context, l AircraftLabel) error
+	DeleteAircraftLabel(ctx context.Context, serial string) error
 
 	InsertDetection(ctx context.Context, d model.Detection) error
 	ListDetections(ctx context.Context, q DetectionQuery) (DetectionPage, error)

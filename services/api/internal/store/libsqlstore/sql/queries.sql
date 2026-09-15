@@ -35,11 +35,25 @@ ON CONFLICT(track_id) DO UPDATE SET
 -- name: GetTrack :one
 SELECT doc FROM tracks WHERE track_id = ?;
 
+-- The vendor filter reads the JSON doc rather than a column, and deliberately
+-- so: vendor is a broadcast string with a handful of distinct values across a
+-- unit's whole history, so an index on it would partition the table into two
+-- or three buckets and save nothing, while lifting it into a column would mean
+-- a migration and a backfill for every already-stored track. lower() on both
+-- sides because the value is whatever the airframe broadcast -- "dji", "DJI"
+-- -- and an operator typing what they saw on the detail page must still match.
+-- SQLite's lower() is ASCII-only, which covers every vendor string the
+-- protocol carries.
+
 -- name: CountTracks :one
 SELECT COUNT(*) FROM tracks
 WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.narg('since'))
+  AND (CAST(sqlc.narg('until') AS TEXT)          IS NULL OR last_seen  <= sqlc.narg('until'))
   AND (CAST(sqlc.narg('last_seen_before') AS TEXT) IS NULL OR last_seen < sqlc.narg('last_seen_before'))
   AND (CAST(sqlc.narg('min_confidence') AS REAL) IS NULL OR confidence >= sqlc.narg('min_confidence'))
+  AND (CAST(sqlc.narg('serial') AS TEXT)         IS NULL OR serial      = sqlc.narg('serial'))
+  AND (CAST(sqlc.narg('vendor') AS TEXT)         IS NULL
+       OR lower(json_extract(doc, '$.identity.vendor')) = lower(sqlc.narg('vendor')))
   AND (CAST(sqlc.narg('states') AS TEXT)         IS NULL
        OR state IN (SELECT value FROM json_each(sqlc.narg('states'))));
 
@@ -51,8 +65,12 @@ WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.n
 -- every open track to compare timestamps in Go.
 SELECT doc, last_seen, track_id FROM tracks
 WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.narg('since'))
+  AND (CAST(sqlc.narg('until') AS TEXT)          IS NULL OR last_seen  <= sqlc.narg('until'))
   AND (CAST(sqlc.narg('last_seen_before') AS TEXT) IS NULL OR last_seen < sqlc.narg('last_seen_before'))
   AND (CAST(sqlc.narg('min_confidence') AS REAL) IS NULL OR confidence >= sqlc.narg('min_confidence'))
+  AND (CAST(sqlc.narg('serial') AS TEXT)         IS NULL OR serial      = sqlc.narg('serial'))
+  AND (CAST(sqlc.narg('vendor') AS TEXT)         IS NULL
+       OR lower(json_extract(doc, '$.identity.vendor')) = lower(sqlc.narg('vendor')))
   AND (CAST(sqlc.narg('states') AS TEXT)         IS NULL
        OR state IN (SELECT value FROM json_each(sqlc.narg('states'))))
   AND (
@@ -62,6 +80,26 @@ WHERE (CAST(sqlc.narg('since') AS TEXT)          IS NULL OR last_seen  >= sqlc.n
       )
 ORDER BY last_seen DESC, track_id DESC
 LIMIT sqlc.arg('limit');
+
+-- Per-aircraft labels. Ordered by serial rather than by updated_at: the list
+-- is looked up by serial while rendering rows, not read as a timeline, and a
+-- stable order makes the response diffable.
+
+-- name: GetAircraftLabel :one
+SELECT serial, label, flag, updated_at FROM aircraft_labels WHERE serial = ?;
+
+-- name: ListAircraftLabels :many
+SELECT serial, label, flag, updated_at FROM aircraft_labels ORDER BY serial;
+
+-- name: PutAircraftLabel :exec
+INSERT INTO aircraft_labels (serial, label, flag, updated_at) VALUES (?, ?, ?, ?)
+ON CONFLICT(serial) DO UPDATE SET
+    label      = excluded.label,
+    flag       = excluded.flag,
+    updated_at = excluded.updated_at;
+
+-- name: DeleteAircraftLabel :execrows
+DELETE FROM aircraft_labels WHERE serial = ?;
 
 -- name: InsertDetection :exec
 INSERT INTO detections (

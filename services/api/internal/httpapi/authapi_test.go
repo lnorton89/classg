@@ -129,6 +129,8 @@ func TestRoleEnforcementAcrossTheAPI(t *testing.T) {
 		{"GET", "/api/v1/captures", "", auth.RoleViewer},
 		{"GET", "/api/v1/spectrum/bands", "", auth.RoleViewer},
 		{"GET", "/api/v1/config/settings", "", auth.RoleViewer},
+		{"GET", "/api/v1/aircraft/labels", "", auth.RoleViewer},
+		{"GET", "/api/v1/aircraft/SER-A/label", "", auth.RoleViewer},
 		// GraphQL reads the same rows as the endpoints above, so it sits at
 		// the same level. It carries no admin surface at all -- see
 		// internal/graphqlapi -- which is what keeps one role correct for the
@@ -139,6 +141,10 @@ func TestRoleEnforcementAcrossTheAPI(t *testing.T) {
 		{"POST", "/api/v1/spectrum/sweeps", `{"band":"ism_915"}`, auth.RoleOperator},
 		{"POST", "/api/v1/sensors/wifi-0/restart", "", auth.RoleOperator},
 		{"PUT", "/api/v1/monitoring", `{"enabled":true}`, auth.RoleOperator},
+		// Naming the drone you keep seeing is operating the detector, not
+		// configuring the machine, so it sits with the weights rather than
+		// with the store path.
+		{"PUT", "/api/v1/aircraft/SER-A/label", `{"label":"Neighbour's"}`, auth.RoleOperator},
 
 		// Admin: this can repoint the store, the bus and the capture directory.
 		{"PUT", "/api/v1/config/settings", `{"values":{}}`, auth.RoleAdmin},

@@ -205,6 +205,14 @@ func (s *Server) routes() http.Handler {
 	view("GET "+BasePath+"/tracks/{track_id}/detections", s.handleTrackDetections)
 	view("GET "+BasePath+"/tracks/{track_id}/export", s.handleExportTrack)
 
+	// Per-aircraft labels. Operator, not admin, to write: naming the drone you
+	// keep seeing is operating the detector, not configuring the machine --
+	// the same call PUT /config/weights makes. It cannot change what is
+	// recorded or transmitted, because nothing here transmits at all.
+	view("GET "+BasePath+"/aircraft/labels", s.handleListAircraftLabels)
+	view("GET "+BasePath+"/aircraft/{serial}/label", s.handleGetAircraftLabel)
+	act("PUT "+BasePath+"/aircraft/{serial}/label", s.handlePutAircraftLabel)
+
 	view("GET "+BasePath+"/detections", s.handleListDetections)
 
 	view("GET "+BasePath+"/stream", s.handleStream)

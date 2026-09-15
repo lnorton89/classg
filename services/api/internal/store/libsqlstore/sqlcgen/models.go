@@ -8,6 +8,13 @@ import (
 	"database/sql"
 )
 
+type AircraftLabel struct {
+	Serial    string
+	Label     string
+	Flag      string
+	UpdatedAt string
+}
+
 type Capture struct {
 	CaptureID string
 	Doc       string

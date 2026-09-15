@@ -40,6 +40,7 @@ type Store struct {
 	hookDeliveries []hooks.Delivery
 	sweeps         map[string]model.SpectrumSweep
 	sweepBins      map[string]json.RawMessage
+	aircraftLabels map[string]store.AircraftLabel
 }
 
 func New() *Store {
@@ -55,6 +56,8 @@ func New() *Store {
 		hookRules:  map[string]hooks.Rule{},
 		sweeps:     map[string]model.SpectrumSweep{},
 		sweepBins:  map[string]json.RawMessage{},
+
+		aircraftLabels: map[string]store.AircraftLabel{},
 	}
 }
 
@@ -142,10 +145,22 @@ func (s *Store) ListTracks(_ context.Context, q store.TrackQuery) (store.TrackPa
 		if !q.Since.IsZero() && t.LastSeen.Before(q.Since) {
 			continue
 		}
+		if !q.Until.IsZero() && t.LastSeen.After(q.Until) {
+			continue
+		}
 		if !q.LastSeenBefore.IsZero() && !t.LastSeen.Before(q.LastSeenBefore) {
 			continue
 		}
 		if t.Confidence < q.MinConfidence {
+			continue
+		}
+		if q.Serial != "" && t.Identity.Serial != q.Serial {
+			continue
+		}
+		// Case-insensitive to match the SQL store's lower() on both sides.
+		// The conformance suite exists because this is exactly the kind of
+		// detail the two implementations drift apart on.
+		if q.Vendor != "" && !strings.EqualFold(t.Identity.Vendor, q.Vendor) {
 			continue
 		}
 		matched = append(matched, t)
@@ -186,6 +201,56 @@ func (s *Store) ListTracks(_ context.Context, q store.TrackQuery) (store.TrackPa
 	}
 	page.Tracks = append(page.Tracks, matched...)
 	return page, nil
+}
+
+// --- aircraft labels -------------------------------------------------------
+
+func (s *Store) GetAircraftLabel(_ context.Context, serial string) (store.AircraftLabel, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	l, ok := s.aircraftLabels[serial]
+	if !ok {
+		return store.AircraftLabel{}, store.ErrNotFound
+	}
+	return l, nil
+}
+
+// ListAircraftLabels sorts by serial, which the SQL store gets from ORDER BY.
+// Map iteration order would otherwise make the response shuffle between calls.
+func (s *Store) ListAircraftLabels(_ context.Context) ([]store.AircraftLabel, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]store.AircraftLabel, 0, len(s.aircraftLabels))
+	for _, l := range s.aircraftLabels {
+		out = append(out, l)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Serial < out[j].Serial })
+	return out, nil
+}
+
+func (s *Store) PutAircraftLabel(_ context.Context, l store.AircraftLabel) error {
+	if l.Serial == "" {
+		return fmt.Errorf("put aircraft label: empty serial")
+	}
+	if l.UpdatedAt.IsZero() {
+		l.UpdatedAt = time.Now()
+	}
+	// UTC, because the SQL store round-trips through a UTC-formatted string
+	// and the conformance suite compares the two.
+	l.UpdatedAt = l.UpdatedAt.UTC()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.aircraftLabels[l.Serial] = l
+	return nil
+}
+
+// DeleteAircraftLabel is idempotent, matching the SQL store: clearing a label
+// that was never set is the state the caller asked for.
+func (s *Store) DeleteAircraftLabel(_ context.Context, serial string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.aircraftLabels, serial)
+	return nil
 }
 
 func (s *Store) InsertDetection(_ context.Context, d model.Detection) error {

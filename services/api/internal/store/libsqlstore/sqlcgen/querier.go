@@ -23,8 +23,18 @@ type Querier interface {
 	// NULL -- which, early in a flight, is most of them. The caller returns early
 	// when a track has neither.
 	CountTrackDetections(ctx context.Context, arg CountTrackDetectionsParams) (int64, error)
+	// The vendor filter reads the JSON doc rather than a column, and deliberately
+	// so: vendor is a broadcast string with a handful of distinct values across a
+	// unit's whole history, so an index on it would partition the table into two
+	// or three buckets and save nothing, while lifting it into a column would mean
+	// a migration and a backfill for every already-stored track. lower() on both
+	// sides because the value is whatever the airframe broadcast -- "dji", "DJI"
+	// -- and an operator typing what they saw on the detail page must still match.
+	// SQLite's lower() is ASCII-only, which covers every vendor string the
+	// protocol carries.
 	CountTracks(ctx context.Context, arg CountTracksParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
+	DeleteAircraftLabel(ctx context.Context, serial string) (int64, error)
 	DeleteHookRule(ctx context.Context, ruleID string) (int64, error)
 	DeleteSession(ctx context.Context, sessionID string) (int64, error)
 	DeleteUser(ctx context.Context, userID string) (int64, error)
@@ -32,6 +42,10 @@ type Querier interface {
 	// Powers /health's detections_5m, which is how a quiet sky is told apart from
 	// a broken sensor.
 	DetectionCountsSince(ctx context.Context, ts string) ([]DetectionCountsSinceRow, error)
+	// Per-aircraft labels. Ordered by serial rather than by updated_at: the list
+	// is looked up by serial while rendering rows, not read as a timeline, and a
+	// stable order makes the response diffable.
+	GetAircraftLabel(ctx context.Context, serial string) (AircraftLabel, error)
 	GetCapture(ctx context.Context, captureID string) (string, error)
 	GetCaptureReport(ctx context.Context, captureID string) (sql.NullString, error)
 	GetConfig(ctx context.Context, key string) (string, error)
@@ -52,6 +66,7 @@ type Querier interface {
 	// Ignores a duplicate timestamp rather than failing: two samplers, or a restart
 	// inside one sampling interval, must not take the api down.
 	InsertTelemetry(ctx context.Context, arg InsertTelemetryParams) error
+	ListAircraftLabels(ctx context.Context) ([]AircraftLabel, error)
 	ListCaptures(ctx context.Context) ([]string, error)
 	ListDetections(ctx context.Context, arg ListDetectionsParams) ([]ListDetectionsRow, error)
 	ListHookDeliveries(ctx context.Context, limit int64) ([]HookDelivery, error)
@@ -117,6 +132,7 @@ type Querier interface {
 	PurgeSweeps(ctx context.Context, startedAt string) (int64, error)
 	PurgeTelemetry(ctx context.Context, ts string) (int64, error)
 	PurgeTracks(ctx context.Context, lastSeen string) (int64, error)
+	PutAircraftLabel(ctx context.Context, arg PutAircraftLabelParams) error
 	PutCapture(ctx context.Context, arg PutCaptureParams) error
 	// doc is rewritten alongside the report because the analysis summary lives in
 	// the capture document too; writing only one of the pair would leave a capture

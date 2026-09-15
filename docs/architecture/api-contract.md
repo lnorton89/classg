@@ -209,6 +209,9 @@ cannot be un-averaged later, and a raw sample can always be reduced by whoever d
 |---|---|---|---|
 | `state` | csv | all | e.g. `CONFIRMED,COASTING` |
 | `since` | RFC3339 | — | `last_seen >= since` |
+| `until` | RFC3339 | — | `last_seen <= until` |
+| `serial` | string | — | exact match on `identity.serial` |
+| `vendor` | string | — | exact match on `identity.vendor`, ignoring case |
 | `min_confidence` | float | 0 | |
 | `limit` | int | 100 | max 1000 |
 | `cursor` | string | — | opaque; from `next_cursor` |
@@ -216,6 +219,17 @@ cannot be un-averaged later, and a raw sample can always be reduced by whoever d
 ```jsonc
 { "tracks": [ /* track.schema.json */ ], "next_cursor": null, "total": 3 }
 ```
+
+`since` and `until` are both **inclusive**, so a window is a closed interval and a day picked
+off the flights-per-day histogram is the whole day. `until` earlier than `since` is
+`400 invalid_parameter` rather than an empty page — an inverted window renders identically to a
+quiet sky, which is the one thing this API will not do silently.
+
+`serial` and `vendor` are exact, not prefixes: they back the facet chips, and a facet that
+matched more than the value it names would make its own count wrong. `vendor` compares
+case-insensitively because the value is whatever the airframe broadcast (`dji`, `DJI`). An empty
+value for either is no filter at all, never "tracks with no serial" — before Basic ID arrives
+that is most of them.
 
 ### `GET /tracks/{track_id}`
 Full track including `history`. `404` if unknown.
@@ -245,6 +259,54 @@ position. Getting it backwards is the standard way to produce an export that plo
 Absent measurements are **empty** in CSV, never `0` — a spreadsheet averaging a column of
 altitudes must not be handed sea level for the fixes that never carried one. A track with no
 positions still exports its metadata, because an empty file reads as a failed export.
+
+---
+
+## Aircraft labels
+
+An operator's note about one airframe, keyed by its broadcast serial. `GET` needs the viewer
+role; `PUT` needs operator — naming the drone you keep seeing is operating the detector, not
+configuring the machine.
+
+**A label is a note, never an action.** Nothing in the detection path reads it, and `ignore`
+does not stop a track being recorded. ClassG is receive-only; this annotates what was heard.
+
+### `GET /aircraft/labels`
+
+Every label, ordered by serial.
+
+```jsonc
+{
+  "labels": [
+    { "serial": "1581F3YTBJ9H003045J0", "label": "Neighbour's Mini 4 Pro",
+      "flag": "known", "updated_at": "2026-09-15T09:05:00Z" }
+  ]
+}
+```
+
+### `GET /aircraft/{serial}/label`
+
+One label. `404` if the aircraft has none — "unlabelled" and "labelled with the empty string"
+are different answers, and the second is reachable by setting a flag without a name.
+
+### `PUT /aircraft/{serial}/label`
+
+```jsonc
+{ "label": "Neighbour's Mini 4 Pro", "flag": "known" }
+```
+
+`flag` is one of `known`, `watch`, `ignore`, or `""` for labelled-but-not-triaged. `label` is
+trimmed and at most 120 characters; the serial is at most 64. Either field may be empty on its
+own — a name with no flag and a flag with no name are both real states.
+
+| Outcome | Response |
+|---|---|
+| Stored or updated | `200` with the resulting label object |
+| Both fields empty | `204` — the row is **deleted** rather than stored blank |
+
+Clearing a label that was never set is `204`, not `404`: it is the state the caller asked for.
+A serial no track has ever carried can be labelled, so an operator can name an aircraft before
+its first flight.
 
 ---
 
@@ -601,7 +663,7 @@ Ordered, not a matrix: `viewer` < `operator` < `admin`.
 | Role | Can |
 |---|---|
 | `viewer` | Read everything: tracks, detections, captures, spectrum, telemetry, settings |
-| `operator` | Act on the hardware: start a capture, sweep a band, restart a sensor, change channels/weights/recording |
+| `operator` | Act on the hardware: start a capture, sweep a band, restart a sensor, change channels/weights/recording, label an aircraft |
 | `admin` | Change who exists, edit `config/settings`, manage sessions |
 
 A permission matrix is the right answer when permissions are genuinely

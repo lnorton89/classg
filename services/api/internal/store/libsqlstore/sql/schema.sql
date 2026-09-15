@@ -45,6 +45,27 @@ CREATE INDEX IF NOT EXISTS idx_detections_sensor ON detections (sensor_id, ts DE
 CREATE INDEX IF NOT EXISTS idx_detections_serial ON detections (serial, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_detections_mac ON detections (mac, ts DESC);
 
+-- An operator's note about one airframe, keyed by its broadcast serial.
+--
+-- Keyed by serial rather than by track because the thing being named is the
+-- aircraft, not the flight: one serial accounts for 15 of the first 17 rows on
+-- this unit's closed-track list, and naming it once is the whole point.
+--
+-- No foreign key to tracks. A label outlives every track it describes --
+-- retention purges flights on a timer, and a label that vanished with the last
+-- purged flight would silently un-name an aircraft that is still flying -- and
+-- it can be written before the first sighting.
+--
+-- The CHECK is the same closed set store.AircraftFlags holds. An unknown flag
+-- reaching the database would render as an empty badge in the UI rather than
+-- as an error, so it is refused at the column.
+CREATE TABLE IF NOT EXISTS aircraft_labels (
+    serial     TEXT PRIMARY KEY,
+    label      TEXT NOT NULL DEFAULT '',
+    flag       TEXT NOT NULL DEFAULT '' CHECK (flag IN ('', 'known', 'watch', 'ignore')),
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sensors (
     sensor_id      TEXT PRIMARY KEY,
     sensor_kind    TEXT    NOT NULL,

@@ -185,8 +185,11 @@ func (s *Store) BackfillPeakRSSI(ctx context.Context, tracks []model.Track) erro
 func (s *Store) ListTracks(ctx context.Context, q store.TrackQuery) (store.TrackPage, error) {
 	var (
 		since          = nullTime(q.Since)
+		until          = nullTime(q.Until)
 		lastSeenBefore = nullTime(q.LastSeenBefore)
 		minConfidence  = nullFloat(q.MinConfidence, q.MinConfidence > 0)
+		serial         = nullStr(q.Serial)
+		vendor         = nullStr(q.Vendor)
 		states         = jsonSet(q.States)
 	)
 
@@ -195,8 +198,11 @@ func (s *Store) ListTracks(ctx context.Context, q store.TrackQuery) (store.Track
 		var err error
 		total, err = s.q.CountTracks(ctx, sqlcgen.CountTracksParams{
 			Since:          since,
+			Until:          until,
 			LastSeenBefore: lastSeenBefore,
 			MinConfidence:  minConfidence,
+			Serial:         serial,
+			Vendor:         vendor,
 			States:         states,
 		})
 		if err != nil {
@@ -208,8 +214,11 @@ func (s *Store) ListTracks(ctx context.Context, q store.TrackQuery) (store.Track
 	cursorTS, cursorID := cursorParams(q.Cursor)
 	rows, err := s.q.ListTracks(ctx, sqlcgen.ListTracksParams{
 		Since:          since,
+		Until:          until,
 		LastSeenBefore: lastSeenBefore,
 		MinConfidence:  minConfidence,
+		Serial:         serial,
+		Vendor:         vendor,
 		States:         states,
 		CursorTs:       cursorTS,
 		CursorID:       cursorID,
@@ -234,6 +243,71 @@ func (s *Store) ListTracks(ctx context.Context, q store.TrackQuery) (store.Track
 		page.NextCursor = keys[limit-1].Encode()
 	}
 	return page, nil
+}
+
+// --- aircraft labels -------------------------------------------------------
+
+func (s *Store) GetAircraftLabel(ctx context.Context, serial string) (store.AircraftLabel, error) {
+	row, err := s.q.GetAircraftLabel(ctx, serial)
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.AircraftLabel{}, store.ErrNotFound
+	}
+	if err != nil {
+		return store.AircraftLabel{}, fmt.Errorf("get aircraft label: %w", err)
+	}
+	return store.AircraftLabel{
+		Serial:    row.Serial,
+		Label:     row.Label,
+		Flag:      row.Flag,
+		UpdatedAt: fromDB(row.UpdatedAt),
+	}, nil
+}
+
+func (s *Store) ListAircraftLabels(ctx context.Context) ([]store.AircraftLabel, error) {
+	rows, err := s.q.ListAircraftLabels(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list aircraft labels: %w", err)
+	}
+	out := make([]store.AircraftLabel, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, store.AircraftLabel{
+			Serial:    row.Serial,
+			Label:     row.Label,
+			Flag:      row.Flag,
+			UpdatedAt: fromDB(row.UpdatedAt),
+		})
+	}
+	return out, nil
+}
+
+func (s *Store) PutAircraftLabel(ctx context.Context, l store.AircraftLabel) error {
+	if l.Serial == "" {
+		return errors.New("put aircraft label: empty serial")
+	}
+	updated := l.UpdatedAt
+	if updated.IsZero() {
+		updated = time.Now()
+	}
+	err := s.q.PutAircraftLabel(ctx, sqlcgen.PutAircraftLabelParams{
+		Serial:    l.Serial,
+		Label:     l.Label,
+		Flag:      l.Flag,
+		UpdatedAt: toDB(updated),
+	})
+	if err != nil {
+		return fmt.Errorf("put aircraft label: %w", err)
+	}
+	return nil
+}
+
+// DeleteAircraftLabel is idempotent: removing a label that was never set is
+// the state the caller asked for, not an error. The PUT handler routes an
+// empty label with an empty flag here, and a double-clear must not 404.
+func (s *Store) DeleteAircraftLabel(ctx context.Context, serial string) error {
+	if _, err := s.q.DeleteAircraftLabel(ctx, serial); err != nil {
+		return fmt.Errorf("delete aircraft label: %w", err)
+	}
+	return nil
 }
 
 // --- detections ------------------------------------------------------------
