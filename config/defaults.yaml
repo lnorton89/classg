@@ -68,6 +68,9 @@ sensors:
 # --- Fusion ----------------------------------------------------------------
 fusion:
   track_ttl: 5m
+  # Out of range is not landed. A flight heard again airborne inside this
+  # window rejoins its track; see ResumeWithin in services/fusion/track.go.
+  resume_within: 30m
   # Matches fusion's own HistoryDepth. Set BELOW it and this silently becomes
   # the real limit: fusion sends a full trail and the API trims it on the way
   # to storage, so the map loses the start of a flight that fusion still has.

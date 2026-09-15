@@ -185,8 +185,18 @@ a number about the wrong hardware.
                                   ├─ 2+ detections, ≥2 s apart,  ──► CONFIRMED
                                   │  AND identified (below)
                                   ├─ no detection for 30 s      ──► COASTING
-                                  └─ no detection for 300 s     ──► CLOSED
+                                  ├─ no detection for 300 s     ──► CLOSED
+                                  └─ CLOSED, then heard again within 30 min
+                                     airborne or away from its take-off point ──► CONFIRMED (same track)
 ```
+
+**Out of range is not landed.** Wi-Fi Remote ID reaches roughly a kilometre; flights go further
+and come back. A detection arriving after the 300 s close is treated as a new flight only if it
+looks like a launch — on the ground at the previous track's take-off point. Otherwise the closed
+track is reopened and the flight continues under its original ID, up to `ResumeWithin`
+(`CLASSG_FUSION_RESUME_WITHIN`, default 30 min). The gap itself stays a gap: nothing was heard,
+so nothing is drawn across it as if it had been. See `ResumeWithin` in `services/fusion/track.go`
+for the measured flight that motivated this.
 
 **Corroborating evidence never confirms on its own.** Classes C (Wi-Fi OUI/SSID), D (ADS-B)
 and H (GNSS interference) can raise confidence but cannot move a track past TENTATIVE, however

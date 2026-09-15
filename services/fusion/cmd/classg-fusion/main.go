@@ -42,6 +42,8 @@ func main() {
 	lifecycle := fusion.DefaultLifecycle()
 	lifecycle.CoastAfter = envDuration("CLASSG_FUSION_SENSOR_STALE_AFTER", lifecycle.CoastAfter)
 	lifecycle.CloseAfter = envDuration("CLASSG_FUSION_TRACK_TTL", lifecycle.CloseAfter)
+	// 0 disables resuming: every gap longer than the TTL is a new flight.
+	lifecycle.ResumeWithin = envDuration("CLASSG_FUSION_RESUME_WITHIN", lifecycle.ResumeWithin)
 	if lifecycle.CloseAfter <= lifecycle.CoastAfter {
 		slog.Error("invalid fusion lifecycle", "track_ttl", lifecycle.CloseAfter, "sensor_stale_after", lifecycle.CoastAfter)
 		os.Exit(2)

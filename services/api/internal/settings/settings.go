@@ -113,6 +113,9 @@ var Defs = []Def{
 	// --- Fusion
 	{Key: "fusion.track_ttl", Env: "CLASSG_FUSION_TRACK_TTL", Kind: KindDuration,
 		Default: "5m", Mutable: true, Doc: "age after which a track with no update is closed"},
+	{Key: "fusion.resume_within", Env: "CLASSG_FUSION_RESUME_WITHIN", Kind: KindDuration,
+		Default: "30m", Mutable: true,
+		Doc: "how long after closing a flight can be picked back up by an aircraft returning from out of range; 0 makes every gap past track_ttl a new flight"},
 	{Key: "fusion.max_history", Env: "CLASSG_MAX_HISTORY", Kind: KindInt,
 		Default: "4096", Mutable: true, Doc: "position history points retained per track"},
 

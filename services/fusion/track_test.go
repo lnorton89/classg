@@ -797,3 +797,195 @@ func TestTrackCarriesPeakRSSI(t *testing.T) {
 		t.Fatalf("no-RF sample: got %v want -46", tr.RSSIdBm)
 	}
 }
+
+// --- Resuming a flight that went out of range ------------------------------
+//
+// The line between "picked back up" and "flew again" used to be CloseAfter
+// alone. Measured on 2026-09-15 that split one flight into an outbound leg and
+// a return leg with a 7m42s silence between them -- see ResumeWithin.
+
+// atFix is atPos with a geodetic altitude, so a test can put an aircraft on
+// the ground or in the air.
+func atFix(t *testing.T, serial string, lat, lon, altM float64, ts time.Time) Detection {
+	t.Helper()
+	body := fmt.Sprintf(`{
+      "schema_version":"1.0","detection_id":"01J0000000000000000000000A",
+      "ts":%q,"sensor_id":"wifi-0","sensor_kind":"wifi",
+      "detection_class":"A","identity":{"serial":%q},
+      "position":{"lat":%f,"lon":%f,"alt_geodetic_m":%f}}`,
+		ts.UTC().Format(time.RFC3339Nano), serial, lat, lon, altM)
+	d, err := ParseDetection([]byte(body))
+	if err != nil {
+		t.Fatalf("parse detection: %v", err)
+	}
+	return d
+}
+
+// launch flies a two-detection confirmed flight from (lat, lon) at ground
+// altitude and returns the track and the time of its last detection.
+func launch(t *testing.T, s *TrackStore, serial string, lat, lon float64, start time.Time) (*Track, time.Time) {
+	t.Helper()
+	tr := s.Ingest(atFix(t, serial, lat, lon, 47, start), start)
+	last := start.Add(3 * time.Second)
+	s.Ingest(atFix(t, serial, lat, lon+metresNorth(20), 60, last), last)
+	if tr.State != StateConfirmed {
+		t.Fatalf("flight did not confirm: %s", tr.State)
+	}
+	return tr, last
+}
+
+// The measured case: lost at the edge of range, silent for longer than
+// CloseAfter, reappearing a kilometre out and hundreds of metres up. One
+// flight, one track, and the position history carries straight on.
+func TestAnAircraftReturningFromOutOfRangeRejoinsItsTrack(t *testing.T) {
+	s := newTestStore()
+	start := time.Now()
+	const serial = "1581F0000000RESUME01"
+
+	first, lastSeen := launch(t, s, serial, 46.0386, -122.7680, start)
+	firstID := first.TrackID
+	points := len(first.History)
+
+	// Reaped: CLOSED and gone from the live set, the way the API saw it.
+	s.Reap(lastSeen.Add(CloseAfter + time.Second))
+	if first.State != StateClosed {
+		t.Fatalf("the track did not close: %s", first.State)
+	}
+	if got := len(s.Active()); got != 0 {
+		t.Fatalf("%d active tracks after closing, want 0", got)
+	}
+
+	// 7m42s later, 999 m out and 380 m above the launch altitude.
+	back := lastSeen.Add(7*time.Minute + 42*time.Second)
+	again := s.Ingest(atFix(t, serial, 46.0371, -122.7551, 427, back), back)
+
+	if again.TrackID != firstID {
+		t.Fatalf("the return leg started a new track: %s then %s", firstID, again.TrackID)
+	}
+	if again.State != StateConfirmed {
+		t.Errorf("a resumed flight is %s, want %s", again.State, StateConfirmed)
+	}
+	if again.DetectionCount != 3 {
+		t.Errorf("detection count after resuming is %d, want 3", again.DetectionCount)
+	}
+	if len(again.History) != points+1 {
+		t.Errorf("history has %d points after resuming, want %d", len(again.History), points+1)
+	}
+	if !again.FirstSeen.Equal(start) {
+		t.Errorf("FirstSeen moved to %v; the flight began at %v", again.FirstSeen, start)
+	}
+	if got := len(s.Active()); got != 1 {
+		t.Errorf("%d active tracks after resuming, want 1", got)
+	}
+	// And it closes again on its own terms, without being resumable twice
+	// over from a stale entry.
+	s.Reap(back.Add(CloseAfter + time.Second))
+	if again.State != StateClosed {
+		t.Errorf("the resumed flight did not close again: %s", again.State)
+	}
+}
+
+// The rule the old code enforced still holds where it was right: an aircraft
+// heard again on the ground where it took off is a new flight, however soon.
+func TestALaunchFromTheSameSpotIsStillANewFlight(t *testing.T) {
+	s := newTestStore()
+	start := time.Now()
+	const serial = "1581F0000000RESUME02"
+
+	first, lastSeen := launch(t, s, serial, 46.0386, -122.7680, start)
+	s.Reap(lastSeen.Add(CloseAfter + time.Second))
+
+	// Six minutes later, on the pad: 5 m from the take-off point, at its
+	// altitude give or take the GPS.
+	relaunch := lastSeen.Add(6 * time.Minute)
+	second := s.Ingest(atFix(t, serial, 46.0386+metresNorth(5), -122.7680, 52, relaunch), relaunch)
+
+	if second.TrackID == first.TrackID {
+		t.Fatal("a launch from the take-off point continued the previous flight's track")
+	}
+	if first.State != StateClosed || first.DetectionCount != 2 {
+		t.Errorf("the finished flight changed: state %s, %d detections", first.State, first.DetectionCount)
+	}
+}
+
+// Past ResumeWithin the closed flight is forgotten, and the same airborne
+// reappearance is a new track -- there is no longer anything to rejoin.
+func TestAResumeIsOnlyOfferedWithinTheWindow(t *testing.T) {
+	s := newTestStore()
+	start := time.Now()
+	const serial = "1581F0000000RESUME03"
+
+	first, lastSeen := launch(t, s, serial, 46.0386, -122.7680, start)
+	s.Reap(lastSeen.Add(CloseAfter + time.Second))
+	// The reaper keeps running while the aircraft is away.
+	s.Reap(lastSeen.Add(ResumeWithin + time.Second))
+
+	back := lastSeen.Add(ResumeWithin + 2*time.Second)
+	again := s.Ingest(atFix(t, serial, 46.0371, -122.7551, 427, back), back)
+
+	if again.TrackID == first.TrackID {
+		t.Fatal("a flight was resumed after ResumeWithin had passed")
+	}
+}
+
+// The gap can exceed CloseAfter before the reaper has run. Ingest decides on
+// the elapsed time then, and the same return must rejoin rather than split.
+func TestAReturnBeforeTheReaperFiresAlsoRejoins(t *testing.T) {
+	s := newTestStore()
+	start := time.Now()
+	const serial = "1581F0000000RESUME04"
+
+	first, lastSeen := launch(t, s, serial, 46.0386, -122.7680, start)
+
+	back := lastSeen.Add(CloseAfter + time.Minute)
+	again := s.Ingest(atFix(t, serial, 46.0371, -122.7551, 427, back), back)
+
+	if again.TrackID != first.TrackID {
+		t.Fatalf("the return leg started a new track: %s then %s", first.TrackID, again.TrackID)
+	}
+	if again.State != StateConfirmed {
+		t.Errorf("state after rejoining is %s, want %s", again.State, StateConfirmed)
+	}
+	if got := len(s.Active()); got != 1 {
+		t.Errorf("%d active tracks, want 1", got)
+	}
+}
+
+// A detection with no fix cannot show the aircraft is airborne, so the old
+// rule applies to it unchanged. This is also what keeps
+// TestASecondFlightGetsItsOwnTrack true: its detections carry no position.
+func TestAnUnpositionedReturnDoesNotResume(t *testing.T) {
+	s := newTestStore()
+	start := time.Now()
+	const serial = "1581F0000000RESUME05"
+
+	first, lastSeen := launch(t, s, serial, 46.0386, -122.7680, start)
+	s.Reap(lastSeen.Add(CloseAfter + time.Second))
+
+	back := lastSeen.Add(6 * time.Minute)
+	again := s.Ingest(det("A", serial, "", back), back)
+
+	if again.TrackID == first.TrackID {
+		t.Fatal("a detection without a position resumed a closed flight")
+	}
+}
+
+// Resuming can be switched off, restoring the CloseAfter-only rule.
+func TestResumeWithinZeroDisablesResuming(t *testing.T) {
+	lc := DefaultLifecycle()
+	lc.ResumeWithin = 0
+	n := 0
+	s := NewTrackStoreWithLifecycle(DefaultWeights(), func() string { n++; return fmt.Sprintf("track-%d", n) }, lc)
+	start := time.Now()
+	const serial = "1581F0000000RESUME06"
+
+	first, lastSeen := launch(t, s, serial, 46.0386, -122.7680, start)
+	s.Reap(lastSeen.Add(CloseAfter + time.Second))
+
+	back := lastSeen.Add(6 * time.Minute)
+	again := s.Ingest(atFix(t, serial, 46.0371, -122.7551, 427, back), back)
+
+	if again.TrackID == first.TrackID {
+		t.Fatal("a flight was resumed with ResumeWithin = 0")
+	}
+}

@@ -27,6 +27,7 @@ type Lifecycle struct {
 	ConfirmMinSpan       time.Duration
 	CoastAfter           time.Duration
 	CloseAfter           time.Duration
+	ResumeWithin         time.Duration
 	HistoryDepth         int
 	HistoryMinMoveM      float64
 	HistoryMinInterval   time.Duration
@@ -38,6 +39,7 @@ func DefaultLifecycle() Lifecycle {
 		ConfirmMinSpan:       ConfirmMinSpan,
 		CoastAfter:           CoastAfter,
 		CloseAfter:           CloseAfter,
+		ResumeWithin:         ResumeWithin,
 		HistoryDepth:         HistoryDepth,
 		HistoryMinMoveM:      HistoryMinMoveM,
 		HistoryMinInterval:   HistoryMinInterval,
@@ -52,6 +54,43 @@ const (
 	ConfirmMinSpan       = 2 * time.Second
 	CoastAfter           = 30 * time.Second
 	CloseAfter           = 300 * time.Second
+)
+
+// How long a closed flight can still be picked back up.
+//
+// CloseAfter is when the map stops showing an aircraft that has gone quiet.
+// It is not when the flight ended: Wi-Fi Remote ID is heard to roughly a
+// kilometre with this unit's antennas, and a hobby flight routinely goes
+// further than that and comes back. Measured on 2026-09-15 (DJI, serial
+// ...003045J0): took off 6 m from the operator, was lost 762 m out at
+// −82 dBm, was silent for 7m42s, and reappeared 999 m out at 380 m above its
+// take-off altitude before landing 46 m from the operator. With only
+// CloseAfter deciding, that was two tracks -- an outbound leg and a return
+// leg, neither of which looked like a flight -- because 7m42s > 5m.
+//
+// So a detection that arrives after CloseAfter is not automatically a new
+// flight. It is one only if it looks like a take-off: on the ground at the
+// place the last flight took off from. An aircraft reappearing airborne, or
+// far from that point, is the flight that went out of range, and rejoins its
+// track -- up to ResumeWithin, after which the gap is long enough that a
+// landing and a new launch out of range are the likelier story.
+const ResumeWithin = 30 * time.Minute
+
+// What "looks like a take-off" means, measured against the closed track's
+// first recorded position.
+//
+// A fresh launch is heard on the ground before it climbs, because the launch
+// site is by definition in range (the operator stands there). So a reappearance
+// either well above that altitude or well away from that point is not a launch.
+// The climb threshold clears the 25 m vertical accuracy the aircraft above
+// reported on every fix; the range threshold clears a pilot walking the launch
+// point around a field. Both are deliberately coarse -- a wrong "resume" costs
+// one merged pair of flights, a wrong "new flight" costs a loop drawn as two
+// halves, and neither error is worth a precise threshold that GPS noise then
+// straddles.
+const (
+	ResumeMinClimbM = 40.0
+	ResumeMinRangeM = 200.0
 )
 
 // How much of a flight the trail remembers.
@@ -374,14 +413,19 @@ func (t *Track) addPosition(p Position, lc Lifecycle) {
 // stale aircraft that are no longer flying, which is worse than briefly having no
 // tracks -- fusion rebuilds from live detections within seconds. See test T6.
 type TrackStore struct {
-	mu        sync.RWMutex
-	bySerial  map[string]*Track
-	byMAC     map[string]*Track
-	all       map[string]*Track
-	weights   map[string]float64
-	newID     func() string
-	lifecycle Lifecycle
-	terrain   TerrainResolver
+	mu       sync.RWMutex
+	bySerial map[string]*Track
+	byMAC    map[string]*Track
+	all      map[string]*Track
+	// Flights that closed within ResumeWithin, still findable by identity so
+	// an aircraft coming back into range rejoins the track it left. Not in
+	// `all`, so Active() and Reap() never see them; pruned by Reap.
+	closedBySerial map[string]*Track
+	closedByMAC    map[string]*Track
+	weights        map[string]float64
+	newID          func() string
+	lifecycle      Lifecycle
+	terrain        TerrainResolver
 }
 
 // TerrainResolver is the part of *Terrain that track building needs.
@@ -409,12 +453,14 @@ func NewTrackStore(weights map[string]float64, newID func() string) *TrackStore 
 
 func NewTrackStoreWithLifecycle(weights map[string]float64, newID func() string, lifecycle Lifecycle) *TrackStore {
 	return &TrackStore{
-		bySerial:  make(map[string]*Track),
-		byMAC:     make(map[string]*Track),
-		all:       make(map[string]*Track),
-		weights:   weights,
-		newID:     newID,
-		lifecycle: lifecycle,
+		bySerial:       make(map[string]*Track),
+		byMAC:          make(map[string]*Track),
+		all:            make(map[string]*Track),
+		closedBySerial: make(map[string]*Track),
+		closedByMAC:    make(map[string]*Track),
+		weights:        weights,
+		newID:          newID,
+		lifecycle:      lifecycle,
 	}
 }
 
@@ -452,6 +498,92 @@ func (s *TrackStore) unindex(t *Track) {
 	}
 	for _, m := range t.Identity.MACs {
 		delete(s.byMAC, m)
+	}
+}
+
+// resumes reports whether a detection arriving after a track's flight would
+// otherwise be over is that flight coming back into range rather than a new
+// one. See ResumeWithin for the reasoning and the measurement behind it.
+//
+// Decided on the detection's position against where the track took off. A
+// track with no position on record has no take-off point to compare against,
+// and a detection without a fix says nothing about being airborne; both fall
+// back to the old rule, which is a new track.
+func (s *TrackStore) resumes(t *Track, d Detection, seen time.Time) bool {
+	if s.lifecycle.ResumeWithin <= 0 || seen.Sub(t.LastSeen) > s.lifecycle.ResumeWithin {
+		return false
+	}
+	if d.Position == nil || len(t.History) == 0 {
+		return false
+	}
+	takeoff := t.History[0]
+	if horizontalDistanceM(takeoff.Lat, takeoff.Lon, d.Position.Lat, d.Position.Lon) >= ResumeMinRangeM {
+		return true
+	}
+	if takeoff.AltGeodeticM != nil && d.Position.AltGeodeticM != nil &&
+		*d.Position.AltGeodeticM-*takeoff.AltGeodeticM >= ResumeMinClimbM {
+		return true
+	}
+	return false
+}
+
+// resolveClosed is resolve over the recently closed flights. Same precedence:
+// serial, then MAC.
+func (s *TrackStore) resolveClosed(serial, mac string) *Track {
+	if serial != "" {
+		if t, ok := s.closedBySerial[serial]; ok {
+			return t
+		}
+	}
+	if mac != "" {
+		if t, ok := s.closedByMAC[mac]; ok {
+			return t
+		}
+	}
+	return nil
+}
+
+// remember keeps a closed flight findable for ResumeWithin. Only flights that
+// were confirmed and have a position: a TENTATIVE track that closed was never
+// shown as an aircraft, and one with no fix has no take-off point to judge a
+// return against.
+func (s *TrackStore) remember(t *Track) {
+	if len(t.History) == 0 {
+		return
+	}
+	if t.Identity.Serial != "" {
+		s.closedBySerial[t.Identity.Serial] = t
+	}
+	for _, m := range t.Identity.MACs {
+		s.closedByMAC[m] = t
+	}
+}
+
+func (s *TrackStore) forget(t *Track) {
+	if t.Identity.Serial != "" && s.closedBySerial[t.Identity.Serial] == t {
+		delete(s.closedBySerial, t.Identity.Serial)
+	}
+	for _, m := range t.Identity.MACs {
+		if s.closedByMAC[m] == t {
+			delete(s.closedByMAC, m)
+		}
+	}
+}
+
+// reopen puts a closed flight back among the live tracks. It re-enters as
+// COASTING -- the state it left through -- so the detection that reopened it
+// takes it to CONFIRMED by the ordinary reacquisition rule in updateState,
+// and the API sees the same CLOSED → CONFIRMED transition a track.update can
+// already carry.
+func (s *TrackStore) reopen(t *Track) {
+	s.forget(t)
+	t.State = StateCoasting
+	s.all[t.TrackID] = t
+	if t.Identity.Serial != "" {
+		s.bySerial[t.Identity.Serial] = t
+	}
+	for _, m := range t.Identity.MACs {
+		s.byMAC[m] = t
 	}
 }
 
@@ -519,9 +651,20 @@ func (s *TrackStore) Ingest(d Detection, now time.Time) *Track {
 	// matches on identity alone, and updateState runs AFTER LastSeen is bumped
 	// here, so `since` is ~0, no branch matches, and a CLOSED track quietly
 	// accumulated new detections while still labelled CLOSED.
-	if t != nil && s.flightIsOver(t, seen) {
+	//
+	// But an aircraft that went out of range and came back is not flying
+	// again, it never stopped -- see ResumeWithin. That case is decided on the
+	// detection, not the clock, and applies whether the reaper has already
+	// closed the track or the gap merely exceeds CloseAfter.
+	if t != nil && s.flightIsOver(t, seen) && !s.resumes(t, d, seen) {
 		s.unindex(t)
 		t = nil
+	}
+	if t == nil {
+		if c := s.resolveClosed(serial, mac); c != nil && s.resumes(c, d, seen) {
+			s.reopen(c)
+			t = c
+		}
 	}
 	if t == nil {
 		// A new track needs an identity, or the next detection from the same
@@ -633,6 +776,25 @@ func (s *TrackStore) Reap(now time.Time) []*Track {
 			for _, m := range t.Identity.MACs {
 				delete(s.byMAC, m)
 			}
+			// Only a flight that was confirmed. It normally closes through
+			// COASTING, but a reaper that skipped that beat still saw it
+			// CONFIRMED; a TENTATIVE one was never an aircraft on the map
+			// and has nothing to resume.
+			if prev == StateCoasting || prev == StateConfirmed {
+				s.remember(t)
+			}
+		}
+	}
+	// Past ResumeWithin a closed flight is over for good. Both maps point at
+	// the same tracks, so one pass over the union is enough.
+	for _, t := range s.closedBySerial {
+		if now.Sub(t.LastSeen) > s.lifecycle.ResumeWithin {
+			s.forget(t)
+		}
+	}
+	for _, t := range s.closedByMAC {
+		if now.Sub(t.LastSeen) > s.lifecycle.ResumeWithin {
+			s.forget(t)
 		}
 	}
 	return changed
