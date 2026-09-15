@@ -179,6 +179,27 @@ export function flightNeighbours(ordered: Track[], trackId: string): FlightNeigh
   }
 }
 
+/**
+ * The `max` flights around `trackId`, in flight order.
+ *
+ * A strip that showed the aircraft's earliest dozen put the current flight off
+ * the end for any airframe with more than twelve: flight 14 of 17 rendered a
+ * strip it was not in. The window is centred on the current flight and slides
+ * at the ends so it stays full. `from` is the 0-based index of the first item,
+ * for the "showing 8–19 of 31" caption.
+ */
+export function flightsAround<T extends { track_id: string }>(
+  ordered: T[],
+  trackId: string,
+  max: number,
+): { items: T[]; from: number } {
+  if (ordered.length <= max) return { items: ordered, from: 0 }
+  const index = ordered.findIndex((track) => track.track_id === trackId)
+  const centre = index < 0 ? 0 : index
+  const from = Math.min(Math.max(0, centre - Math.floor(max / 2)), ordered.length - max)
+  return { items: ordered.slice(from, from + max), from }
+}
+
 /** First and last `first_seen` across a set of flights, for the "Sep 4 – Sep 15" line. */
 export function flightRangeMs(tracks: Track[]): { startMs: number; endMs: number } | null {
   let startMs = Infinity

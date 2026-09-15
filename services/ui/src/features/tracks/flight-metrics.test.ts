@@ -17,6 +17,7 @@ import {
   orderFlights,
   parseFlightSort,
   sortFlights,
+  flightsAround,
 } from './flight-metrics'
 
 const RECEIVER = { lat: 51.5, lon: -0.1 }
@@ -312,5 +313,40 @@ describe('flightRangeMs', () => {
 
   it('is null when nothing has a usable start', () => {
     expect(flightRangeMs([])).toBeNull()
+  })
+})
+
+describe('flightsAround', () => {
+  const flights = Array.from({ length: 17 }, (_, i) =>
+    flight({
+      track_id: `f${String(i + 1)}`,
+      first_seen: `2026-09-${String(i + 1).padStart(2, '0')}T09:00:00Z`,
+    }),
+  )
+
+  it('returns everything when the list fits', () => {
+    const { items, from } = flightsAround(flights.slice(0, 5), 'f3', 12)
+    expect(items.map((f) => f.track_id)).toEqual(['f1', 'f2', 'f3', 'f4', 'f5'])
+    expect(from).toBe(0)
+  })
+
+  it('centres the window on the current flight', () => {
+    // Flight 14 of 17 used to be off the end of an "earliest 12" strip.
+    const { items, from } = flightsAround(flights, 'f14', 12)
+    expect(items.map((f) => f.track_id)).toContain('f14')
+    expect(from).toBe(5)
+    expect(items).toHaveLength(12)
+  })
+
+  it('slides to the ends rather than shortening', () => {
+    expect(flightsAround(flights, 'f2', 12).from).toBe(0)
+    expect(flightsAround(flights, 'f17', 12).from).toBe(5)
+    expect(flightsAround(flights, 'f17', 12).items.map((f) => f.track_id)).toContain('f17')
+  })
+
+  it('falls back to the start when the flight is not in the list', () => {
+    const { from, items } = flightsAround(flights, 'missing', 12)
+    expect(from).toBe(0)
+    expect(items).toHaveLength(12)
   })
 })

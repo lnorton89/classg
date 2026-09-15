@@ -28,6 +28,7 @@ import {
   flightNeighbours,
   flightRangeMs,
   flightStartMs,
+  flightsAround,
   orderFlights,
 } from './flight-metrics'
 import { PathThumbnail } from './path-thumbnail'
@@ -59,6 +60,7 @@ export function AircraftFlights({
   const flights = orderFlights(data?.tracks ?? [])
   const { number, total, previous, next } = flightNeighbours(flights, trackId)
   const range = flightRangeMs(flights)
+  const strip = flightsAround(flights, trackId, MAX_THUMBNAILS)
 
   if (total === 0) return null
 
@@ -97,7 +99,7 @@ export function AircraftFlights({
           flights scannable at all -- the same argument as the list's own
           thumbnail column, at the same size and from the same projection. */}
       <ul className="flex flex-nowrap gap-2 overflow-x-auto pb-1 [scrollbar-gutter:stable]">
-        {flights.slice(0, MAX_THUMBNAILS).map((flight) => {
+        {strip.items.map((flight) => {
           const startMs = flightStartMs(flight)
           const duration = flightDurationS(flight)
           const current = flight.track_id === trackId
@@ -125,8 +127,8 @@ export function AircraftFlights({
       </ul>
       {flights.length > MAX_THUMBNAILS ? (
         <p className="text-muted-foreground text-2xs">
-          Showing the {MAX_THUMBNAILS} earliest of {flights.length}. “All {total}” opens the
-          full list.
+          Showing flights {strip.from + 1}–{strip.from + strip.items.length} of {flights.length}
+          . “All {total}” opens the full list.
         </p>
       ) : null}
     </section>
