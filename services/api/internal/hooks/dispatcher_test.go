@@ -14,18 +14,27 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/classg/api/internal/geofence"
 )
 
 type memStore struct {
 	mu         sync.Mutex
 	rules      []Rule
 	deliveries []Delivery
+	boundaries []geofence.Boundary
 }
 
 func (m *memStore) ListHookRules(context.Context) ([]Rule, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return append([]Rule(nil), m.rules...), nil
+}
+
+func (m *memStore) ListBoundaries(context.Context) ([]geofence.Boundary, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]geofence.Boundary(nil), m.boundaries...), nil
 }
 
 func (m *memStore) PutHookRule(_ context.Context, r Rule) error {
@@ -144,6 +153,26 @@ func trackEvent(subject string, at time.Time) Event {
 		Name: EventTrackConfirmed, Subject: subject, At: at,
 		Payload:    map[string]any{"track_id": subject},
 		Confidence: 0.9, IsDrone: true,
+	}
+}
+
+func trackEventAt(subject string, at time.Time, lat, lon float64) Event {
+	e := trackEvent(subject, at)
+	e.HasPosition, e.Lat, e.Lon = true, lat, lon
+	return e
+}
+
+// A square roughly 100m on a side, centred near the receiver used elsewhere
+// in this suite's fixtures.
+func testBoundary(id string) geofence.Boundary {
+	return geofence.Boundary{
+		BoundaryID: id, Name: "property",
+		Points: []geofence.LatLon{
+			{Lat: 47.6000, Lon: -122.3300},
+			{Lat: 47.6000, Lon: -122.3290},
+			{Lat: 47.6010, Lon: -122.3290},
+			{Lat: 47.6010, Lon: -122.3300},
+		},
 	}
 }
 
@@ -298,6 +327,61 @@ func TestCooldownIsPerSubjectNotPerRule(t *testing.T) {
 	})
 }
 
+// End to end: a rule with a BoundaryID only fires for a track whose position
+// the dispatcher actually tests against a stored geofence.Boundary, not for
+// one that merely carries a position at all.
+func TestBoundaryConditionGatesDelivery(t *testing.T) {
+	var calls struct {
+		sync.Mutex
+		subjects []string
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf, _ := io.ReadAll(r.Body)
+		calls.Lock()
+		calls.subjects = append(calls.subjects, string(buf))
+		calls.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	rule := webhookRule(srv.URL)
+	rule.BoundaryID = "b1"
+	store := &memStore{
+		rules:      []Rule{rule},
+		boundaries: []geofence.Boundary{testBoundary("b1")},
+	}
+	clock := newClock(base)
+	d, cancel := newDispatcher(t, store, clock)
+	defer cancel()
+
+	// Inside the square.
+	d.Fire(trackEventAt("track-inside", base, 47.6005, -122.3295))
+	// Well outside it -- different subject, so the cooldown cannot be why
+	// this one does not fire.
+	d.Fire(trackEventAt("track-outside", base, 47.7000, -122.3295))
+	// No position at all: EventDetection-shaped, in case something ever
+	// fires this rule's event without one.
+	noPosition := trackEvent("track-no-position", base)
+	noPosition.HasPosition = false
+	d.Fire(noPosition)
+
+	waitFor(t, "the inside track to be delivered", func() bool {
+		return len(store.delivered()) == 1
+	})
+	// Give the two that must NOT fire a moment they could have used to.
+	time.Sleep(150 * time.Millisecond)
+
+	calls.Lock()
+	n := len(calls.subjects)
+	calls.Unlock()
+	if n != 1 {
+		t.Fatalf("the webhook fired %d times, want exactly 1 (only the inside track)", n)
+	}
+	if delivered := store.delivered(); len(delivered) != 1 || delivered[0].Subject != "track-inside" {
+		t.Fatalf("delivered = %+v, want only track-inside", delivered)
+	}
+}
+
 // After the cooldown, the same aircraft alerts again.
 func TestCooldownExpires(t *testing.T) {
 	var calls struct {
@@ -426,6 +510,27 @@ func TestConditionsNarrowWhatFires(t *testing.T) {
 			ev:   Event{Name: EventTrackClosed},
 			want: false,
 		},
+		{
+			name: "inside the named boundary",
+			rule: Rule{Enabled: true, Event: EventTrackConfirmed, BoundaryID: "b1"},
+			ev:   Event{Name: EventTrackConfirmed, HasPosition: true, InBoundary: map[string]bool{"b1": true}},
+			want: true,
+		},
+		{
+			name: "outside the named boundary",
+			rule: Rule{Enabled: true, Event: EventTrackConfirmed, BoundaryID: "b1"},
+			ev:   Event{Name: EventTrackConfirmed, HasPosition: true, InBoundary: map[string]bool{"b1": false}},
+			want: false,
+		},
+		{
+			// The boundary was deleted, or the event carries no position at
+			// all -- either way, absent from InBoundary must read as "not
+			// matched", never as "no filter".
+			name: "boundary condition set but the event has no containment computed",
+			rule: Rule{Enabled: true, Event: EventTrackConfirmed, BoundaryID: "b1"},
+			ev:   Event{Name: EventTrackConfirmed},
+			want: false,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -502,6 +607,27 @@ func TestFiringIsRecordedOnTheRule(t *testing.T) {
 	rules, _ := store.ListHookRules(context.Background())
 	if rules[0].LastFiredAt == nil || !rules[0].LastFiredAt.Equal(base) {
 		t.Fatalf("LastFiredAt = %v", rules[0].LastFiredAt)
+	}
+}
+
+// A boundary_id that names nothing is indistinguishable, from the outside,
+// from a boundary too far from every drone this box has ever seen -- so it is
+// caught here, at save time, rather than left to silently never match.
+func TestValidateRuleChecksBoundaryExists(t *testing.T) {
+	store := &memStore{boundaries: []geofence.Boundary{testBoundary("b1")}}
+	d, cancel := newDispatcher(t, store, newClock(base))
+	defer cancel()
+
+	ok := webhookRule("http://127.0.0.1/hook")
+	ok.BoundaryID = "b1"
+	if err := d.ValidateRule(context.Background(), ok); err != nil {
+		t.Errorf("a rule naming a real boundary was rejected: %v", err)
+	}
+
+	broken := webhookRule("http://127.0.0.1/hook")
+	broken.BoundaryID = "no-such-boundary"
+	if err := d.ValidateRule(context.Background(), broken); err == nil {
+		t.Error("a rule naming a nonexistent boundary was accepted")
 	}
 }
 
@@ -626,6 +752,10 @@ func TestValidateRejectsBadRules(t *testing.T) {
 		{"confidence out of range", Rule{Name: "x", Event: EventTrackConfirmed, Action: ActionWebhook, MinConfidence: 1.5}},
 		{"negative cooldown", Rule{Name: "x", Event: EventTrackConfirmed, Action: ActionWebhook, CooldownS: -1}},
 		{"bad class", Rule{Name: "x", Event: EventDetection, Action: ActionWebhook, Classes: []string{"Z"}}},
+		// A boundary condition needs a position, and detection.created never
+		// carries one -- see EventsWithPosition. Accepting this would produce
+		// a rule that looks configured and never fires.
+		{"boundary on an event with no position", Rule{Name: "x", Event: EventDetection, Action: ActionWebhook, BoundaryID: "b1"}},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			r := c.rule

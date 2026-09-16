@@ -454,3 +454,20 @@ FROM hook_deliveries ORDER BY created_at DESC LIMIT ?;
 
 -- name: PurgeHookDeliveries :execrows
 DELETE FROM hook_deliveries WHERE created_at < ?;
+
+-- name: PutBoundary :exec
+INSERT INTO geofence_boundaries (boundary_id, name, doc, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(boundary_id) DO UPDATE SET
+    name = excluded.name,
+    doc = excluded.doc,
+    updated_at = excluded.updated_at;
+
+-- name: GetBoundary :one
+SELECT doc FROM geofence_boundaries WHERE boundary_id = ?;
+
+-- name: ListBoundaries :many
+SELECT doc FROM geofence_boundaries ORDER BY created_at ASC;
+
+-- name: DeleteBoundary :execrows
+DELETE FROM geofence_boundaries WHERE boundary_id = ?;

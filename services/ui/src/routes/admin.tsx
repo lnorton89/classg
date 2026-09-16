@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { Alert } from '@/components/ui/misc'
 import { AdminUsers } from '@/features/auth/admin-users'
 import { useHasRole } from '@/features/auth/use-auth'
+import { BoundariesPanel } from '@/features/boundaries/boundaries-panel'
 import { DeployHistory } from '@/features/deploy/deploy-history'
 import { DeploymentPanel } from '@/features/deploy/deployment-panel'
 import { WatchdogPanel } from '@/features/deploy/watchdog-panel'
@@ -129,7 +130,12 @@ export function AdminRoute() {
           >
             {effective === 'access' ? <AdminUsers /> : null}
             {effective === 'unit' ? <UnitPanels /> : null}
-            {effective === 'outbound' ? <HooksPanel /> : null}
+            {effective === 'outbound' ? (
+              <div className="space-y-4">
+                <BoundariesPanel />
+                <HooksPanel />
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

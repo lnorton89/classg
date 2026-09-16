@@ -180,7 +180,7 @@
             { "title": "Lanes view", "body": "The same flights as a band of time — one bar per flight, packed into lanes, over the window and filters the list is using. Picking a bar opens that flight's row. It was the Timeline page; /timeline redirects here. An empty band is never drawn without saying which of the three things it means: a quiet sky, nothing watching, or history the retention job has already deleted." },
             { "title": "Spectrum", "body": "Two sources, because no one radio covers the band. The SDR sweeps sub-2 GHz and returns power per frequency bin; the Wi-Fi adapter reports per-channel busy time across 2.4 and 5 GHz, which the SDR cannot tune. Both measure, neither identifies." },
             { "title": "Operations", "body": "Sensor health, capture workflow, configuration editors, and this documentation are available without a Node runtime in deployment." },
-            { "title": "Administration", "body": "Accounts and sessions, outbound hooks and their delivery history, deployment status and control, and the host watchdog, all gated on the admin role." },
+            { "title": "Administration", "body": "Accounts and sessions, geofence boundaries, outbound hooks and their delivery history, deployment status and control, and the host watchdog, all gated on the admin role." },
             { "title": "Live by default", "body": "Views follow the WebSocket rather than waiting to be reloaded, banners about finished work close themselves, and a newly deployed build applies itself once nothing is mid-sweep or mid-capture." }
           ]
         },

@@ -154,6 +154,18 @@ func (q *Queries) DeleteAircraftLabel(ctx context.Context, serial string) (int64
 	return result.RowsAffected()
 }
 
+const deleteBoundary = `-- name: DeleteBoundary :execrows
+DELETE FROM geofence_boundaries WHERE boundary_id = ?
+`
+
+func (q *Queries) DeleteBoundary(ctx context.Context, boundaryID string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteBoundary, boundaryID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteHookRule = `-- name: DeleteHookRule :execrows
 DELETE FROM hook_rules WHERE rule_id = ?
 `
@@ -256,6 +268,17 @@ func (q *Queries) GetAircraftLabel(ctx context.Context, serial string) (Aircraft
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const getBoundary = `-- name: GetBoundary :one
+SELECT doc FROM geofence_boundaries WHERE boundary_id = ?
+`
+
+func (q *Queries) GetBoundary(ctx context.Context, boundaryID string) (string, error) {
+	row := q.db.QueryRowContext(ctx, getBoundary, boundaryID)
+	var doc string
+	err := row.Scan(&doc)
+	return doc, err
 }
 
 const getCapture = `-- name: GetCapture :one
@@ -523,6 +546,33 @@ func (q *Queries) ListAircraftLabels(ctx context.Context) ([]AircraftLabel, erro
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBoundaries = `-- name: ListBoundaries :many
+SELECT doc FROM geofence_boundaries ORDER BY created_at ASC
+`
+
+func (q *Queries) ListBoundaries(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listBoundaries)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var doc string
+		if err := rows.Scan(&doc); err != nil {
+			return nil, err
+		}
+		items = append(items, doc)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
@@ -1234,6 +1284,34 @@ func (q *Queries) PutAircraftLabel(ctx context.Context, arg PutAircraftLabelPara
 		arg.Serial,
 		arg.Label,
 		arg.Flag,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
+const putBoundary = `-- name: PutBoundary :exec
+INSERT INTO geofence_boundaries (boundary_id, name, doc, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(boundary_id) DO UPDATE SET
+    name = excluded.name,
+    doc = excluded.doc,
+    updated_at = excluded.updated_at
+`
+
+type PutBoundaryParams struct {
+	BoundaryID string
+	Name       string
+	Doc        string
+	CreatedAt  string
+	UpdatedAt  string
+}
+
+func (q *Queries) PutBoundary(ctx context.Context, arg PutBoundaryParams) error {
+	_, err := q.db.ExecContext(ctx, putBoundary,
+		arg.BoundaryID,
+		arg.Name,
+		arg.Doc,
+		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
 	return err

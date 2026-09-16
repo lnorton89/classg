@@ -15,7 +15,12 @@ import { setupServer } from 'msw/node'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { ToastProvider } from '@/components/ui/toast-primitives'
-import type { HookEventDoc, SettingsResponse } from '@/lib/api/types'
+import type {
+  BoundariesResponse,
+  HookEventDoc,
+  HookRule,
+  SettingsResponse,
+} from '@/lib/api/types'
 
 import { RuleEditor } from './hooks-panel'
 
@@ -42,6 +47,12 @@ const server = setupServer(
     }
     return HttpResponse.json(body)
   }),
+  // The editor's boundary picker fetches this unconditionally; empty is a
+  // real, common answer (no boundaries drawn yet) rather than a special case.
+  http.get(`${API}/admin/boundaries`, () => {
+    const body: BoundariesResponse = { boundaries: [] }
+    return HttpResponse.json(body)
+  }),
 )
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }))
@@ -52,18 +63,40 @@ afterEach(() => {
 afterAll(() => server.close())
 
 const EVENTS: HookEventDoc[] = [
-  { event: 'track.confirmed', description: 'a track reached CONFIRMED' },
+  {
+    event: 'track.confirmed',
+    description: 'a track reached CONFIRMED',
+    supports_boundary: true,
+  },
+  {
+    event: 'detection.created',
+    description: 'every detection',
+    supports_boundary: false,
+  },
 ]
 
-function renderEditor() {
+function renderEditor(rule?: HookRule) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
   return render(
     <QueryClientProvider client={client}>
       <ToastProvider>
-        <RuleEditor events={EVENTS} smtpConfigured={false} onDone={noop} />
+        <RuleEditor rule={rule} events={EVENTS} smtpConfigured={false} onDone={noop} />
       </ToastProvider>
     </QueryClientProvider>,
   )
+}
+
+const RULE_ON_DETECTION: HookRule = {
+  rule_id: 'r1',
+  name: 'x',
+  enabled: true,
+  event: 'detection.created',
+  cooldown_s: 300,
+  action: 'webhook',
+  config: {},
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-01T00:00:00Z',
+  fire_count: 0,
 }
 
 describe('RuleEditor', () => {
@@ -93,5 +126,19 @@ describe('RuleEditor', () => {
     renderEditor()
 
     expect(await screen.findByText('operator_lat')).toBeVisible()
+  })
+
+  // A boundary condition needs a position, and detection.created never
+  // carries one -- offering the field there would let an admin build a rule
+  // that looks configured and can never fire.
+  it('offers the within-boundary condition for an event that carries a position', async () => {
+    renderEditor()
+    expect(await screen.findByRole('combobox', { name: 'Within boundary' })).toBeVisible()
+  })
+
+  it('hides the within-boundary condition for an event with no position', async () => {
+    renderEditor(RULE_ON_DETECTION)
+    await screen.findByText('What this sends')
+    expect(screen.queryByRole('combobox', { name: 'Within boundary' })).not.toBeInTheDocument()
   })
 })

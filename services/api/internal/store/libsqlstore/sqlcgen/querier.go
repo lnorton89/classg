@@ -35,6 +35,7 @@ type Querier interface {
 	CountTracks(ctx context.Context, arg CountTracksParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	DeleteAircraftLabel(ctx context.Context, serial string) (int64, error)
+	DeleteBoundary(ctx context.Context, boundaryID string) (int64, error)
 	DeleteHookRule(ctx context.Context, ruleID string) (int64, error)
 	DeleteSession(ctx context.Context, sessionID string) (int64, error)
 	DeleteUser(ctx context.Context, userID string) (int64, error)
@@ -46,6 +47,7 @@ type Querier interface {
 	// is looked up by serial while rendering rows, not read as a timeline, and a
 	// stable order makes the response diffable.
 	GetAircraftLabel(ctx context.Context, serial string) (AircraftLabel, error)
+	GetBoundary(ctx context.Context, boundaryID string) (string, error)
 	GetCapture(ctx context.Context, captureID string) (string, error)
 	GetCaptureReport(ctx context.Context, captureID string) (sql.NullString, error)
 	GetConfig(ctx context.Context, key string) (string, error)
@@ -67,6 +69,7 @@ type Querier interface {
 	// inside one sampling interval, must not take the api down.
 	InsertTelemetry(ctx context.Context, arg InsertTelemetryParams) error
 	ListAircraftLabels(ctx context.Context) ([]AircraftLabel, error)
+	ListBoundaries(ctx context.Context) ([]string, error)
 	ListCaptures(ctx context.Context) ([]string, error)
 	ListDetections(ctx context.Context, arg ListDetectionsParams) ([]ListDetectionsRow, error)
 	ListHookDeliveries(ctx context.Context, limit int64) ([]HookDelivery, error)
@@ -133,6 +136,7 @@ type Querier interface {
 	PurgeTelemetry(ctx context.Context, ts string) (int64, error)
 	PurgeTracks(ctx context.Context, lastSeen string) (int64, error)
 	PutAircraftLabel(ctx context.Context, arg PutAircraftLabelParams) error
+	PutBoundary(ctx context.Context, arg PutBoundaryParams) error
 	PutCapture(ctx context.Context, arg PutCaptureParams) error
 	// doc is rewritten alongside the report because the analysis summary lives in
 	// the capture document too; writing only one of the pair would leave a capture

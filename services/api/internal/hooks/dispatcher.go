@@ -2,9 +2,12 @@ package hooks
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/classg/api/internal/geofence"
 )
 
 // Store is the persistence hooks need.
@@ -20,6 +23,9 @@ type Store interface {
 	// rule read at handle time lost increments and clobbered edits.
 	MarkHookRuleFired(ctx context.Context, ruleID string, at time.Time) error
 	PutHookDelivery(ctx context.Context, d Delivery) error
+	// ListBoundaries feeds the BoundaryID condition. Cached the same way
+	// rules are -- see boundariesTTL -- since handle() runs for every event.
+	ListBoundaries(ctx context.Context) ([]geofence.Boundary, error)
 }
 
 // Dispatcher turns events into deliveries.
@@ -65,6 +71,13 @@ type Dispatcher struct {
 	rulesMu       sync.Mutex
 	rules         []Rule
 	rulesLoadedAt time.Time
+
+	// boundaries caches the geofence list the same way rules are cached, and
+	// for the same reason -- handle() tests every positional event against
+	// every boundary. Invalidated by the admin write path (InvalidateBoundaries).
+	boundariesMu       sync.Mutex
+	boundaries         []geofence.Boundary
+	boundariesLoadedAt time.Time
 
 	// Dropped counts events discarded because the queue was full. Exposed on
 	// /metrics: a silent drop in an alerting system is the worst possible
@@ -150,6 +163,30 @@ func (d *Dispatcher) InvalidateRules() {
 	d.rulesMu.Unlock()
 }
 
+// InvalidateBoundaries drops the cached boundary list. The admin write path
+// calls this after every create, update or delete of a geofence.Boundary, the
+// same way InvalidateRules is called for a hook rule.
+func (d *Dispatcher) InvalidateBoundaries() {
+	d.boundariesMu.Lock()
+	d.boundariesLoadedAt = time.Time{}
+	d.boundariesMu.Unlock()
+}
+
+func (d *Dispatcher) loadBoundaries(ctx context.Context) ([]geofence.Boundary, error) {
+	d.boundariesMu.Lock()
+	defer d.boundariesMu.Unlock()
+	if !d.boundariesLoadedAt.IsZero() && d.now().Sub(d.boundariesLoadedAt) < rulesTTL {
+		return d.boundaries, nil
+	}
+	boundaries, err := d.Store.ListBoundaries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d.boundaries = boundaries
+	d.boundariesLoadedAt = d.now()
+	return d.boundaries, nil
+}
+
 func (d *Dispatcher) loadRules(ctx context.Context) ([]Rule, error) {
 	d.rulesMu.Lock()
 	defer d.rulesMu.Unlock()
@@ -218,6 +255,20 @@ func (d *Dispatcher) handle(ctx context.Context, e Event) {
 	if err != nil {
 		slog.Error("reading hook rules failed", "err", err)
 		return
+	}
+	// Computed once per event rather than once per rule matching against it:
+	// several rules can share a boundary, and this is a handful of
+	// point-in-polygon checks against a handful of boundaries either way.
+	if e.HasPosition {
+		boundaries, err := d.loadBoundaries(ctx)
+		if err != nil {
+			slog.Error("reading geofence boundaries failed", "err", err)
+		} else if len(boundaries) > 0 {
+			e.InBoundary = make(map[string]bool, len(boundaries))
+			for _, b := range boundaries {
+				e.InBoundary[b.BoundaryID] = b.Contains(e.Lat, e.Lon)
+			}
+		}
 	}
 	for _, rule := range rules {
 		if !rule.Matches(e) {
@@ -415,8 +466,28 @@ func (d *Dispatcher) Test(ctx context.Context, rule Rule) (int, error) {
 	}
 }
 
-// ValidateRule checks a rule's action config against the configured backends.
-func (d *Dispatcher) ValidateRule(rule Rule) error {
+// ValidateRule checks a rule's action config against the configured backends,
+// and -- if it names one -- that its boundary actually exists. Checked here
+// rather than left to silently never match: a rule pointed at a boundary that
+// was mistyped or already deleted is indistinguishable, from the outside,
+// from one that is simply too far from every drone this box has ever seen.
+func (d *Dispatcher) ValidateRule(ctx context.Context, rule Rule) error {
+	if rule.BoundaryID != "" {
+		boundaries, err := d.loadBoundaries(ctx)
+		if err != nil {
+			return fmt.Errorf("checking the boundary exists: %w", err)
+		}
+		found := false
+		for _, b := range boundaries {
+			if b.BoundaryID == rule.BoundaryID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("%w: no boundary with id %q", ErrBadConfig, rule.BoundaryID)
+		}
+	}
 	switch rule.Action {
 	case ActionWebhook:
 		return d.Webhook.Validate(rule)

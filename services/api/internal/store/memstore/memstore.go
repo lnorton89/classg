@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/classg/api/internal/auth"
+	"github.com/classg/api/internal/geofence"
 	"github.com/classg/api/internal/hooks"
 	"github.com/classg/api/internal/model"
 	"github.com/classg/api/internal/store"
@@ -41,6 +42,9 @@ type Store struct {
 	sweeps         map[string]model.SpectrumSweep
 	sweepBins      map[string]json.RawMessage
 	aircraftLabels map[string]store.AircraftLabel
+	boundaries     map[string]geofence.Boundary
+	// boundaryOrder keeps creation order, same reason as hookOrder.
+	boundaryOrder []string
 }
 
 func New() *Store {
@@ -58,6 +62,7 @@ func New() *Store {
 		sweepBins:  map[string]json.RawMessage{},
 
 		aircraftLabels: map[string]store.AircraftLabel{},
+		boundaries:     map[string]geofence.Boundary{},
 	}
 }
 

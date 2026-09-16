@@ -16,6 +16,8 @@ import type {
   AuthMe,
   AuthUser,
   SetAircraftLabelRequest,
+  Boundary,
+  BoundariesResponse,
   CreateUserRequest,
   DeploymentHistory,
   DeploymentStatus,
@@ -367,6 +369,33 @@ export const api = {
 
   hookDeliveries(): Promise<HookDeliveriesResponse> {
     return request<HookDeliveriesResponse>('/admin/hook-deliveries')
+  },
+
+  boundaries(): Promise<BoundariesResponse> {
+    return request<BoundariesResponse>('/admin/boundaries')
+  },
+
+  createBoundary(body: Pick<Boundary, 'name' | 'points'>): Promise<Boundary> {
+    return request<Boundary>('/admin/boundaries', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })
+  },
+
+  updateBoundary(
+    boundaryId: string,
+    body: Pick<Boundary, 'name' | 'points'>,
+  ): Promise<Boundary> {
+    return request<Boundary>(`/admin/boundaries/${encodeURIComponent(boundaryId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    })
+  },
+
+  deleteBoundary(boundaryId: string): Promise<undefined> {
+    return request<undefined>(`/admin/boundaries/${encodeURIComponent(boundaryId)}`, {
+      method: 'DELETE',
+    })
   },
 
   watchdog(): Promise<WatchdogStatus> {

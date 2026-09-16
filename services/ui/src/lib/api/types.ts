@@ -703,6 +703,11 @@ export interface HookRule {
   classes?: string[]
   sensor_kinds?: string[]
   only_drones?: boolean
+  /** Restricts this rule to a track inside the named geofence.Boundary. Only
+   *  meaningful on an event whose HookEventDoc.supports_boundary is true --
+   *  a rule tied to one on any other event is rejected at save time rather
+   *  than left to silently never fire. */
+  boundary_id?: string
   /** Per rule AND per subject. Zero from the server means the default. */
   cooldown_s: number
   action: HookAction
@@ -716,6 +721,9 @@ export interface HookRule {
 export interface HookEventDoc {
   event: HookEvent
   description: string
+  /** Whether this event carries a position, and therefore whether a rule on
+   *  it can use the boundary_id condition. */
+  supports_boundary: boolean
 }
 
 export interface HookRulesResponse {
@@ -750,6 +758,27 @@ export interface TestHookResponse {
   delivered: boolean
   response_code?: number
   error?: string
+}
+
+// --- Geofence boundaries ----------------------------------------------------
+
+export interface LatLon {
+  lat: number
+  lon: number
+}
+
+export interface Boundary {
+  boundary_id: string
+  name: string
+  /** A closed polygon -- the first and last point are implicitly connected,
+   *  not repeated. */
+  points: LatLon[]
+  created_at: string
+  updated_at: string
+}
+
+export interface BoundariesResponse {
+  boundaries: Boundary[]
 }
 
 // --- Deployment -----------------------------------------------------------

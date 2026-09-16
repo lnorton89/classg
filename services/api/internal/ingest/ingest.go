@@ -123,11 +123,15 @@ func (in *Ingestor) Track(ctx context.Context, topic string, body []byte) {
 			}
 			in.Registry.NoteFusionMessage(time.Now().UTC())
 			in.Hub.Broadcast(hub.Frame{Type: hub.TypeTrackClosed, TrackID: closed.TrackID})
-			in.fireHook(hooks.Event{
+			closedEvent := hooks.Event{
 				Name: hooks.EventTrackClosed, Subject: closed.TrackID,
 				At:      time.Now().UTC(),
 				Payload: map[string]any{"track_id": closed.TrackID},
-			})
+			}
+			if t.Current != nil {
+				closedEvent.HasPosition, closedEvent.Lat, closedEvent.Lon = true, t.Current.Lat, t.Current.Lon
+			}
+			in.fireHook(closedEvent)
 			return
 		}
 	}
@@ -146,11 +150,17 @@ func (in *Ingestor) Track(ctx context.Context, topic string, body []byte) {
 		}
 		in.Registry.NoteFusionMessage(time.Now().UTC())
 		in.Hub.Broadcast(hub.Frame{Type: hub.TypeTrackClosed, TrackID: t.TrackID})
-		in.fireHook(hooks.Event{
+		closedEvent := hooks.Event{
 			Name: hooks.EventTrackClosed, Subject: t.TrackID,
 			At:      time.Now().UTC(),
 			Payload: map[string]any{"track_id": t.TrackID, "confidence": t.Confidence},
-		})
+		}
+		// The drone's own last-known position, not the operator's -- Redact
+		// only ever strips Operator, so this needs no redaction step.
+		if t.Current != nil {
+			closedEvent.HasPosition, closedEvent.Lat, closedEvent.Lon = true, t.Current.Lat, t.Current.Lon
+		}
+		in.fireHook(closedEvent)
 		return
 	}
 	if err := in.Store.UpsertTrack(ctx, t); err != nil {
@@ -189,13 +199,18 @@ func (in *Ingestor) Track(ctx context.Context, topic string, body []byte) {
 			payload["operator_lat"] = redacted.Operator.Lat
 			payload["operator_lon"] = redacted.Operator.Lon
 		}
-		in.fireHook(hooks.Event{
+		confirmedEvent := hooks.Event{
 			Name: hooks.EventTrackConfirmed, Subject: t.TrackID,
 			At:         time.Now().UTC(),
 			Payload:    payload,
 			Confidence: t.Confidence,
 			IsDrone:    isDrone(t),
-		})
+		}
+		if redacted.Current != nil {
+			confirmedEvent.HasPosition = true
+			confirmedEvent.Lat, confirmedEvent.Lon = redacted.Current.Lat, redacted.Current.Lon
+		}
+		in.fireHook(confirmedEvent)
 	}
 }
 

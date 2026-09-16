@@ -33,6 +33,7 @@ export const queryKeys = {
   sessions: ['admin', 'sessions'] as const,
   hookRules: ['admin', 'hooks'] as const,
   hookDeliveries: ['admin', 'hook-deliveries'] as const,
+  boundaries: ['admin', 'boundaries'] as const,
   deployment: ['admin', 'deployment'] as const,
   deploymentHistory: ['admin', 'deployment', 'history'] as const,
   watchdog: ['admin', 'watchdog'] as const,
@@ -318,6 +319,13 @@ export const hookDeliveriesQuery = () =>
     queryFn: () => api.hookDeliveries(),
     staleTime: 5_000,
     refetchInterval: 15_000,
+  })
+
+export const boundariesQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.boundaries,
+    queryFn: () => api.boundaries(),
+    staleTime: 10_000,
   })
 
 /**

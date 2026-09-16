@@ -265,6 +265,13 @@ func (s *Server) routes() http.Handler {
 	admin("DELETE "+BasePath+"/admin/hooks/{rule_id}", s.handleDeleteHookRule)
 	admin("POST "+BasePath+"/admin/hooks/{rule_id}/test", s.handleTestHookRule)
 	admin("GET "+BasePath+"/admin/hook-deliveries", s.handleListHookDeliveries)
+	// Boundaries are admin, not operator, for the same reason as hooks and
+	// then some: the geometry an operator draws here is very often their own
+	// property outline, which is home address in every way that matters.
+	admin("GET "+BasePath+"/admin/boundaries", s.handleListBoundaries)
+	admin("POST "+BasePath+"/admin/boundaries", s.handleCreateBoundary)
+	admin("PUT "+BasePath+"/admin/boundaries/{boundary_id}", s.handleUpdateBoundary)
+	admin("DELETE "+BasePath+"/admin/boundaries/{boundary_id}", s.handleDeleteBoundary)
 
 	// Deployment. Read is admin rather than viewer: the log can name branches,
 	// commit subjects and failure reasons, which is more about the operator's

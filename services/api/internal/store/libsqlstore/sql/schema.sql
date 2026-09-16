@@ -237,3 +237,17 @@ CREATE TABLE IF NOT EXISTS hook_deliveries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_hook_deliveries_created ON hook_deliveries (created_at DESC);
+
+-- Geofence boundaries: a named polygon a hook rule can require a track's
+-- position to fall inside.
+--
+-- Like hook_rules, the geometry lives entirely in `doc` -- a list of lat/lon
+-- vertices is never filtered or sorted in SQL, only decoded in Go and tested
+-- with a point-in-polygon check, so a column would buy nothing.
+CREATE TABLE IF NOT EXISTS geofence_boundaries (
+    boundary_id TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    doc         TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);

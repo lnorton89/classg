@@ -39,6 +39,14 @@ type Detection struct {
 	Doc            string
 }
 
+type GeofenceBoundary struct {
+	BoundaryID string
+	Name       string
+	Doc        string
+	CreatedAt  string
+	UpdatedAt  string
+}
+
 type HookDelivery struct {
 	DeliveryID   string
 	RuleID       string

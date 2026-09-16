@@ -89,6 +89,17 @@ func ValidEvent(e string) bool {
 	return false
 }
 
+// EventsWithPosition is the subset of Events whose payload carries a track's
+// position, and therefore the only events a BoundaryID condition can ever
+// match against. Detections carry no fused position (only a track does,
+// post-correlation), and a sensor/capture/sweep event is not about a place in
+// the sky at all -- a rule tying either to a boundary would silently never
+// fire, which is worse than refusing it at save time.
+var EventsWithPosition = map[string]bool{
+	EventTrackConfirmed: true,
+	EventTrackClosed:    true,
+}
+
 // Action kinds.
 const (
 	ActionWebhook = "webhook"
@@ -119,6 +130,13 @@ type Rule struct {
 	// OnlyDrones excludes ADS-B manned traffic, which is the overwhelming
 	// majority of what this box sees and almost never what an alert is for.
 	OnlyDrones bool `json:"only_drones,omitempty"`
+	// BoundaryID restricts this rule to a track whose position falls inside
+	// the named geofence.Boundary. Empty means no geographic filter. Only
+	// meaningful on an event that carries a position -- see
+	// EventsWithPosition -- because a rule tied to one is a fence around a
+	// place, not a fact about the aircraft, and an event with nowhere to
+	// stand it never matches.
+	BoundaryID string `json:"boundary_id,omitempty"`
 
 	// CooldownS suppresses repeats for the same subject. Zero means the
 	// default, not "no cooldown" -- a rule with no cooldown on a per-detection
@@ -227,6 +245,20 @@ type Event struct {
 	Class      string
 	SensorKind string
 	IsDrone    bool
+
+	// HasPosition, Lat and Lon carry the track's position for events in
+	// EventsWithPosition. Lifted out for the same reason as Confidence et al
+	// rather than read from Payload -- a boundary check should not depend on
+	// a map key an action's payload happens to use.
+	HasPosition bool
+	Lat, Lon    float64
+	// InBoundary is precomputed once per event, by whatever calls Matches,
+	// against every known geofence.Boundary -- keyed by boundary_id, true
+	// means the position is inside it. Computing containment once per event
+	// rather than once per rule matters when several rules share a boundary.
+	// A boundary absent from this map (deleted, or the event has no
+	// position) is treated as not matched, never as "no filter".
+	InBoundary map[string]bool
 }
 
 var (
@@ -262,6 +294,9 @@ func (r *Rule) Validate() error {
 			return fmt.Errorf("%q is not a detection class (A to H)", c)
 		}
 	}
+	if r.BoundaryID != "" && !EventsWithPosition[r.Event] {
+		return fmt.Errorf("a boundary condition needs a position, and %q does not carry one", r.Event)
+	}
 	return nil
 }
 
@@ -280,6 +315,9 @@ func (r Rule) Matches(e Event) bool {
 		return false
 	}
 	if len(r.SensorKinds) > 0 && !contains(r.SensorKinds, e.SensorKind) {
+		return false
+	}
+	if r.BoundaryID != "" && !e.InBoundary[r.BoundaryID] {
 		return false
 	}
 	return true

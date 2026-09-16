@@ -8,6 +8,7 @@ package httpapi
 // as changing who has an account.
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -31,6 +32,11 @@ type hookRulesResponse struct {
 type hookEventDoc struct {
 	Event       string `json:"event"`
 	Description string `json:"description"`
+	// SupportsBoundary says whether this event's payload carries a position,
+	// and therefore whether a rule on it can use the boundary_id condition.
+	// Sent rather than left for the UI to hard-code, so the two cannot drift
+	// the way Events itself is kept from drifting.
+	SupportsBoundary bool `json:"supports_boundary"`
 }
 
 func (s *Server) handleListHookRules(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +54,10 @@ func (s *Server) handleListHookRules(w http.ResponseWriter, r *http.Request) {
 
 	events := make([]hookEventDoc, 0, len(hooks.Events))
 	for _, e := range hooks.Events {
-		events = append(events, hookEventDoc{Event: e, Description: hooks.EventDoc[e]})
+		events = append(events, hookEventDoc{
+			Event: e, Description: hooks.EventDoc[e],
+			SupportsBoundary: hooks.EventsWithPosition[e],
+		})
 	}
 
 	writeJSON(w, http.StatusOK, hookRulesResponse{
@@ -69,7 +78,7 @@ func (s *Server) handleCreateHookRule(w http.ResponseWriter, r *http.Request) {
 	rule.CreatedAt, rule.UpdatedAt = s.now(), s.now()
 	rule.FireCount, rule.LastFiredAt = 0, nil
 
-	if err := s.validateRule(&rule); err != nil {
+	if err := s.validateRule(r.Context(), &rule); err != nil {
 		fail(w, err)
 		return
 	}
@@ -123,7 +132,7 @@ func (s *Server) handleUpdateHookRule(w http.ResponseWriter, r *http.Request) {
 	// start failing for a reason nobody could see.
 	incoming.Config = mergeSecrets(existing.Config, incoming.Config)
 
-	if err := s.validateRule(&incoming); err != nil {
+	if err := s.validateRule(r.Context(), &incoming); err != nil {
 		fail(w, err)
 		return
 	}
@@ -155,7 +164,7 @@ func mergeSecrets(old, incoming map[string]any) map[string]any {
 	return out
 }
 
-func (s *Server) validateRule(rule *hooks.Rule) *apierr.Error {
+func (s *Server) validateRule(ctx context.Context, rule *hooks.Rule) *apierr.Error {
 	if err := rule.Validate(); err != nil {
 		field := "event"
 		switch {
@@ -171,7 +180,7 @@ func (s *Server) validateRule(rule *hooks.Rule) *apierr.Error {
 	}
 	// Checked at configuration time, not at 3am when the alert it was meant to
 	// send does not arrive.
-	if err := s.hooks.ValidateRule(*rule); err != nil {
+	if err := s.hooks.ValidateRule(ctx, *rule); err != nil {
 		return apierr.InvalidParameter("config", err.Error())
 	}
 	return nil

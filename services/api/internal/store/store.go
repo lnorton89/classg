@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/classg/api/internal/auth"
+	"github.com/classg/api/internal/geofence"
 	"github.com/classg/api/internal/hooks"
 	"github.com/classg/api/internal/model"
 )
@@ -351,6 +352,14 @@ type Store interface {
 	// ListHookDeliveries returns deliveries newest first. As with
 	// ListSessions, a limit of zero or less means NO limit.
 	ListHookDeliveries(ctx context.Context, limit int) ([]hooks.Delivery, error)
+
+	// Geofence boundaries: named polygons a hook rule can require a track's
+	// position to fall inside. Stored whole, like hook rules -- the geometry
+	// is only ever decoded in Go and tested with a point-in-polygon check.
+	PutBoundary(ctx context.Context, b geofence.Boundary) error
+	GetBoundary(ctx context.Context, id string) (geofence.Boundary, error)
+	ListBoundaries(ctx context.Context) ([]geofence.Boundary, error)
+	DeleteBoundary(ctx context.Context, id string) error
 
 	GetConfig(ctx context.Context, key string) (json.RawMessage, error)
 	PutConfig(ctx context.Context, key string, value json.RawMessage) error

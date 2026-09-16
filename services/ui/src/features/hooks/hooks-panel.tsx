@@ -30,6 +30,7 @@ import { Select } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { ApiError, api } from '@/lib/api/client'
 import {
+  boundariesQuery,
   hookDeliveriesQuery,
   hookRulesQuery,
   queryKeys,
@@ -360,6 +361,9 @@ export function RuleEditor({
   const [ntfyAccessToken, setNtfyAccessToken] = useState(
     configString(rule?.config, 'access_token'),
   )
+  const [boundaryId, setBoundaryId] = useState(rule?.boundary_id ?? '')
+  const boundaries = useQuery(boundariesQuery())
+  const supportsBoundary = events.find((e) => e.event === event)?.supports_boundary ?? false
 
   const save = useMutation({
     mutationFn: () => {
@@ -381,6 +385,10 @@ export function RuleEditor({
         cooldown_s: Math.max(1, cooldownMin) * 60,
         only_drones: onlyDrones,
         min_confidence: minConfidence || undefined,
+        // Dropped for an event that carries no position, even if a boundary
+        // was picked before switching events — sending it would save a rule
+        // that looks configured and can never fire.
+        boundary_id: supportsBoundary && boundaryId ? boundaryId : undefined,
         config,
       }
       return rule ? api.updateHookRule(rule.rule_id, body) : api.createHookRule(body)
@@ -470,6 +478,33 @@ export function RuleEditor({
           alert is for
         </span>
       </div>
+
+      {supportsBoundary ? (
+        <FormField
+          label="Within boundary"
+          hint={
+            boundaries.data && boundaries.data.boundaries.length === 0
+              ? 'no boundaries drawn yet — see Geofence boundaries above'
+              : 'optional — leave as Any to skip the geographic filter'
+          }
+        >
+          {(props) => (
+            <Select
+              {...props}
+              aria-label="Within boundary"
+              value={boundaryId || 'any'}
+              onValueChange={(v) => setBoundaryId(v === 'any' ? '' : v)}
+              options={[
+                { value: 'any', label: 'Any' },
+                ...(boundaries.data?.boundaries.map((b) => ({
+                  value: b.boundary_id,
+                  label: b.name,
+                })) ?? []),
+              ]}
+            />
+          )}
+        </FormField>
+      ) : null}
 
       <FormField label="Do what">
         {(props) => (

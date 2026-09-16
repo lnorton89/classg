@@ -828,19 +828,22 @@ is administration of the machine rather than operation of it.
     "event": "track.confirmed",
     "min_confidence": 0.7, "only_drones": true,
     "classes": ["A","B"], "sensor_kinds": ["wifi"],
+    "boundary_id": "01J9…",
     "cooldown_s": 300,
     "action": "webhook",
     "config": { "url": "https://…", "authorization": "••••••••" },
     "last_fired_at": "…", "fire_count": 12
   } ],
-  "events": [ { "event": "track.confirmed", "description": "…" } ],
+  "events": [ { "event": "track.confirmed", "description": "…", "supports_boundary": true } ],
   "smtp_configured": true }
 ```
 
 `events` comes from the server so a client does not keep its own copy of the
 closed set and drift from it. `smtp_configured` is there so the UI does not
 offer an email hook on a unit with no mail server and only report the problem
-when an alert fails to arrive.
+when an alert fails to arrive. `supports_boundary` says whether that event's
+payload carries a position — see Boundaries below — for the same reason:
+so the UI does not keep its own copy of that list either.
 
 ### Events
 
@@ -948,6 +951,38 @@ Hook payloads are built from the **redacted** track, the same value the
 websocket receives. `CLASSG_EXPOSE_OPERATOR_LOCATION=false` strips the operator
 position from a webhook exactly as it does from `/tracks` — a hook is not a door
 around it.
+
+### Boundaries
+
+`GET|POST /admin/boundaries`, `PUT|DELETE /admin/boundaries/{boundary_id}` —
+admin, and more pointedly than hooks: the polygon an operator draws here is
+very often their own property outline, which is home address in every way
+that matters.
+
+```jsonc
+{ "boundaries": [ {
+    "boundary_id": "01J9…", "name": "Back yard",
+    "points": [ { "lat": 47.60, "lon": -122.33 }, { "lat": 47.60, "lon": -122.32 },
+                { "lat": 47.61, "lon": -122.32 } ],
+    "created_at": "…", "updated_at": "…"
+  } ] }
+```
+
+`points` is an ordered, **open** ring — the first and last point are
+implicitly connected, never repeated the way GeoJSON would. At least 3 points;
+latitude in [-90, 90], longitude in [-180, 180].
+
+A hook rule's `boundary_id` (see above) restricts it to a track whose position
+falls inside that polygon, tested with a planar point-in-polygon check —
+accurate at property scale, deliberately not geodesic. Only `track.confirmed`
+and `track.closed` carry a position (`supports_boundary: true` on their
+`hookEventDoc`); a rule naming a boundary on any other event is refused at
+save time by the same validation that checks a webhook's URL, rather than
+being accepted and silently never matching.
+
+`DELETE` refuses a boundary a rule still points at — `409 Conflict`, naming the
+rule — rather than leaving that rule pointed at nothing and silently inert.
+Delete or repoint the rule first.
 
 ---
 

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/classg/api/internal/auth"
+	"github.com/classg/api/internal/geofence"
 	"github.com/classg/api/internal/hooks"
 	"github.com/classg/api/internal/model"
 	"github.com/classg/api/internal/store"
@@ -82,6 +83,7 @@ func Run(t *testing.T, newStore Factory) {
 	t.Run("TrackWindow", func(t *testing.T) { testTrackWindow(t, newStore) })
 	t.Run("TrackIdentityFilters", func(t *testing.T) { testTrackIdentityFilters(t, newStore) })
 	t.Run("AircraftLabels", func(t *testing.T) { testAircraftLabels(t, newStore) })
+	t.Run("Boundaries", func(t *testing.T) { testBoundaries(t, newStore) })
 }
 
 // Since and Until are both INCLUSIVE, and the boundary is where the two stores
@@ -553,6 +555,59 @@ func testHookRulesAndDeliveries(t *testing.T, newStore Factory) {
 	}
 	if n != 100 {
 		t.Fatalf("purged %d deliveries, want the 100 strictly older than the cutoff", n)
+	}
+}
+
+func testBoundaries(t *testing.T, newStore Factory) {
+	ctx := context.Background()
+	s := newStore(t)
+
+	b := geofence.Boundary{
+		BoundaryID: "b-keep", Name: "keep",
+		Points:    []geofence.LatLon{{Lat: 47.60, Lon: -122.33}, {Lat: 47.60, Lon: -122.32}, {Lat: 47.61, Lon: -122.32}},
+		CreatedAt: base, UpdatedAt: base,
+	}
+	other := b
+	other.BoundaryID, other.Name = "b-drop", "drop"
+	for _, boundary := range []geofence.Boundary{b, other} {
+		if err := s.PutBoundary(ctx, boundary); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	boundaries, err := s.ListBoundaries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(boundaries) != 2 {
+		t.Fatalf("ListBoundaries returned %d, want 2", len(boundaries))
+	}
+
+	got, err := s.GetBoundary(ctx, "b-keep")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "keep" || len(got.Points) != 3 {
+		t.Fatalf("GetBoundary = %+v, want the stored geometry back whole", got)
+	}
+
+	if err := s.DeleteBoundary(ctx, "b-drop"); err != nil {
+		t.Fatal(err)
+	}
+	boundaries, err = s.ListBoundaries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(boundaries) != 1 || boundaries[0].BoundaryID != "b-keep" {
+		t.Fatalf("after delete: %+v, want only b-keep", boundaries)
+	}
+	// Deleting something already gone must not report success in one store and
+	// an error in the other.
+	if err := s.DeleteBoundary(ctx, "b-drop"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("deleting a missing boundary returned %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetBoundary(ctx, "b-drop"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("getting a missing boundary returned %v, want ErrNotFound", err)
 	}
 }
 
