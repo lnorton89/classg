@@ -71,9 +71,10 @@ export function HooksPanel() {
         <CardHeader>
           <CardTitle>Alert rules</CardTitle>
           <CardDescription>
-            Fire a webhook or an email when something happens. Rules are evaluated against what
-            the API would show you — the operator&apos;s ground position is stripped from a hook
-            payload exactly as it is from the map when that is turned off.
+            Fire a webhook, an email, or an ntfy push notification when something happens. Rules
+            are evaluated against what the API would show you — the operator&apos;s ground
+            position is stripped from a hook payload exactly as it is from the map when that is
+            turned off.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -126,7 +127,7 @@ export function HooksPanel() {
                   key: 'hooks.allow_private_targets',
                   label: 'Allow hooks to reach private addresses',
                   kind: 'switch',
-                  hint: 'Needed for a webhook on your own LAN — Home Assistant, a local relay. Off by default because it is also what stops one reaching a cloud metadata service.',
+                  hint: 'Needed for a target on your own LAN — Home Assistant, a local relay, an ntfy server on this same Pi. Off by default because it is also what stops one reaching a cloud metadata service.',
                 },
               ]}
             />
@@ -302,6 +303,15 @@ function RuleCard({
 const ACTION_OPTIONS: { value: HookAction; label: string }[] = [
   { value: 'webhook', label: 'Webhook — POST JSON to a URL' },
   { value: 'email', label: 'Email' },
+  { value: 'ntfy', label: 'ntfy — push notification' },
+]
+
+const NTFY_PRIORITY_OPTIONS = [
+  { value: 'min', label: 'Min' },
+  { value: 'low', label: 'Low' },
+  { value: 'default', label: 'Default' },
+  { value: 'high', label: 'High' },
+  { value: 'urgent', label: 'Urgent — bypasses phone silent mode' },
 ]
 
 /** Exported for its own test; the panel renders it directly. */
@@ -341,13 +351,28 @@ export function RuleEditor({
   )
   const [to, setTo] = useState(configString(rule?.config, 'to'))
   const [subject, setSubject] = useState(configString(rule?.config, 'subject'))
+  const [ntfyPriority, setNtfyPriority] = useState(
+    configString(rule?.config, 'priority') || 'default',
+  )
+  // Same write-only handling as the webhook's authorization header — a
+  // self-hosted ntfy server can require a token to publish, and this reads
+  // back as the placeholder rather than the real value.
+  const [ntfyAccessToken, setNtfyAccessToken] = useState(
+    configString(rule?.config, 'access_token'),
+  )
 
   const save = useMutation({
     mutationFn: () => {
       const config: Record<string, unknown> =
         action === 'webhook'
           ? { url, ...(authorization ? { authorization } : {}) }
-          : { to, ...(subject ? { subject } : {}) }
+          : action === 'ntfy'
+            ? {
+                url,
+                priority: ntfyPriority,
+                ...(ntfyAccessToken ? { access_token: ntfyAccessToken } : {}),
+              }
+            : { to, ...(subject ? { subject } : {}) }
       const body: Partial<HookRule> = {
         name,
         event,
@@ -505,6 +530,66 @@ export function RuleEditor({
                 {...props}
                 value={authorization}
                 onChange={(e) => setAuthorization(e.target.value)}
+              />
+            )}
+          </FormField>
+        </div>
+      ) : action === 'ntfy' ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {/* Same reason the webhook form carries this: the topic URL is the
+              only thing standing in for auth on a public ntfy.sh instance, so
+              it deserves the same second look a webhook target gets. */}
+          <Alert
+            tone={exposesOperator ? 'warn' : 'info'}
+            title="What this sends"
+            className="sm:col-span-2"
+          >
+            A <span className="font-mono">track.confirmed</span> notification names the track,
+            confidence, and the aircraft&rsquo;s serial and vendor where known.
+            {exposesOperator ? (
+              <>
+                {' '}
+                It also carries the pilot&rsquo;s ground position, because Settings &rsaquo;
+                Data has that switched on. Turning it off there removes it here as well.
+              </>
+            ) : null}{' '}
+            Anyone who knows the topic URL can read it — a public{' '}
+            <span className="font-mono">ntfy.sh</span> topic name is a shared secret, not just
+            an address; a self-hosted server on your own LAN or Tailscale net keeps it off the
+            public internet entirely.
+          </Alert>
+          <FormField
+            label="Topic URL"
+            hint="e.g. https://ntfy.sh/classg-<random>, or your own server"
+          >
+            {(props) => (
+              <Input {...props} value={url} onChange={(e) => setUrl(e.target.value)} />
+            )}
+          </FormField>
+          <FormField label="Priority">
+            {(props) => (
+              <Select
+                {...props}
+                aria-label="Priority"
+                value={ntfyPriority}
+                onValueChange={setNtfyPriority}
+                options={NTFY_PRIORITY_OPTIONS}
+              />
+            )}
+          </FormField>
+          <FormField
+            label="Access token"
+            hint={
+              ntfyAccessToken === SECRET_PLACEHOLDER
+                ? 'a value is set; leave as-is to keep it'
+                : 'optional — only needed if your ntfy server requires auth to publish'
+            }
+          >
+            {(props) => (
+              <Input
+                {...props}
+                value={ntfyAccessToken}
+                onChange={(e) => setNtfyAccessToken(e.target.value)}
               />
             )}
           </FormField>

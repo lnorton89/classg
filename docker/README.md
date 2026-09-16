@@ -32,6 +32,22 @@ make compose-up
 Then open `http://localhost:8080`. The API is also exposed at
 `http://localhost:8081/api/v1` for CLI testing.
 
+### Push alerts (ntfy)
+
+The `ntfy` hook action (see [api-contract.md#hooks](../docs/architecture/api-contract.md#hooks))
+needs nothing running on the Pi. Install the free ntfy app
+([iOS](https://apps.apple.com/us/app/ntfy/id1625396347) /
+[Android](https://play.google.com/store/apps/details?id=io.heckel.ntfy)), pick an unguessable
+topic on the free public server such as `https://ntfy.sh/classg-<random>`, subscribe to it in
+the app, and put that same URL in a hook rule's Alert rules > ntfy action. No container, no API
+keys, no email server.
+
+Treat the topic name as a password: anyone who knows it can read what gets published there. If
+that is not an acceptable trade for your alerts, ntfy is also a single static binary you can
+run yourself — as a systemd unit on the Pi (the same pattern the sensors already use, rather
+than a container) or anywhere else you control — see
+[ntfy's self-hosting docs](https://docs.ntfy.sh/install/).
+
 ### Satellite basemap cache
 
 The UI proxies Esri World Imagery through a persistent Docker cache. To bake the

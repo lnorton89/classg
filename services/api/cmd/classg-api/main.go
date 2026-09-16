@@ -280,6 +280,10 @@ func run() error {
 			Username: cfg.SMTPUser, Password: cfg.SMTPPassword,
 			From: cfg.SMTPFrom, StartTLS: cfg.SMTPStartTLS, Implicit: cfg.SMTPImplicit,
 		},
+		// Ntfy carries its target in the rule itself, same as Webhook -- there
+		// is no unit-wide ntfy server to configure, only the SSRF gate the
+		// admin already controls for every other hook target.
+		Ntfy:  hooks.Ntfy{AllowPrivate: cfg.HooksAllowPrivate},
 		NewID: func() string { return ulid.New(time.Now().UTC()) },
 		Now:   func() time.Time { return time.Now().UTC() },
 	}

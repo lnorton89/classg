@@ -686,7 +686,7 @@ export type HookEvent =
   | 'capture.completed'
   | 'sweep.completed'
 
-export type HookAction = 'webhook' | 'email'
+export type HookAction = 'webhook' | 'email' | 'ntfy'
 
 export type DeliveryStatus = 'pending' | 'delivered' | 'failed' | 'suppressed'
 

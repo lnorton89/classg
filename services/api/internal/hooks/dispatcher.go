@@ -32,6 +32,7 @@ type Dispatcher struct {
 	Store   Store
 	Webhook Webhook
 	SMTP    SMTP
+	Ntfy    Ntfy
 	// Now is injected so tests do not sleep through cooldowns. Same
 	// concurrency requirement as NewID: dispatch workers call it, so an
 	// injected clock must be safe to read while the test advances it.
@@ -303,6 +304,8 @@ func (d *Dispatcher) deliver(ctx context.Context, rule Rule, e Event) {
 		action = d.Webhook
 	case ActionEmail:
 		action = d.SMTP
+	case ActionNtfy:
+		action = d.Ntfy
 	default:
 		del.Status, del.Error = DeliveryFailed, "unknown action "+rule.Action
 		d.record(ctx, del)
@@ -405,6 +408,8 @@ func (d *Dispatcher) Test(ctx context.Context, rule Rule) (int, error) {
 		return d.Webhook.Deliver(ctx, rule, e)
 	case ActionEmail:
 		return d.SMTP.Deliver(ctx, rule, e)
+	case ActionNtfy:
+		return d.Ntfy.Deliver(ctx, rule, e)
 	default:
 		return 0, ErrUnknownAction
 	}
@@ -417,6 +422,8 @@ func (d *Dispatcher) ValidateRule(rule Rule) error {
 		return d.Webhook.Validate(rule)
 	case ActionEmail:
 		return d.SMTP.Validate(rule)
+	case ActionNtfy:
+		return d.Ntfy.Validate(rule)
 	default:
 		return ErrUnknownAction
 	}

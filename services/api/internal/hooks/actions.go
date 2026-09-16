@@ -59,7 +59,10 @@ func (w Webhook) Validate(rule Rule) error {
 	return err
 }
 
-// vet is the SSRF guard.
+func (w Webhook) vet(raw string) ([]net.IP, error) { return vetTarget(raw, w.AllowPrivate) }
+
+// vetTarget is the SSRF guard shared by every action whose target is an
+// admin-supplied URL -- Webhook and Ntfy today.
 //
 // An admin who can point a hook at http://169.254.169.254/ can read a cloud
 // metadata service through this box, and one pointed at 127.0.0.1:8081 can
@@ -72,20 +75,20 @@ func (w Webhook) Validate(rule Rule) error {
 // an attacker-controlled zone can answer with a public address for the check
 // and 127.0.0.1 for the dial (DNS rebinding). The connection must go to an
 // address this function actually saw. nil addresses mean "no pin" -- either
-// AllowPrivate is set, or the caller only wanted validation.
-func (w Webhook) vet(raw string) ([]net.IP, error) {
+// allowPrivate is set, or the caller only wanted validation.
+func vetTarget(raw string, allowPrivate bool) ([]net.IP, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s is not a URL", ErrBadConfig, raw)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("%w: webhook URLs must be http or https, not %q", ErrBadConfig, u.Scheme)
+		return nil, fmt.Errorf("%w: the target must be http or https, not %q", ErrBadConfig, u.Scheme)
 	}
 	host := u.Hostname()
 	if host == "" {
 		return nil, fmt.Errorf("%w: no host in %s", ErrBadConfig, raw)
 	}
-	if w.AllowPrivate {
+	if allowPrivate {
 		return nil, nil
 	}
 
@@ -107,16 +110,19 @@ func (w Webhook) vet(raw string) ([]net.IP, error) {
 	return ips, nil
 }
 
+func (w Webhook) pinnedClient(ip net.IP) *http.Client { return pinnedClient(ip) }
+
 // pinnedClient dials the vetted address instead of resolving the hostname a
 // second time. Only the TCP dial is redirected: the request URL keeps its
 // hostname, so TLS SNI and certificate verification still run against the
-// name, and the Host header is unchanged.
-func (w Webhook) pinnedClient(ip net.IP) *http.Client {
+// name, and the Host header is unchanged. Shared by every action that vets a
+// target with vetTarget.
+func pinnedClient(ip net.IP) *http.Client {
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	return &http.Client{
 		Timeout: 15 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
-			return errors.New("webhook targets may not redirect")
+			return errors.New("targets may not redirect")
 		},
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -176,6 +182,148 @@ func (w Webhook) Deliver(ctx context.Context, rule Rule, e Event) (int, error) {
 		return resp.StatusCode, nil
 	}
 	return resp.StatusCode, fmt.Errorf("the target answered %s", resp.Status)
+}
+
+// --- ntfy --------------------------------------------------------------
+
+// Ntfy publishes to an ntfy (https://ntfy.sh) topic: a push-notification
+// service with free iOS/Android apps and a server that is a single static
+// binary, small enough to run on the same Pi as everything else here (see
+// the ntfy service in docker/docker-compose.yml).
+//
+// A rule's "url" is the full topic URL -- e.g. https://ntfy.sh/classg-a1b2c3
+// or http://<pi>:2586/classg-alerts -- not a bare server address. On a public
+// instance the topic name is the only thing standing in for auth (an
+// unguessable topic is a shared secret), so it belongs exactly where a
+// webhook's target does, and it gets the same SSRF guard: an admin-supplied
+// URL is still a URL, whether the far end is a REST API or a notification
+// service.
+type Ntfy struct {
+	Client *http.Client
+	// AllowPrivate disables the SSRF guard, same meaning as Webhook's -- an
+	// operator self-hosting ntfy on the LAN turns it on knowingly.
+	AllowPrivate bool
+}
+
+// ntfyPriorities is ntfy's own closed set; rejecting anything else here means
+// a typo is caught at configuration time instead of showing up as a silently
+// ignored header on every alert.
+var ntfyPriorities = map[string]bool{
+	"min": true, "low": true, "default": true, "high": true, "urgent": true,
+}
+
+// ntfyDefaultTags gives each event a sensible icon in the notification, so an
+// operator can tell a confirmed track from a dead sensor from the lock screen
+// without opening it. A rule can override this; "sensible default" is a guess
+// about what someone wants glanced at 6am, not a guarantee.
+var ntfyDefaultTags = map[string]string{
+	EventTrackConfirmed:  "airplane",
+	EventTrackClosed:     "wave",
+	EventDetection:       "satellite",
+	EventSensorUnhealthy: "warning",
+	EventSensorRecovered: "white_check_mark",
+	EventCaptureDone:     "floppy_disk",
+	EventSweepDone:       "bar_chart",
+}
+
+func (n Ntfy) client() *http.Client {
+	if n.Client != nil {
+		return n.Client
+	}
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return errors.New("ntfy targets may not redirect")
+		},
+	}
+}
+
+func (n Ntfy) Validate(rule Rule) error {
+	raw := rule.ConfigString("url")
+	if raw == "" {
+		return fmt.Errorf("%w: an ntfy hook needs a topic url", ErrBadConfig)
+	}
+	if _, err := vetTarget(raw, n.AllowPrivate); err != nil {
+		return err
+	}
+	if p := rule.ConfigString("priority"); p != "" && !ntfyPriorities[p] {
+		return fmt.Errorf("%w: %q is not an ntfy priority (min, low, default, high or urgent)", ErrBadConfig, p)
+	}
+	return nil
+}
+
+func (n Ntfy) Deliver(ctx context.Context, rule Rule, e Event) (int, error) {
+	raw := rule.ConfigString("url")
+	// Re-vetted at delivery, not only at configuration: see Webhook.Deliver.
+	ips, err := vetTarget(raw, n.AllowPrivate)
+	if err != nil {
+		return 0, err
+	}
+
+	title, body := n.compose(rule, e)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, raw, strings.NewReader(body))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	req.Header.Set("User-Agent", "classg-hooks/1")
+	// ntfy decodes these as ISO-8859-1; compose() runs both through
+	// sanitiseHeader so a payload field can never inject a header the way an
+	// admin-supplied subject could (see sanitiseHeader).
+	req.Header.Set("Title", title)
+
+	priority := rule.ConfigString("priority")
+	if priority == "" {
+		priority = "default"
+	}
+	req.Header.Set("Priority", priority)
+
+	tags := rule.ConfigString("tags")
+	if tags == "" {
+		tags = ntfyDefaultTags[e.Name]
+	}
+	if tags != "" {
+		req.Header.Set("Tags", tags)
+	}
+	// A self-hosted instance can require a token to publish; a public ntfy.sh
+	// topic has none, and none is sent.
+	if tok := rule.ConfigString("access_token"); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+
+	client := n.client()
+	if n.Client == nil && len(ips) > 0 {
+		client = pinnedClient(ips[0])
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return resp.StatusCode, nil
+	}
+	return resp.StatusCode, fmt.Errorf("the target answered %s", resp.Status)
+}
+
+// compose builds what ntfy shows on a lock screen: a title from the event
+// name (or the rule's override) and a body listing the payload, the same
+// fields an email hook puts in its body.
+func (n Ntfy) compose(rule Rule, e Event) (title, body string) {
+	title = rule.ConfigString("title")
+	if title == "" {
+		title = "ClassG: " + strings.ReplaceAll(e.Name, ".", " ")
+	}
+	title = sanitiseHeader(title)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s\n", rule.Name)
+	for _, k := range sortedKeys(e.Payload) {
+		fmt.Fprintf(&b, "%s: %v\n", k, e.Payload[k])
+	}
+	return title, strings.TrimRight(b.String(), "\n")
 }
 
 // --- email -----------------------------------------------------------------

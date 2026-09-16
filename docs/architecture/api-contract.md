@@ -876,20 +876,30 @@ alert" is a question an operator actually asks.
 
 `webhook` POSTs JSON. `email` needs `CLASSG_SMTP_*` configured on the unit —
 server credentials are process configuration, not rule configuration, so the
-password is not copied into every rule.
+password is not copied into every rule. `ntfy` POSTs a plain-text message with
+`Title`/`Priority`/`Tags` headers to an [ntfy](https://ntfy.sh) topic URL —
+free push notifications with nothing to run, using the public `ntfy.sh` server
+by default (see
+[docker/README.md#push-alerts-ntfy](../../docker/README.md#push-alerts-ntfy)).
+Its `config` is `{ "url": "https://ntfy.sh/…", "priority": "default",
+"access_token": "…" }` — `priority` is one of `min`, `low`, `default`, `high`,
+`urgent`, and `access_token` is only needed against a self-hosted server that
+requires auth to publish.
 
-**Webhook targets are checked against SSRF**, by DNS resolution rather than by
-string matching: `localhost`, `127.1`, and a name whose A record is `10.0.0.1`
-are the same problem and only the first two look like it. Redirects are refused
-outright, because a target that 302s to `169.254.169.254` would walk past a
-check performed on the original URL. `hooks.allow_private_targets` opts in for a
-genuinely local target such as Home Assistant.
+**Webhook and ntfy targets are checked against SSRF**, by DNS resolution
+rather than by string matching: `localhost`, `127.1`, and a name whose A
+record is `10.0.0.1` are the same problem and only the first two look like it.
+Redirects are refused outright, because a target that 302s to
+`169.254.169.254` would walk past a check performed on the original URL.
+`hooks.allow_private_targets` opts in for a genuinely local target such as
+Home Assistant or a self-hosted ntfy server on the same LAN.
 
 ### Secrets in `config`
 
-Keys named `authorization`, `password`, `token`, `secret`, `bearer_token` or
-`auth_header` are **write-only**. They come back as `"••••••••"` — present, so
-the UI can show that a token is set, never readable.
+Keys named `authorization`, `password`, `token`, `secret`, `bearer_token`,
+`auth_header` or `access_token` are **write-only**. They come back as
+`"••••••••"` — present, so the UI can show that a token is set, never
+readable.
 
 Send the placeholder back on a `PUT` and it means **unchanged**. Without that
 rule, renaming a hook through the UI would silently overwrite its bearer token

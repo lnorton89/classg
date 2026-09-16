@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -111,6 +113,7 @@ func newDispatcher(t *testing.T, store *memStore, clock *testClock) (*Dispatcher
 		// AllowPrivate: the test server is on 127.0.0.1, which the SSRF guard
 		// blocks by design. The guard itself is tested separately.
 		Webhook:  Webhook{AllowPrivate: true},
+		Ntfy:     Ntfy{AllowPrivate: true},
 		Now:      clock.now,
 		NewID:    func() string { return fmt.Sprintf("d%d", n.Add(1)) },
 		Attempts: 2,
@@ -124,6 +127,14 @@ func webhookRule(url string) Rule {
 	return Rule{
 		RuleID: "r1", Name: "test rule", Enabled: true,
 		Event: EventTrackConfirmed, Action: ActionWebhook,
+		Config: map[string]any{"url": url}, CooldownS: 300,
+	}
+}
+
+func ntfyRule(url string) Rule {
+	return Rule{
+		RuleID: "r1", Name: "test rule", Enabled: true,
+		Event: EventTrackConfirmed, Action: ActionNtfy,
 		Config: map[string]any{"url": url}, CooldownS: 300,
 	}
 }
@@ -181,6 +192,59 @@ func TestAMatchingEventReachesTheWebhook(t *testing.T) {
 	del := store.delivered()[0]
 	if del.ResponseCode != 200 || del.Attempts != 1 {
 		t.Fatalf("delivery %+v", del)
+	}
+}
+
+// ntfy is a plain-text POST with headers, not JSON like the webhook -- this
+// is what actually reaches a phone as a push notification.
+func TestAMatchingEventReachesNtfy(t *testing.T) {
+	var got struct {
+		sync.Mutex
+		title, priority, tags, body string
+		calls                       int
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf, _ := io.ReadAll(r.Body)
+		got.Lock()
+		got.title = r.Header.Get("Title")
+		got.priority = r.Header.Get("Priority")
+		got.tags = r.Header.Get("Tags")
+		got.body = string(buf)
+		got.calls++
+		got.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	store := &memStore{rules: []Rule{ntfyRule(srv.URL)}}
+	clock := newClock(base)
+	d, cancel := newDispatcher(t, store, clock)
+	defer cancel()
+
+	d.Fire(trackEvent("track-1", base))
+
+	waitFor(t, "ntfy to be called", func() bool {
+		got.Lock()
+		defer got.Unlock()
+		return got.calls == 1
+	})
+
+	got.Lock()
+	defer got.Unlock()
+	if got.title != "ClassG: track confirmed" {
+		t.Errorf("title = %q", got.title)
+	}
+	if got.priority != "default" {
+		t.Errorf("priority = %q, want the ntfy default", got.priority)
+	}
+	// The default tag for this event, from ntfyDefaultTags -- an operator
+	// glancing at a lock screen should be able to tell a confirmed track from
+	// a dead sensor without opening the notification.
+	if got.tags != "airplane" {
+		t.Errorf("tags = %q", got.tags)
+	}
+	if !strings.Contains(got.body, "track_id: track-1") {
+		t.Errorf("body = %q, missing the payload", got.body)
 	}
 }
 
@@ -470,6 +534,41 @@ func TestWebhookRefusesInternalTargets(t *testing.T) {
 	allow := Webhook{AllowPrivate: true}
 	if err := allow.Validate(Rule{Config: map[string]any{"url": "http://192.168.1.50/api/webhook/x"}}); err != nil {
 		t.Errorf("AllowPrivate did not allow a LAN target: %v", err)
+	}
+}
+
+// Ntfy shares Webhook's SSRF guard, not a copy of it -- this is the same test
+// against the other action, to catch a future refactor that forks the two.
+func TestNtfyRefusesInternalTargets(t *testing.T) {
+	n := Ntfy{}
+	for _, raw := range []string{
+		"http://127.0.0.1:8081/",
+		"http://169.254.169.254/latest/meta-data/",
+		"http://10.0.0.1/classg",
+	} {
+		if err := n.Validate(Rule{Config: map[string]any{"url": raw}}); err == nil {
+			t.Errorf("accepted %s", raw)
+		}
+	}
+
+	allow := Ntfy{AllowPrivate: true}
+	if err := allow.Validate(Rule{Config: map[string]any{"url": "http://192.168.1.50:2586/classg"}}); err != nil {
+		t.Errorf("AllowPrivate did not allow a LAN target: %v", err)
+	}
+}
+
+// A typo in a priority would otherwise sit silently ignored on every alert
+// header rather than being caught when the rule is saved.
+func TestNtfyValidatesPriority(t *testing.T) {
+	n := Ntfy{AllowPrivate: true}
+	if err := n.Validate(Rule{Config: map[string]any{"url": "http://127.0.0.1/topic", "priority": "urgent"}}); err != nil {
+		t.Errorf("a valid priority was rejected: %v", err)
+	}
+	if err := n.Validate(Rule{Config: map[string]any{"url": "http://127.0.0.1/topic", "priority": "asap"}}); err == nil {
+		t.Error("an invalid priority was accepted")
+	}
+	if err := n.Validate(Rule{Config: map[string]any{}}); err == nil {
+		t.Error("a missing url was accepted")
 	}
 }
 

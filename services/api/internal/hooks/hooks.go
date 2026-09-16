@@ -93,9 +93,13 @@ func ValidEvent(e string) bool {
 const (
 	ActionWebhook = "webhook"
 	ActionEmail   = "email"
+	// ActionNtfy publishes to an ntfy (https://ntfy.sh) topic -- a push
+	// notification service with free mobile apps and a server small enough to
+	// run on the same Pi as everything else here.
+	ActionNtfy = "ntfy"
 )
 
-var Actions = []string{ActionWebhook, ActionEmail}
+var Actions = []string{ActionWebhook, ActionEmail, ActionNtfy}
 
 // Rule is one "when X, do Y".
 type Rule struct {
@@ -156,6 +160,7 @@ var SecretConfigKeys = map[string]bool{
 	"password":      true,
 	"secret":        true,
 	"token":         true,
+	"access_token":  true,
 }
 
 // Redacted returns a copy safe to serialise to a client.
@@ -239,7 +244,7 @@ func (r *Rule) Validate() error {
 		return fmt.Errorf("%w: %q", ErrUnknownEvent, r.Event)
 	}
 	switch r.Action {
-	case ActionWebhook, ActionEmail:
+	case ActionWebhook, ActionEmail, ActionNtfy:
 	default:
 		return fmt.Errorf("%w: %q", ErrUnknownAction, r.Action)
 	}
