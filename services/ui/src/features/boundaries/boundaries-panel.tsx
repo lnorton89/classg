@@ -14,7 +14,13 @@
  * lives next to Hooks rather than anywhere a viewer could land on it.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { GeoJSONSource, Map as MapLibreMap, setWorkerUrl } from 'maplibre-gl'
+import {
+  GeoJSONSource,
+  Map as MapLibreMap,
+  NavigationControl,
+  ScaleControl,
+  setWorkerUrl,
+} from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { PlusIcon, Trash2Icon, Undo2Icon } from 'lucide-react'
@@ -192,9 +198,20 @@ export function BoundaryEditor({
       style: tiledStyle(theme, BASE_URL),
       center,
       zoom,
-      cooperativeGestures: true,
+      // No cooperativeGestures here, unlike the live map: that mode exists so
+      // a map embedded in a scrollable page does not eat a scroll gesture
+      // meant for the page, at the cost of scroll-to-zoom needing Ctrl held
+      // down -- invisible unless you already know it, and this map is the one
+      // thing this card exists to interact with, not something you scroll
+      // past. Plain scroll zooms, and the on-screen +/- buttons work either way.
     })
     mapRef.current = map
+    map.addControl(new NavigationControl({ showCompass: false }), 'top-right')
+    map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-left')
+    // A fast double-click while placing points would otherwise both drop a
+    // second vertex AND zoom the map -- the two interactions collide, so
+    // zooming that way is turned off in favour of scroll and the buttons.
+    map.doubleClickZoom.disable()
 
     map.on('load', () => {
       map.addSource('boundary-draft', {
@@ -285,17 +302,24 @@ export function BoundaryEditor({
       </FormField>
 
       <p className="text-muted-foreground text-2xs">
-        Click the map to place each corner, in order. {points.length} point
+        Click the map to place each corner, in order. Scroll (or the +/- buttons) to zoom, drag
+        to pan. {points.length} point
         {points.length === 1 ? '' : 's'} placed
         {points.length > 0 && points.length < 3 ? ` -- at least 3 needed` : ''}.
       </p>
 
-      <div
-        ref={containerRef}
-        className="h-[24rem] w-full overflow-hidden rounded-md"
-        role="application"
-        aria-label="Boundary drawing map"
-      />
+      <div className="relative">
+        <div
+          ref={containerRef}
+          className="h-[24rem] w-full overflow-hidden rounded-md"
+          role="application"
+          aria-label="Boundary drawing map"
+        />
+        <div className="bg-background/80 border-border/60 text-muted-foreground pointer-events-none absolute top-2 left-2 rounded-md border px-2 py-1 text-2xs backdrop-blur-sm">
+          <span className="inline-block size-2 rounded-full bg-[#22d3ee] align-middle" /> corner
+          &nbsp;·&nbsp; click to add &nbsp;·&nbsp; scroll to zoom
+        </div>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <Button
